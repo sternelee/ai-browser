@@ -4,32 +4,77 @@ import AppKit
 struct URLBar: View {
     @Binding var urlString: String
     let onSubmit: (String) -> Void
+    @FocusState private var isURLBarFocused: Bool
+    @State private var hovering: Bool = false
     
     var body: some View {
-        HStack(spacing: 8) {
-            // Security indicator
+        HStack(spacing: 12) {
+            // Security indicator with enhanced design
             SecurityIndicator(urlString: urlString)
             
-            // Main input field
+            // Main input field with enhanced styling
             TextField("Search or enter website", text: $urlString)
                 .textFieldStyle(.plain)
-                .font(.system(.body, design: .monospaced))
+                .font(.webBody)
+                .foregroundColor(.textPrimary)
+                .focused($isURLBarFocused)
                 .onSubmit {
                     navigateToURL()
                 }
             
-            // Quick actions
-            HStack(spacing: 4) {
+            // Quick actions with improved spacing
+            HStack(spacing: 6) {
                 ShareButton(urlString: urlString)
                 BookmarkButton(urlString: urlString)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(urlBarBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.hovering = hovering
+            }
+        }
+    }
+    
+    private var urlBarBackground: some View {
+        ZStack {
+            // Enhanced glass background
             RoundedRectangle(cornerRadius: 8)
-                .fill(.ultraThinMaterial)
-        )
+                .fill(.regularMaterial)
+            
+            // Dark glass surface overlay
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.bgSurface)
+            
+            // Dynamic border with focus state
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(
+                    isURLBarFocused ? Color.accentBeam : (hovering ? Color.borderGlass.opacity(0.8) : Color.borderGlass.opacity(0.4)),
+                    lineWidth: isURLBarFocused ? 2 : 1
+                )
+                .animation(.easeInOut(duration: 0.2), value: isURLBarFocused)
+                .animation(.easeInOut(duration: 0.2), value: hovering)
+            
+            // Subtle inner glow when focused
+            if isURLBarFocused {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.accentBeam.opacity(0.03),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 100
+                        )
+                    )
+                    .transition(.opacity)
+            }
+        }
     }
     
     private func navigateToURL() {
@@ -74,25 +119,47 @@ struct SecurityIndicator: View {
         urlString.hasPrefix("https://")
     }
     
+    private var hasURL: Bool {
+        !urlString.isEmpty && (urlString.contains(".") || urlString.hasPrefix("http"))
+    }
+    
     var body: some View {
-        Image(systemName: isSecure ? "lock.fill" : "lock.open.fill")
-            .font(.system(size: 12))
-            .foregroundColor(isSecure ? .green : .orange)
+        Group {
+            if hasURL {
+                Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isSecure ? .green.opacity(0.8) : .orange.opacity(0.8))
+            } else {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.textSecondary)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .animation(.easeInOut(duration: 0.2), value: hasURL)
+        .animation(.easeInOut(duration: 0.2), value: isSecure)
     }
 }
 
 // Share button component
 struct ShareButton: View {
     let urlString: String
+    @State private var hovering: Bool = false
     
     var body: some View {
         Button(action: shareURL) {
             Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary)
+                .frame(width: 24, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(URLBarActionButtonStyle())
         .disabled(urlString.isEmpty)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.hovering = hovering
+            }
+        }
     }
     
     private func shareURL() {
@@ -110,15 +177,22 @@ struct ShareButton: View {
 struct BookmarkButton: View {
     let urlString: String
     @State private var isBookmarked = false
+    @State private var hovering: Bool = false
     
     var body: some View {
         Button(action: toggleBookmark) {
             Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                .font(.system(size: 12))
-                .foregroundColor(isBookmarked ? .blue : .secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isBookmarked ? Color.accentBeam : (urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary))
+                .frame(width: 24, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(URLBarActionButtonStyle())
         .disabled(urlString.isEmpty)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.hovering = hovering
+            }
+        }
     }
     
     private func toggleBookmark() {
@@ -127,6 +201,20 @@ struct BookmarkButton: View {
     }
 }
 
+
+// Custom button style for URL bar actions
+struct URLBarActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Circle()
+                    .fill(Color.bgSurface)
+                    .opacity(configuration.isPressed ? 0.8 : 0.0)
+            )
+            .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
 
 #Preview {
     URLBar(urlString: .constant("google.com"), onSubmit: { _ in })

@@ -2,6 +2,33 @@ import SwiftUI
 import WebKit
 import Combine
 import Foundation
+import AppKit
+
+extension NSColor {
+    convenience init?(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            return nil
+        }
+        
+        self.init(
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            alpha: Double(a) / 255
+        )
+    }
+}
 
 struct WebView: NSViewRepresentable {
     @Binding var url: URL?
@@ -132,18 +159,41 @@ struct WebView: NSViewRepresentable {
         
         private func extractFavicon(from webView: WKWebView) {
             let script = """
-            function getFavicon() {
+            function getFaviconAndThemeColor() {
+                // Get theme color from meta tag
+                var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+                var themeColor = themeColorMeta ? themeColorMeta.getAttribute('content') : null;
+                
+                // Get favicon with preference order
                 var favicon = document.querySelector('link[rel="shortcut icon"]') ||
                              document.querySelector('link[rel="icon"]') ||
-                             document.querySelector('link[rel="apple-touch-icon"]');
-                return favicon ? favicon.href : null;
+                             document.querySelector('link[rel="apple-touch-icon"]') ||
+                             document.querySelector('link[rel="apple-touch-icon-precomposed"]');
+                
+                var faviconURL = favicon ? favicon.href : null;
+                
+                // If no favicon found, try default location
+                if (!faviconURL) {
+                    faviconURL = window.location.origin + '/favicon.ico';
+                }
+                
+                return {
+                    favicon: faviconURL,
+                    themeColor: themeColor
+                };
             }
-            getFavicon();
+            getFaviconAndThemeColor();
             """
             
             webView.evaluateJavaScript(script) { [weak self] result, error in
-                if let faviconURL = result as? String, let url = URL(string: faviconURL) {
-                    self?.downloadFavicon(from: url)
+                if let data = result as? [String: Any] {
+                    if let faviconURL = data["favicon"] as? String, let url = URL(string: faviconURL) {
+                        self?.downloadFavicon(from: url)
+                    }
+                    
+                    if let themeColor = data["themeColor"] as? String {
+                        self?.updateThemeColor(themeColor)
+                    }
                 }
             }
         }
@@ -156,6 +206,46 @@ struct WebView: NSViewRepresentable {
                     }
                 }
             }.resume()
+        }
+        
+        private func updateThemeColor(_ themeColorString: String) {
+            DispatchQueue.main.async { [weak self] in
+                if let color = self?.parseColor(from: themeColorString) {
+                    // Update the tab's theme color
+                    if let tab = self?.parent.tab {
+                        tab.themeColor = color
+                    }
+                }
+            }
+        }
+        
+        private func parseColor(from colorString: String) -> NSColor? {
+            let trimmed = colorString.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Handle hex colors
+            if trimmed.hasPrefix("#") {
+                let hex = String(trimmed.dropFirst())
+                return NSColor(hex: hex)
+            }
+            
+            // Handle rgb() colors
+            if trimmed.hasPrefix("rgb(") && trimmed.hasSuffix(")") {
+                let values = String(trimmed.dropFirst(4).dropLast())
+                let components = values.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                if components.count == 3 {
+                    return NSColor(red: components[0]/255.0, green: components[1]/255.0, blue: components[2]/255.0, alpha: 1.0)
+                }
+            }
+            
+            // Handle named colors (basic support)
+            switch trimmed.lowercased() {
+            case "blue": return .blue
+            case "red": return .red
+            case "green": return .green
+            case "black": return .black
+            case "white": return .white
+            default: return nil
+            }
         }
         
         // MARK: - Navigation policy handling

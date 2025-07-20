@@ -8,6 +8,7 @@ class Tab: ObservableObject, Identifiable, Transferable {
     @Published var url: URL?
     @Published var title: String = "New Tab"
     @Published var favicon: NSImage?
+    @Published var themeColor: NSColor?
     @Published var isLoading: Bool = false
     @Published var estimatedProgress: Double = 0.0
     @Published var canGoBack: Bool = false

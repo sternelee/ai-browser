@@ -61,22 +61,23 @@ struct BottomHoverSearch: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .background(searchBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: -2)
+        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: -4)
     }
     
     private var searchIcon: some View {
         Image(systemName: "magnifyingglass")
-            .foregroundColor(.secondary)
+            .foregroundColor(.textSecondary)
             .font(.system(size: 16, weight: .medium))
     }
     
     private var searchTextField: some View {
         TextField("Search Google or enter website", text: $searchText)
             .textFieldStyle(.plain)
-            .font(.system(.body, weight: .regular))
+            .font(.webBody)
+            .foregroundColor(.textPrimary)
             .focused($isSearchFocused)
             .onSubmit {
                 performSearch()
@@ -92,7 +93,7 @@ struct BottomHoverSearch: View {
             suggestions = []
         }) {
             Image(systemName: "xmark.circle.fill")
-                .foregroundColor(.secondary)
+                .foregroundColor(.textSecondary)
                 .font(.system(size: 14))
         }
         .buttonStyle(.plain)
@@ -101,16 +102,38 @@ struct BottomHoverSearch: View {
     
     private var searchBarBackground: some View {
         ZStack {
-            // Backdrop blur effect
+            // Enhanced glass background
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
+                .fill(.thickMaterial)
             
-            // Subtle border
+            // Dark glass surface overlay
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.bgSurface)
+            
+            // Focus ring with accent beam
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
-                    isSearchFocused ? .blue.opacity(0.5) : .primary.opacity(0.1), 
-                    lineWidth: 1
+                    isSearchFocused ? Color.accentBeam : Color.borderGlass, 
+                    lineWidth: isSearchFocused ? 2 : 1
                 )
+                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+            
+            // Subtle inner glow when focused
+            if isSearchFocused {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.accentBeam.opacity(0.05),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 100
+                        )
+                    )
+                    .transition(.opacity)
+            }
         }
     }
     
@@ -151,28 +174,43 @@ struct BottomHoverSearch: View {
     
     private func suggestionIconView(_ type: SearchSuggestion.SuggestionType) -> some View {
         Image(systemName: suggestionIcon(for: type))
-            .foregroundColor(.secondary)
-            .font(.system(size: 14))
+            .foregroundColor(.textSecondary)
+            .font(.system(size: 14, weight: .medium))
             .frame(width: 16)
     }
     
     private func suggestionTextView(_ text: String) -> some View {
         Text(text)
-            .font(.system(.body))
-            .foregroundColor(.primary)
+            .font(.webBody)
+            .foregroundColor(.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     private var historyIconView: some View {
         Image(systemName: "clock")
-            .foregroundColor(Color.primary.opacity(0.3))
-            .font(.system(size: 12))
+            .foregroundColor(.textSecondary)
+            .font(.system(size: 12, weight: .medium))
     }
     
     private var suggestionBackground: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(.ultraThinMaterial)
-            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: -1)
+        ZStack {
+            // Enhanced glass background
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.thickMaterial)
+            
+            // Dark glass surface overlay
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.bgSurface)
+            
+            // Subtle border
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.borderGlass, lineWidth: 1)
+            
+            // Elevated shadow
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.clear)
+                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: -4)
+        }
     }
     
     private func suggestionIcon(for type: SearchSuggestion.SuggestionType) -> String {

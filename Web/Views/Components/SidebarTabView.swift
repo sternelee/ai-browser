@@ -1,40 +1,39 @@
 import SwiftUI
 
-// Revolutionary Minimal Sidebar - Industry-disrupting favicon-only design
 struct SidebarTabView: View {
     @ObservedObject var tabManager: TabManager
-    @State private var draggedTab: Tab?
-    @State private var hoveredTab: Tab?
+    @State private var draggedTab: Web.Tab?
+    @State private var hoveredTab: Web.Tab?
     
     var body: some View {
         VStack(spacing: 0) {
             // Top section with new tab button
-            VStack(spacing: 4) {
+            VStack(spacing: 8) {
                 newTabButton
+                    .padding(.top, 12)
                 
                 if !tabManager.tabs.isEmpty {
-                    Divider()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                    CavedDivider()
+                        .padding(.horizontal, 12)
                 }
             }
-            .padding(.top, 8)
             
-            // Tab list
-            ScrollView(showsIndicators: false) {
+            // Tab list with custom scrolling
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
                     ForEach(tabManager.tabs) { tab in
                         SidebarTabItem(
                             tab: tab,
                             isActive: tab.id == tabManager.activeTab?.id,
                             isHovered: hoveredTab?.id == tab.id,
-                            onTap: {
-                                tabManager.setActiveTab(tab)
-                            },
                             tabManager: tabManager
-                        )
+                        ) {
+                            tabManager.setActiveTab(tab)
+                        }
                         .onHover { hovering in
-                            hoveredTab = hovering ? tab : nil
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                hoveredTab = hovering ? tab : nil
+                            }
                         }
                         .contextMenu {
                             TabContextMenu(tab: tab, tabManager: tabManager)
@@ -45,24 +44,43 @@ struct SidebarTabView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
             }
             
             Spacer()
             
             // Bottom section with settings
-            VStack(spacing: 4) {
-                Divider()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+            VStack(spacing: 8) {
+                CavedDivider()
+                    .padding(.horizontal, 12)
                 
                 settingsButton
+                    .padding(.bottom, 12)
             }
-            .padding(.bottom, 8)
         }
         .frame(width: 60)
-        .background(.ultraThinMaterial)
-        .dropDestination(for: Tab.self) { tabs, location in
+        .background(
+            // Enhanced glass background with subtle tint
+            ZStack {
+                // Base material
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                
+                // Dark glass surface overlay
+                Rectangle()
+                    .fill(Color.black.opacity(0.05))
+                
+                // Subtle border on right edge
+                HStack {
+                    Spacer()
+                    Rectangle()
+                        .fill(.gray.opacity(0.3))
+                        .frame(width: 1)
+                }
+            }
+        )
+        .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
         }
@@ -73,68 +91,56 @@ struct SidebarTabView: View {
             _ = tabManager.createNewTab() 
         }) {
             Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.secondary)
+                .frame(width: 36, height: 36)
         }
-        .buttonStyle(SidebarButtonStyle())
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(0.9) // Slightly smaller for minimal aesthetic
     }
     
     private var settingsButton: some View {
         Button(action: { 
-            // TODO: Open settings 
+            // Open settings 
         }) {
             Image(systemName: "gearshape")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 32, height: 32)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.secondary)
+                .frame(width: 36, height: 36)
         }
-        .buttonStyle(SidebarButtonStyle())
+        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(0.9)
     }
     
-    private func handleTabDrop(tabs: [Tab], location: CGPoint) {
-        // Handle tab reordering logic
+    private func handleTabDrop(tabs: [Web.Tab], location: CGPoint) {
         guard let droppedTab = tabs.first,
               let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == droppedTab.id }) else { return }
         
-        // Calculate drop position based on location
+        // Calculate drop position with refined spacing
         let tabHeight: CGFloat = 44
         let dropIndex = min(max(0, Int(location.y / tabHeight)), tabManager.tabs.count - 1)
         
         if fromIndex != dropIndex {
-            tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+            }
         }
     }
 }
 
 struct SidebarTabItem: View {
-    let tab: Tab
+    let tab: Web.Tab
     let isActive: Bool
     let isHovered: Bool
+    let tabManager: TabManager
     let onTap: () -> Void
-    @ObservedObject var tabManager: TabManager
     
     @State private var showCloseButton: Bool = false
+    @State private var extractedColor: Color = .clear
     
     var body: some View {
         Button(action: onTap) {
-            ZStack {
-                // Background with adaptive color based on favicon
-                backgroundView
-                
-                // Main content
-                VStack(spacing: 4) {
-                    // Favicon or loading indicator
-                    faviconView
-                    
-                    // Close button (appears on hover)
-                    if showCloseButton && isHovered {
-                        closeButton
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .frame(width: 44, height: 44)
-            }
+            tabItemContent
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -142,8 +148,32 @@ struct SidebarTabItem: View {
                 showCloseButton = hovering
             }
         }
-        .scaleEffect(isActive ? 1.05 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isActive)
+        .scaleEffect(isActive ? 1.02 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isActive)
+        .onReceive(tab.$favicon) { favicon in
+            extractFaviconColor(from: favicon)
+        }
+    }
+    
+    private var tabItemContent: some View {
+        ZStack {
+            backgroundView
+            
+            VStack(spacing: 0) {
+                Spacer()
+                
+                faviconView
+                    .frame(width: 24, height: 24)
+                
+                Spacer()
+                
+                if showCloseButton && isHovered {
+                    closeButton
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(width: 48, height: 44)
+        }
     }
     
     private var backgroundView: some View {
@@ -151,9 +181,29 @@ struct SidebarTabItem: View {
             .fill(backgroundMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(borderColor, lineWidth: isActive ? 2 : 0)
+                    .strokeBorder(borderColor, lineWidth: isActive ? 1.5 : 0)
             )
-            .shadow(color: .black.opacity(isActive ? 0.1 : 0), radius: 2, x: 0, y: 1)
+            .shadow(
+                color: isActive ? .black.opacity(0.15) : .clear,
+                radius: 3,
+                x: 0,
+                y: 1
+            )
+            .overlay(
+                // Subtle color accent from favicon
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                extractedColor.opacity(isActive ? 0.08 : 0.03),
+                                extractedColor.opacity(0.01)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .animation(.easeInOut(duration: 0.3), value: extractedColor)
+            )
     }
     
     private var backgroundMaterial: Material {
@@ -168,105 +218,118 @@ struct SidebarTabItem: View {
     
     private var borderColor: Color {
         if isActive {
-            // Extract color from favicon or use default blue
-            return extractedFaviconColor ?? .blue
+            return extractedColor != .clear ? extractedColor : .blue
         }
         return .clear
-    }
-    
-    private var extractedFaviconColor: Color? {
-        // Extract color from favicon for adaptive theming
-        return extractedFaviconColor(for: tab)
     }
     
     private var faviconView: some View {
         Group {
             if tab.isLoading {
+                // Refined loading indicator
                 ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 24, height: 24)
+                    .scaleEffect(0.7)
+                    .tint(Color.secondary)
             } else {
                 FaviconView(tab: tab, size: 24)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
             }
         }
     }
     
     private var closeButton: some View {
         Button(action: {
-            tabManager.closeTab(tab)
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.9)) {
+                tabManager.closeTab(tab)
+            }
         }) {
             Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(.secondary)
-                .frame(width: 16, height: 16)
-                .background(Circle().fill(.ultraThinMaterial))
+                .font(.system(size: 7, weight: .bold))
+                .foregroundColor(Color.secondary)
+                .frame(width: 14, height: 14)
+                .background(
+                    Circle()
+                        .fill(Color.black.opacity(0.05))
+                        .overlay(
+                            Circle()
+                                .strokeBorder(.gray.opacity(0.3), lineWidth: 0.5)
+                        )
+                )
         }
         .buttonStyle(.plain)
+        .scaleEffect(0.9)
     }
-}
-
-struct SidebarButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.ultraThinMaterial)
-                    .opacity(configuration.isPressed ? 0.8 : 1.0)
-            )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
-// Favicon view component
-struct FaviconView: View {
-    @ObservedObject var tab: Tab
-    let size: CGFloat
     
-    var body: some View {
-        Group {
-            if let favicon = tab.favicon {
-                Image(nsImage: favicon)
-                    .resizable()
-                    .frame(width: size, height: size)
-            } else {
-                Image(systemName: "globe")
-                    .font(.system(size: size * 0.7))
-                    .foregroundColor(.secondary)
-                    .frame(width: size, height: size)
+    private func extractFaviconColor(from image: NSImage?) {
+        guard let image = image,
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            extractedColor = .clear
+            return
+        }
+        
+        // Simplified color extraction for performance
+        Task {
+            let color = await extractDominantColor(from: cgImage)
+            await MainActor.run {
+                extractedColor = color
+            }
+        }
+    }
+    
+    private func extractDominantColor(from cgImage: CGImage) async -> Color {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .background).async {
+                // Simple average color extraction
+                let width = min(cgImage.width, 16) // Limit size for performance
+                let height = min(cgImage.height, 16)
+                
+                guard let context = CGContext(
+                    data: nil,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else {
+                    continuation.resume(returning: .clear)
+                    return
+                }
+                
+                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+                
+                guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else {
+                    continuation.resume(returning: .clear)
+                    return
+                }
+                
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
+                var pixelCount: Int = 0
+                
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let offset = (y * width + x) * 4
+                        let alpha = CGFloat(data[offset + 3]) / 255.0
+                        
+                        if alpha > 0.5 { // Only consider opaque pixels
+                            r += CGFloat(data[offset]) / 255.0
+                            g += CGFloat(data[offset + 1]) / 255.0
+                            b += CGFloat(data[offset + 2]) / 255.0
+                            pixelCount += 1
+                        }
+                    }
+                }
+                
+                if pixelCount > 0 {
+                    r /= CGFloat(pixelCount)
+                    g /= CGFloat(pixelCount)
+                    b /= CGFloat(pixelCount)
+                    continuation.resume(returning: Color(red: r, green: g, blue: b))
+                } else {
+                    continuation.resume(returning: .clear)
+                }
             }
         }
     }
 }
 
-// Tab context menu
-struct TabContextMenu: View {
-    let tab: Tab
-    let tabManager: TabManager
-    
-    var body: some View {
-        Button("Close Tab") {
-            tabManager.closeTab(tab)
-        }
-        
-        Button("Duplicate Tab") {
-            if let url = tab.url {
-                _ = tabManager.createNewTab(url: url)
-            }
-        }
-        
-        Button("Pin Tab") {
-            // TODO: Implement pinned tabs
-        }
-        
-        Divider()
-        
-        Button("Close Other Tabs") {
-            tabManager.closeOtherTabs(except: tab)
-        }
-        
-        Button("Close Tabs to the Right") {
-            tabManager.closeTabsToTheRight(of: tab)
-        }
-    }
-}

@@ -1,49 +1,74 @@
 import SwiftUI
 
-// Horizontal tab bar for top display mode
 struct TopBarTabView: View {
     @ObservedObject var tabManager: TabManager
-    @State private var draggedTab: Tab?
+    @State private var draggedTab: Web.Tab?
+    @State private var hoveredTabId: UUID?
     
     var body: some View {
         HStack(spacing: 0) {
-            tabScrollArea
-            newTabButton
+            tabScrollView
+            controlsSection
         }
         .frame(height: 40)
-        .background(.ultraThinMaterial)
-        .dropDestination(for: Tab.self) { tabs, location in
+        .background(topBarBackground)
+        .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
         }
     }
     
-    private var tabScrollArea: some View {
+    private var tabScrollView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 ForEach(tabManager.tabs) { tab in
-                    tabItemView(for: tab)
+                    TopBarTabItem(
+                        tab: tab,
+                        isActive: tab.id == tabManager.activeTab?.id,
+                        isHovered: hoveredTabId == tab.id,
+                        onTap: { tabManager.setActiveTab(tab) },
+                        tabManager: tabManager
+                    )
+                    .frame(minWidth: 140, idealWidth: 180, maxWidth: 220)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            hoveredTabId = hovering ? tab.id : nil
+                        }
+                    }
+                    .draggable(tab) {
+                        TopBarTabPreview(tab: tab)
+                    }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
         }
     }
     
-    private func tabItemView(for tab: Tab) -> some View {
-        TopBarTabItem(
-            tab: tab,
-            isActive: tab.id == tabManager.activeTab?.id,
-            onTap: {
-                tabManager.setActiveTab(tab)
-            },
-            tabManager: tabManager
-        )
-        .frame(minWidth: 120, idealWidth: 180, maxWidth: 200)
-        .contextMenu {
-            TabContextMenu(tab: tab, tabManager: tabManager)
+    private var controlsSection: some View {
+        HStack(spacing: 8) {
+            newTabButton
+            menuButton
         }
-        .draggable(tab) {
-            TopBarTabPreview(tab: tab)
+        .padding(.trailing, 12)
+    }
+    
+    private var topBarBackground: some View {
+        ZStack {
+            // Base material
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            
+            // Dark glass surface overlay
+            Rectangle()
+                .fill(Color.black.opacity(0.05))
+            
+            // Bottom border
+            VStack {
+                Spacer()
+                Rectangle()
+                    .fill(.gray.opacity(0.3))
+                    .frame(height: 1)
+            }
         }
     }
     
@@ -53,134 +78,132 @@ struct TopBarTabView: View {
         }) {
             Image(systemName: "plus")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color.secondary)
+                .frame(width: 32, height: 28)
         }
-        .buttonStyle(TopBarButtonStyle())
-        .padding(.trailing, 8)
+        .buttonStyle(PlainButtonStyle())
     }
     
-    private func handleTabDrop(tabs: [Tab], location: CGPoint) {
-        // Handle tab reordering logic for horizontal layout
+    private var menuButton: some View {
+        Button(action: showMenu) {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.secondary)
+                .frame(width: 32, height: 28)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func showMenu() {
+        // Show browser menu
+    }
+    
+    private func handleTabDrop(tabs: [Web.Tab], location: CGPoint) {
         guard let droppedTab = tabs.first,
               let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == droppedTab.id }) else { return }
         
-        // Calculate drop position based on horizontal location
+        // Calculate drop position based on horizontal layout
         let tabWidth: CGFloat = 180
         let dropIndex = min(max(0, Int(location.x / tabWidth)), tabManager.tabs.count - 1)
         
         if fromIndex != dropIndex {
-            tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+            }
         }
     }
 }
 
 struct TopBarTabItem: View {
-    let tab: Tab
+    let tab: Web.Tab
     let isActive: Bool
+    let isHovered: Bool
     let onTap: () -> Void
-    @ObservedObject var tabManager: TabManager
+    let tabManager: TabManager
     
-    @State private var isHovered: Bool = false
+    @State private var showCloseButton: Bool = false
     
     var body: some View {
         Button(action: onTap) {
-            tabContent
+            HStack(spacing: 8) {
+                // Simple favicon
+                if tab.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .tint(.textSecondary)
+                } else {
+                    Image(systemName: "globe")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color.secondary)
+                }
+                
+                // Title
+                Text(tab.title.isEmpty ? "New Tab" : tab.title)
+                    .font(.system(size: 13))
+                    .fontWeight(isActive ? .medium : .regular)
+                    .lineLimit(1)
+                    .foregroundColor(isActive ? .textPrimary : .textSecondary)
+                
+                Spacer(minLength: 0)
+                
+                // Close button
+                if showCloseButton {
+                    Button(action: {
+                        tabManager.closeTab(tab)
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(Color.secondary)
+                            .frame(width: 14, height: 14)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isActive ? .thickMaterial : .ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(isActive ? .blue : Color.clear, lineWidth: 1)
+                    )
+            )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
+            showCloseButton = hovering
         }
-    }
-    
-    private var tabContent: some View {
-        HStack(spacing: 8) {
-            faviconView
-            titleView
-            Spacer(minLength: 0)
-            if isHovered {
-                closeButton
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(tabBackground)
-    }
-    
-    private var faviconView: some View {
-        Group {
-            if tab.isLoading {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 16, height: 16)
-            } else {
-                FaviconView(tab: tab, size: 16)
-            }
-        }
-    }
-    
-    private var titleView: some View {
-        Text(tab.title)
-            .font(.system(.caption, weight: isActive ? .medium : .regular))
-            .lineLimit(1)
-            .foregroundColor(isActive ? .primary : .secondary)
-    }
-    
-    private var closeButton: some View {
-        Button(action: {
-            tabManager.closeTab(tab)
-        }) {
-            Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .buttonStyle(.plain)
-        .transition(.scale.combined(with: .opacity))
-    }
-    
-    private var tabBackground: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isActive ? .blue : .clear, lineWidth: 1)
-            )
     }
 }
 
-struct TopBarButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(.ultraThinMaterial)
-                    .opacity(configuration.isPressed ? 0.8 : 1.0)
-            )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
-// Preview for dragging tabs
+// Tab preview for drag operations
 struct TopBarTabPreview: View {
-    let tab: Tab
+    let tab: Web.Tab
     
     var body: some View {
         HStack(spacing: 8) {
-            FaviconView(tab: tab, size: 16)
-            Text(tab.title)
-                .font(.system(.caption, weight: .medium))
+            // Placeholder for favicon
+            Image(systemName: "globe")
+                .font(.system(size: 16))
+                .foregroundColor(Color.secondary)
+            
+            Text(tab.title.isEmpty ? "New Tab" : tab.title)
+                .font(.system(size: 13))
                 .lineLimit(1)
-                .frame(maxWidth: 120)
+                .foregroundColor(.textPrimary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.accentColor.opacity(0.2))
+                .fill(.thickMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(.gray.opacity(0.3), lineWidth: 1)
+                )
         )
-        .opacity(0.8)
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+        .scaleEffect(0.95)
     }
 }
