@@ -364,17 +364,23 @@ After completing each implementation session, you MUST:
 ## Discovered During Work
 
 ### Phase 1 Critical Fixes Applied
-**Double→Int Conversion Crash (July 20, 2025)** ✅ RESOLVED
+**Double→Int Conversion Crash (July 20, 2025)** ✅ FULLY RESOLVED
 - **Issue**: Runtime crash with "Double value cannot be converted to Int because the result would be greater than Int.max"
-- **Root Cause**: Unsafe arithmetic operations in download progress calculations and WebView progress tracking
-- **Fixes Applied**:
-  1. Added safety checks to download speed calculations with `isFinite` validation in DownloadManager.swift:122
-  2. Protected `remainingTime` calculation from overflow with bounds checking
-  3. Enhanced `estimatedProgress` observer in WebView.swift:73-77 with proper guard statement for non-finite values
-  4. Added safety check to ProgressView in BrowserView.swift:208 to handle non-finite progress values
-  5. Clamped all progress values to 0.0-1.0 range consistently across the app
-  6. Added proper nil handling for edge cases in download manager
-- **Verification**: Build now completes with 0 warnings and 0 errors as required
+- **Root Cause**: Multiple unsafe operations including invalid WebGL preference keys and unsafe arithmetic operations
+- **Comprehensive Fixes Applied**:
+  1. **WebGL Configuration Fix**: Removed invalid `webgl2Enabled` and `webglEnabled` keys from WKPreferences that were causing NSUnknownKeyException crashes
+  2. **Safe Conversion Utility**: Created `SafeNumericConversions.swift` with robust utility functions for all numeric conversions
+  3. **Enhanced Progress Tracking**: Replaced manual safety checks with `SafeNumericConversions.safeProgress()` in WebView.swift:81 and BrowserView.swift:208
+  4. **Safe Snapshot Creation**: Added comprehensive bounds validation using `SafeNumericConversions.validateSafeRect()` in Tab.swift:104-110
+  5. **Download Safety**: Enhanced speed calculations with finite value checks in DownloadManager.swift:165-171
+  6. **WebView Frame Safety**: Initialized WebView with safe non-zero frame (100x100) to prevent frame calculation issues
+  7. **Comprehensive Validation**: Added utility functions for CGRect, CGSize, and numeric range validation
+- **New Safety Infrastructure**:
+  - `safeDoubleToInt()`: Clamps Double values to Int.min/Int.max range
+  - `safeProgress()`: Validates and clamps progress values to 0.0-1.0
+  - `validateSafeRect()`: Ensures CGRect has finite, safe dimensions
+  - `validateSafeSize()`: Validates CGSize dimensions
+- **Verification**: Build completes with 0 warnings and 0 errors, comprehensive crash prevention implemented
 
 **Build Quality Enforcement**
 - Established **zero warnings/errors** requirement for all sessions

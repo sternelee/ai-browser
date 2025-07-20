@@ -4,33 +4,102 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a minimal SwiftUI iOS app called "Web" with a basic "Hello, world!" interface. The project follows standard iOS app architecture with:
+Web is a next-generation macOS browser built with SwiftUI that delivers minimal, progressive UX. This native application uses WebKit for web rendering and emphasizes glass morphism, smooth animations, and innovative interface paradigms rivaling Arc Browser.
 
-- `WebApp.swift` - Main app entry point using `@main`
-- `ContentView.swift` - Primary SwiftUI view with globe icon and text
-- Standard Xcode project structure with unit tests and UI tests
+**Key Architecture:**
+- **Language:** Swift 6 with SwiftUI
+- **Web Engine:** WebKit (WKWebView)
+- **Target Platform:** macOS 14.0+
+- **Pattern:** MVVM with Combine
+- **Data:** Core Data for history/bookmarks, UserDefaults for settings
 
 ## Common Commands
 
 ### Building and Running
 - Build the project: `xcodebuild -project Web.xcodeproj -scheme Web build`
-- Run tests: `xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=iOS Simulator,name=iPhone 15'`
-- Run unit tests only: `xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:WebTests`
-- Run UI tests only: `xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:WebUITests`
-
-### Development
 - Open in Xcode: `open Web.xcodeproj`
+- Run tests: `xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=macOS'`
+
+### Development Requirements
+- **CRITICAL:** Every change must result in zero warnings and zero errors
+- Always run full build before committing changes
+- Test the app launches without crashes after modifications
 
 ## Code Architecture
 
-- **App Structure**: Standard SwiftUI app with single scene `WindowGroup`
-- **Testing**: Uses Swift Testing framework for unit tests (`@Test`) and XCTest for UI tests
-- **UI Framework**: SwiftUI with standard system icons and styling
-- **Target Platform**: iOS with standard app entitlements
+### Core Structure
+```
+Web/
+├── WebApp.swift              # App entry point with keyboard shortcuts
+├── ContentView.swift         # Main view wrapper
+├── Models/
+│   ├── Tab.swift            # Tab data model with hibernation
+│   └── ...
+├── Views/
+│   ├── MainWindow/
+│   │   └── BrowserView.swift # Main browser interface
+│   ├── Components/
+│   │   ├── WebView.swift    # WebKit wrapper
+│   │   ├── URLBar.swift     # Address bar with search
+│   │   └── NavigationControls.swift
+│   └── NewTab/, Settings/
+├── ViewModels/
+│   └── TabManager.swift     # Tab lifecycle management
+├── Services/
+│   └── DownloadManager.swift # File download handling
+└── Utils/, specs/
+```
 
-## Important Notes
+### Key Components
+- **TabManager**: Handles tab lifecycle, memory management, and hibernation
+- **WebView**: SwiftUI wrapper around WKWebView with progress tracking
+- **BrowserView**: Main UI orchestrating toolbar, tabs, and web content
+- **DownloadManager**: Handles file downloads with progress and security
+- **Keyboard Shortcuts**: Comprehensive shortcuts (Cmd+T, Cmd+W, etc.) defined in WebApp.swift
 
-- Always ensure `xcodebuild` succeeds after making changes
-- Unit tests use the newer Swift Testing framework with `@Test` annotations
-- UI tests use traditional XCTest framework with `XCUIApplication`
-- The app uses SwiftUI previews for development (`#Preview`)
+### Architecture Patterns
+- **MVVM**: ViewModels manage state, Views handle presentation
+- **NotificationCenter**: Used for keyboard shortcut communication
+- **Combine**: Reactive programming for data flow
+- **Glass Design**: NSVisualEffectView with .ultraThinMaterial throughout
+
+## Keyboard Shortcuts
+
+| Action | Keys | Implementation |
+|--------|------|---------------|
+| New Tab | ⌘T | NotificationCenter.newTabRequested |
+| Close Tab | ⌘W | NotificationCenter.closeTabRequested |
+| Reopen Closed Tab | ⇧⌘T | NotificationCenter.reopenTabRequested |
+| Reload | ⌘R | NotificationCenter.reloadRequested |
+| Focus Address Bar | ⌘L | NotificationCenter.focusAddressBarRequested |
+| Find in Page | ⌘F | NotificationCenter.findInPageRequested |
+| Downloads | ⇧⌘J | NotificationCenter.showDownloadsRequested |
+| Developer Tools | ⌥⌘I | NotificationCenter.showDeveloperToolsRequested |
+
+## Critical Implementation Notes
+
+### Build Quality Enforcement
+- **Zero tolerance for warnings/errors**: All builds must be completely clean
+- **Safety checks required**: All arithmetic operations must handle overflow/underflow
+- **Progress value validation**: Always clamp progress values to 0.0-1.0 range
+- **Memory management**: Implement proper tab hibernation for performance
+
+### WebKit Integration
+- Use `WKWebView` with proper configuration for security and performance
+- Implement progress observers with safety guards for non-finite values
+- Handle navigation delegate methods for custom URL handling
+- Support developer tools through WKWebView inspector
+
+### Performance Requirements
+- Tab hibernation when not active to manage memory
+- GPU-accelerated scrolling and animations
+- Safe arithmetic operations to prevent runtime crashes
+- Progress tracking with bounds checking
+
+## Development Workflow
+
+1. **Read specs first**: Always check `specs/web-browser-spec.md` for current requirements
+2. **Follow phase structure**: Implementation is organized in phases (Foundation → UI → Advanced)
+3. **Update specs**: Mark completed tasks and add new discoveries
+4. **Zero-error builds**: Never proceed with warnings or errors
+5. **Test thoroughly**: Verify no crashes and proper functionality

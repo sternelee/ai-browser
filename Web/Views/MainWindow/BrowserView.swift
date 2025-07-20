@@ -205,7 +205,7 @@ struct WebContentView: View {
             // Loading progress bar
             if tab.isLoading {
                 VStack {
-                    ProgressView(value: tab.estimatedProgress.isFinite ? min(max(tab.estimatedProgress, 0.0), 1.0) : 0.0)
+                    ProgressView(value: SafeNumericConversions.safeProgress(tab.estimatedProgress))
                         .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                         .frame(height: 2)
                     Spacer()

@@ -100,15 +100,14 @@ class Tab: ObservableObject, Identifiable {
         let config = WKSnapshotConfiguration()
         let bounds = webView.bounds
         
-        // Safety check for bounds to prevent Double/Int conversion issues
-        guard bounds.width.isFinite && bounds.height.isFinite && 
-              bounds.width > 0 && bounds.height > 0 &&
-              bounds.width <= CGFloat(Int.max) && bounds.height <= CGFloat(Int.max) else {
+        // Use safe rect validation to prevent Double/Int conversion issues
+        let safeBounds = SafeNumericConversions.validateSafeRect(bounds)
+        guard safeBounds.width > 0 && safeBounds.height > 0 else {
             print("Warning: Invalid webView bounds for snapshot: \(bounds)")
             return
         }
         
-        config.rect = bounds
+        config.rect = safeBounds
         
         webView.takeSnapshot(with: config) { [weak self] image, error in
             DispatchQueue.main.async {

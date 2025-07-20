@@ -163,9 +163,9 @@ extension DownloadManager: URLSessionDownloadDelegate {
             
             // Calculate speed with safety checks
             let timeElapsed = Date().timeIntervalSince(download.startDate)
-            if timeElapsed > 0 {
+            if timeElapsed > 0 && timeElapsed.isFinite {
                 let speed = Double(totalBytesWritten) / timeElapsed
-                download.speed = speed.isFinite ? speed : 0
+                download.speed = speed.isFinite && speed >= 0 ? speed : 0
             } else {
                 download.speed = 0
             }

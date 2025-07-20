@@ -41,9 +41,13 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // Enable GPU acceleration
-        webView.configuration.preferences.setValue(true, forKey: "webgl2Enabled")
-        webView.configuration.preferences.setValue(true, forKey: "webglEnabled")
+        // Configure for optimal web content including WebGL
+        // Note: WebGL is enabled by default in WKWebView on macOS
+        // These settings optimize the viewing experience
+        webView.configuration.preferences.isElementFullscreenEnabled = true
+        
+        // Enable modern web features (JavaScript is enabled by default)
+        // WebGL support is built into WebKit and doesn't require special configuration
         
         // Set up observers with error handling
         context.coordinator.setupObservers(for: webView)
@@ -76,19 +80,8 @@ struct WebView: NSViewRepresentable {
                 DispatchQueue.main.async {
                     let progress = webView.estimatedProgress
                     
-                    // Enhanced safety checks for progress values
-                    guard progress.isFinite && !progress.isNaN && !progress.isInfinite else {
-                        self?.parent.estimatedProgress = 0.0
-                        return
-                    }
-                    
-                    // Additional check to prevent extremely large values
-                    guard progress <= Double(Int.max) && progress >= -Double(Int.max) else {
-                        self?.parent.estimatedProgress = 0.0
-                        return
-                    }
-                    
-                    self?.parent.estimatedProgress = min(max(progress, 0.0), 1.0)
+                    // Use safe progress conversion to prevent crashes
+                    self?.parent.estimatedProgress = SafeNumericConversions.safeProgress(progress)
                 }
             }
             
