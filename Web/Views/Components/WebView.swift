@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import Foundation
 
 struct WebView: NSViewRepresentable {
     @Binding var url: URL?
@@ -17,11 +18,13 @@ struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // Enable advanced WebKit features
+        // Enable advanced WebKit features with safety checks
         config.allowsAirPlayForMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
         config.preferences.isSiteSpecificQuirksModeEnabled = true
+        
+        // Safely set developer extras
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
@@ -32,7 +35,9 @@ struct WebView: NSViewRepresentable {
         let contentController = WKUserContentController()
         config.userContentController = contentController
         
-        let webView = WKWebView(frame: .zero, configuration: config)
+        // Create WebView with safe frame to prevent frame calculation issues
+        let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let webView = WKWebView(frame: safeFrame, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
@@ -40,7 +45,7 @@ struct WebView: NSViewRepresentable {
         webView.configuration.preferences.setValue(true, forKey: "webgl2Enabled")
         webView.configuration.preferences.setValue(true, forKey: "webglEnabled")
         
-        // Observe progress
+        // Set up observers with error handling
         context.coordinator.setupObservers(for: webView)
         
         return webView
@@ -70,10 +75,19 @@ struct WebView: NSViewRepresentable {
             progressObserver = webView.observe(\.estimatedProgress, options: .new) { [weak self] webView, _ in
                 DispatchQueue.main.async {
                     let progress = webView.estimatedProgress
-                    guard progress.isFinite else {
+                    
+                    // Enhanced safety checks for progress values
+                    guard progress.isFinite && !progress.isNaN && !progress.isInfinite else {
                         self?.parent.estimatedProgress = 0.0
                         return
                     }
+                    
+                    // Additional check to prevent extremely large values
+                    guard progress <= Double(Int.max) && progress >= -Double(Int.max) else {
+                        self?.parent.estimatedProgress = 0.0
+                        return
+                    }
+                    
                     self?.parent.estimatedProgress = min(max(progress, 0.0), 1.0)
                 }
             }
