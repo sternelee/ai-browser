@@ -165,7 +165,7 @@ struct BottomHoverSearch: View {
     
     private var historyIconView: some View {
         Image(systemName: "clock")
-            .foregroundColor(.tertiary)
+            .foregroundColor(Color.primary.opacity(0.3))
             .font(.system(size: 12))
     }
     

@@ -175,9 +175,8 @@ struct SidebarTabItem: View {
     }
     
     private var extractedFaviconColor: Color? {
-        // TODO: Implement favicon color extraction in Phase 2 later
-        // This would analyze the dominant color in the favicon
-        return nil
+        // Extract color from favicon for adaptive theming
+        return extractedFaviconColor(for: tab)
     }
     
     private var faviconView: some View {
