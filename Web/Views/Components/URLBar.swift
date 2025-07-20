@@ -48,10 +48,20 @@ struct URLBar: View {
     }
     
     private func isValidURL(_ string: String) -> Bool {
-        if string.contains(".") && !string.contains(" ") {
-            return true
+        // Check if it already has a scheme
+        if string.hasPrefix("http://") || string.hasPrefix("https://") {
+            return URL(string: string) != nil
         }
-        return URL(string: string) != nil
+        
+        // Check if it looks like a domain (contains . and no spaces)
+        if string.contains(".") && !string.contains(" ") {
+            // Make sure it's not just a decimal number
+            if !string.allSatisfy({ $0.isNumber || $0 == "." }) {
+                return true
+            }
+        }
+        
+        return false
     }
     
 }

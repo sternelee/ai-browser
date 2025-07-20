@@ -52,14 +52,16 @@ struct BrowserView: View {
         
         let processedURL: URL?
         
-        // Check if it's a valid URL or if we need to search
-        if url.hasPrefix("http://") || url.hasPrefix("https://") {
-            processedURL = URL(string: url)
-        } else if url.contains(".") && !url.contains(" ") {
-            // Looks like a domain, add https://
-            processedURL = URL(string: "https://\(url)")
+        // Use same logic as URLBar for consistency
+        if isValidURL(url) {
+            if url.hasPrefix("http://") || url.hasPrefix("https://") {
+                processedURL = URL(string: url)
+            } else {
+                // Add https:// to domain-like strings
+                processedURL = URL(string: "https://\(url)")
+            }
         } else {
-            // Search Google
+            // Search Google for anything that doesn't look like a URL
             let query = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             processedURL = URL(string: "https://www.google.com/search?q=\(query)")
         }
@@ -68,6 +70,23 @@ struct BrowserView: View {
         
         activeTab.navigate(to: validURL)
         urlString = validURL.absoluteString
+    }
+    
+    private func isValidURL(_ string: String) -> Bool {
+        // Check if it already has a scheme
+        if string.hasPrefix("http://") || string.hasPrefix("https://") {
+            return URL(string: string) != nil
+        }
+        
+        // Check if it looks like a domain (contains . and no spaces)
+        if string.contains(".") && !string.contains(" ") {
+            // Make sure it's not just a decimal number
+            if !string.allSatisfy({ $0.isNumber || $0 == "." }) {
+                return true
+            }
+        }
+        
+        return false
     }
     
     private func showMenu() {

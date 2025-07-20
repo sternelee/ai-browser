@@ -366,6 +366,16 @@ After completing each implementation session, you MUST:
 
 ## Discovered During Work
 
+### Google Search Functionality Fix (July 20, 2025) ✅ COMPLETED
+- **Issue**: Google search wasn't working properly for non-URL inputs in the address bar
+- **Root Cause**: Inconsistent URL validation logic between URLBar.swift and BrowserView.swift components
+- **Fixes Applied**:
+  1. **Enhanced URL Validation**: Improved `isValidURL()` function to better distinguish between URLs and search queries
+  2. **Decimal Number Handling**: Added logic to prevent decimal numbers (like "1.5") from being treated as domains
+  3. **Consistent Logic**: Standardized URL processing between URLBar and BrowserView components
+  4. **Search Query Encoding**: Proper URL encoding for Google search queries with special characters
+- **Verification**: Build completes with 0 warnings and 0 errors, Google search now works for any non-URL input
+
 ### Phase 1 Critical Fixes Applied
 **Double→Int Conversion Crash (July 20, 2025)** ✅ FULLY RESOLVED
 - **Issue**: Runtime crash with "Double value cannot be converted to Int because the result would be greater than Int.max"
