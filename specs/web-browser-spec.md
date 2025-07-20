@@ -361,8 +361,6 @@ After completing each implementation session, you MUST:
 
 **Non-negotiable rule: Never proceed to the next phase with build warnings!**
 
-**ALSO CRITICAL: lets strive for 0 logs console, bug have logs of errors logs EVERYWHERE, so we can properly debug bc we have error checks at every step but the ideal is 0 logs, we only see logs if there are errors**
-
 ## Discovered During Work
 
 ### Phase 1 Critical Fixes Applied
