@@ -63,13 +63,7 @@ class Tab: ObservableObject, Identifiable {
     }
     
     func navigate(to url: URL) {
-        print("Tab.navigate(to:) called with URL: \(url)")
         self.url = url
-        
-        // Let SwiftUI WebView handle the navigation through updateNSView
-        // Don't call webView.load() directly to avoid conflicts
-        print("URL updated, SwiftUI WebView will handle navigation")
-        
         updateLastAccessed()
     }
     
@@ -84,8 +78,6 @@ class Tab: ObservableObject, Identifiable {
         webView?.removeFromSuperview()
         webView = nil
         isHibernated = true
-        
-        print("Tab hibernated: \(title)")
     }
     
     func wakeUp() {
@@ -94,8 +86,6 @@ class Tab: ObservableObject, Identifiable {
         isHibernated = false
         // WebView will be recreated when needed
         updateLastAccessed()
-        
-        print("Tab woke up: \(title)")
     }
     
     private func createSnapshot() {
@@ -107,7 +97,6 @@ class Tab: ObservableObject, Identifiable {
         // Use safe rect validation to prevent Double/Int conversion issues
         let safeBounds = SafeNumericConversions.validateSafeRect(bounds)
         guard safeBounds.width > 0 && safeBounds.height > 0 else {
-            print("Warning: Invalid webView bounds for snapshot: \(bounds)")
             return
         }
         
@@ -115,9 +104,6 @@ class Tab: ObservableObject, Identifiable {
         
         webView.takeSnapshot(with: config) { [weak self] image, error in
             DispatchQueue.main.async {
-                if let error = error {
-                    print("Snapshot error: \(error)")
-                }
                 self?.snapshot = image
             }
         }

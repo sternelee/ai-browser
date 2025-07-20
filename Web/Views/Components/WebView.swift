@@ -60,9 +60,6 @@ struct WebView: NSViewRepresentable {
         context.coordinator.webView = webView
         if let tab = tab {
             tab.webView = webView
-            print("WebView connected to tab: \(tab.id)")
-        } else {
-            print("Warning: WebView created without tab reference")
         }
         
         return webView
@@ -71,7 +68,6 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         // Only load if URL is different and not currently loading
         if let url = url, webView.url != url, !webView.isLoading {
-            print("updateNSView: Loading URL \(url)")
             let request = URLRequest(url: url)
             webView.load(request)
         }
@@ -109,7 +105,6 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            print("Started provisional navigation")
             parent.isLoading = true
         }
         
@@ -125,13 +120,10 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            print("Navigation failed: \(error.localizedDescription)")
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            print("Provisional navigation failed: \(error.localizedDescription)")
-            print("Error code: \((error as NSError).code)")
         }
         
         private func extractFavicon(from webView: WKWebView) {
@@ -164,15 +156,10 @@ struct WebView: NSViewRepresentable {
         
         // MARK: - Navigation policy handling
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            print("Navigation policy requested for: \(navigationAction.request.url?.absoluteString ?? "unknown")")
-            print("Navigation type: \(navigationAction.navigationType.rawValue)")
-            
             if let customAction = parent.onNavigationAction {
                 let policy = customAction(navigationAction)
-                print("Custom policy returned: \(policy.rawValue)")
                 decisionHandler(policy)
             } else {
-                print("Allowing navigation")
                 decisionHandler(.allow)
             }
         }

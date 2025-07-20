@@ -89,8 +89,9 @@ struct ShareButton: View {
         guard let url = URL(string: urlString) else { return }
         
         let sharingPicker = NSSharingServicePicker(items: [url])
-        if let window = NSApplication.shared.keyWindow {
-            sharingPicker.show(relativeTo: .zero, of: window.contentView!, preferredEdge: .minY)
+        if let window = NSApplication.shared.keyWindow,
+           let contentView = window.contentView {
+            sharingPicker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
         }
     }
 }

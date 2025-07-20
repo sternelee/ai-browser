@@ -15,7 +15,12 @@ class DownloadManager: NSObject, ObservableObject {
     }()
     
     private let downloadDirectory: URL = {
-        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+        guard let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            // Fallback to Documents directory if Downloads is not accessible
+            return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first 
+                ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        }
+        return directory
     }()
     
     override init() {

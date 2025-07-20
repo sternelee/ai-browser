@@ -72,7 +72,6 @@ struct BrowserView: View {
     
     private func showMenu() {
         // TODO: Implement menu functionality
-        print("Menu button tapped")
     }
 }
 
