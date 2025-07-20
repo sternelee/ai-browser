@@ -70,7 +70,11 @@ struct WebView: NSViewRepresentable {
             progressObserver = webView.observe(\.estimatedProgress, options: .new) { [weak self] webView, _ in
                 DispatchQueue.main.async {
                     let progress = webView.estimatedProgress
-                    self?.parent.estimatedProgress = progress.isFinite ? min(max(progress, 0.0), 1.0) : 0.0
+                    guard progress.isFinite else {
+                        self?.parent.estimatedProgress = 0.0
+                        return
+                    }
+                    self?.parent.estimatedProgress = min(max(progress, 0.0), 1.0)
                 }
             }
             
