@@ -32,6 +32,10 @@ struct WebView: NSViewRepresentable {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
+        // Suppress verbose WebKit logging
+        config.preferences.setValue(false, forKey: "logsPageMessagesToSystemConsoleEnabled")
+        config.preferences.setValue(false, forKey: "diagnosticLoggingEnabled")
+        
         // User agent customization
         config.applicationNameForUserAgent = "Web/1.0"
         

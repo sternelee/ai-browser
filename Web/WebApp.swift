@@ -1,7 +1,12 @@
 import SwiftUI
+import os.log
 
 @main
 struct WebApp: App {
+    init() {
+        configureLogging()
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -11,6 +16,18 @@ struct WebApp: App {
         .commands {
             BrowserCommands()
         }
+    }
+    
+    private func configureLogging() {
+        // Set environment variables to reduce WebKit verbosity
+        // These help suppress the RBSService and ViewBridge logs
+        setenv("WEBKIT_DISABLE_VERBOSE_LOGGING", "1", 1)
+        setenv("WEBKIT_SUPPRESS_PROCESS_LOGS", "1", 1)
+        setenv("OS_ACTIVITY_MODE", "disable", 1)
+        
+        // Reduce logging for specific subsystems
+        let logger = Logger(subsystem: "com.example.Web", category: "App")
+        logger.info("Web browser started with reduced WebKit logging")
     }
 }
 
