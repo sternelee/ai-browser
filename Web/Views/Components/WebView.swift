@@ -28,9 +28,13 @@ struct WebView: NSViewRepresentable {
         // Network and security settings
         config.websiteDataStore = WKWebsiteDataStore.default()
         
-        // Safely set developer extras
+        // Safely set developer extras with minimal logging
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        
+        // Reduce system console noise
+        config.preferences.setValue(false, forKey: "logsPageMessagesToSystemConsoleEnabled")
+        config.preferences.setValue(false, forKey: "diagnosticLoggingEnabled")
         
         // User agent customization
         config.applicationNameForUserAgent = "Web/1.0"
