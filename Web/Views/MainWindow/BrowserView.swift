@@ -191,29 +191,18 @@ struct WebContentView: View {
                         tab.wakeUp()
                     }
             } else {
-                // Active web view
-                WebView(
-                    url: $tab.url,
-                    canGoBack: $tab.canGoBack,
-                    canGoForward: $tab.canGoForward,
-                    isLoading: $tab.isLoading,
-                    estimatedProgress: $tab.estimatedProgress,
-                    title: Binding(
-                        get: { tab.title },
-                        set: { tab.title = $0 ?? "New Tab" }
-                    ),
-                    favicon: $tab.favicon,
-                    tab: tab,
-                    onNavigationAction: nil,
-                    onDownloadRequest: { url, filename in
-                        // TODO: Handle downloads
-                        print("Download requested: \(url)")
-                    }
-                )
-                .onChange(of: tab.url) { _, newURL in
-                    if let url = newURL {
-                        urlString = url.absoluteString
-                    }
+                // Test with simple WebView
+                if let url = tab.url {
+                    SimpleWebView(url: url)
+                        .onChange(of: tab.url) { _, newURL in
+                            if let url = newURL {
+                                urlString = url.absoluteString
+                            }
+                        }
+                } else {
+                    Text("No URL to load")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.ultraThinMaterial)
                 }
             }
             

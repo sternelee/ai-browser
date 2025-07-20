@@ -25,6 +25,9 @@ struct WebView: NSViewRepresentable {
         config.preferences.isElementFullscreenEnabled = true
         config.preferences.isSiteSpecificQuirksModeEnabled = true
         
+        // Network and security settings
+        config.websiteDataStore = WKWebsiteDataStore.default()
+        
         // Safely set developer extras
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
@@ -66,7 +69,9 @@ struct WebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
-        if let url = url, webView.url != url {
+        // Only load if URL is different and not currently loading
+        if let url = url, webView.url != url, !webView.isLoading {
+            print("updateNSView: Loading URL \(url)")
             let request = URLRequest(url: url)
             webView.load(request)
         }
@@ -104,6 +109,7 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            print("Started provisional navigation")
             parent.isLoading = true
         }
         
@@ -156,12 +162,17 @@ struct WebView: NSViewRepresentable {
             }.resume()
         }
         
-        // MARK: - Download handling
+        // MARK: - Navigation policy handling
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            print("Navigation policy requested for: \(navigationAction.request.url?.absoluteString ?? "unknown")")
+            print("Navigation type: \(navigationAction.navigationType.rawValue)")
+            
             if let customAction = parent.onNavigationAction {
                 let policy = customAction(navigationAction)
+                print("Custom policy returned: \(policy.rawValue)")
                 decisionHandler(policy)
             } else {
+                print("Allowing navigation")
                 decisionHandler(.allow)
             }
         }

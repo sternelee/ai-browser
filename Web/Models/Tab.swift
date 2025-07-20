@@ -65,14 +65,10 @@ class Tab: ObservableObject, Identifiable {
     func navigate(to url: URL) {
         print("Tab.navigate(to:) called with URL: \(url)")
         self.url = url
-        let request = URLRequest(url: url)
         
-        if let webView = webView {
-            print("WebView exists, loading request: \(url)")
-            webView.load(request)
-        } else {
-            print("WebView is nil! Cannot load request.")
-        }
+        // Let SwiftUI WebView handle the navigation through updateNSView
+        // Don't call webView.load() directly to avoid conflicts
+        print("URL updated, SwiftUI WebView will handle navigation")
         
         updateLastAccessed()
     }
