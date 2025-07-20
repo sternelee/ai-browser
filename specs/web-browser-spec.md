@@ -346,6 +346,8 @@ Web/
 
 **CRITICAL: lets strive for 0 logs console, bug have logs of errors logs EVERYWHERE, so we can properly debug bc we have error checks at every step but the ideal is 0 logs, we only see logs if there are errors**
 
+**ALSO CRITICAL: Don't take shortcuts to make stuff work, make stuff work PROPERLY.**
+
 **ALSO EVERY SESSION MUST END WITH ZERO WARNINGS AND ZERO ERRORS**
 
 After completing each implementation session, you MUST:

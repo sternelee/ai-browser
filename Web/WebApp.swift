@@ -82,6 +82,16 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .showDeveloperToolsRequested, object: nil)
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
+            
+            Button("Toggle Tab Display") {
+                NotificationCenter.default.post(name: .toggleTabDisplay, object: nil)
+            }
+            .keyboardShortcut("s", modifiers: .command)
+            
+            Button("Toggle Edge-to-Edge Mode") {
+                NotificationCenter.default.post(name: .toggleEdgeToEdge, object: nil)
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
         }
     }
 }
@@ -96,4 +106,10 @@ extension Notification.Name {
     static let findInPageRequested = Notification.Name("findInPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
+    
+    // Phase 2: Next-Gen UI shortcuts
+    static let toggleTabDisplay = Notification.Name("toggleTabDisplay")
+    static let toggleEdgeToEdge = Notification.Name("toggleEdgeToEdge")
+    static let navigateBack = Notification.Name("navigateBack")
+    static let navigateForward = Notification.Name("navigateForward")
 }

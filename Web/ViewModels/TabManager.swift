@@ -96,6 +96,23 @@ class TabManager: ObservableObject {
         }
     }
     
+    // MARK: - Additional Tab Operations
+    func closeOtherTabs(except tab: Tab) {
+        let tabsToClose = tabs.filter { $0.id != tab.id }
+        for tabToClose in tabsToClose {
+            closeTab(tabToClose)
+        }
+    }
+    
+    func closeTabsToTheRight(of tab: Tab) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        
+        let tabsToClose = Array(tabs.suffix(from: index + 1))
+        for tabToClose in tabsToClose {
+            closeTab(tabToClose)
+        }
+    }
+    
     // MARK: - Search and Filter
     func searchTabs(query: String) -> [Tab] {
         guard !query.isEmpty else { return tabs }

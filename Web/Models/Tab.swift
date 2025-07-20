@@ -1,8 +1,9 @@
 import SwiftUI
 import WebKit
 import Combine
+import UniformTypeIdentifiers
 
-class Tab: ObservableObject, Identifiable {
+class Tab: ObservableObject, Identifiable, Transferable {
     let id = UUID()
     @Published var url: URL?
     @Published var title: String = "New Tab"
@@ -149,5 +150,12 @@ class Tab: ObservableObject, Identifiable {
     
     deinit {
         hibernationTimer?.invalidate()
+    }
+    
+    // MARK: - Transferable Implementation
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation { tab in
+            tab.id.uuidString
+        }
     }
 }
