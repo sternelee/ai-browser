@@ -63,9 +63,17 @@ class Tab: ObservableObject, Identifiable {
     }
     
     func navigate(to url: URL) {
+        print("Tab.navigate(to:) called with URL: \(url)")
         self.url = url
         let request = URLRequest(url: url)
-        webView?.load(request)
+        
+        if let webView = webView {
+            print("WebView exists, loading request: \(url)")
+            webView.load(request)
+        } else {
+            print("WebView is nil! Cannot load request.")
+        }
+        
         updateLastAccessed()
     }
     

@@ -42,18 +42,32 @@ struct BrowserView: View {
         .onAppear {
             // Initialize with a default URL if needed
             if let firstTab = tabManager.tabs.first, firstTab.url == nil {
-                urlString = "https://www.google.com"
-                navigateToURL(urlString)
+                navigateToURL("google.com")
             }
         }
     }
     
     private func navigateToURL(_ url: String) {
-        guard let activeTab = tabManager.activeTab,
-              let validURL = URL(string: url) else { return }
+        guard let activeTab = tabManager.activeTab else { return }
+        
+        let processedURL: URL?
+        
+        // Check if it's a valid URL or if we need to search
+        if url.hasPrefix("http://") || url.hasPrefix("https://") {
+            processedURL = URL(string: url)
+        } else if url.contains(".") && !url.contains(" ") {
+            // Looks like a domain, add https://
+            processedURL = URL(string: "https://\(url)")
+        } else {
+            // Search Google
+            let query = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            processedURL = URL(string: "https://www.google.com/search?q=\(query)")
+        }
+        
+        guard let validURL = processedURL else { return }
         
         activeTab.navigate(to: validURL)
-        urlString = url
+        urlString = validURL.absoluteString
     }
     
     private func showMenu() {
@@ -189,6 +203,7 @@ struct WebContentView: View {
                         set: { tab.title = $0 ?? "New Tab" }
                     ),
                     favicon: $tab.favicon,
+                    tab: tab,
                     onNavigationAction: nil,
                     onDownloadRequest: { url, filename in
                         // TODO: Handle downloads

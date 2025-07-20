@@ -12,6 +12,7 @@ struct WebView: NSViewRepresentable {
     @Binding var title: String?
     @Binding var favicon: NSImage?
     
+    let tab: Tab?
     let onNavigationAction: ((WKNavigationAction) -> WKNavigationActionPolicy)?
     let onDownloadRequest: ((URL, String?) -> Void)?
     
@@ -52,6 +53,15 @@ struct WebView: NSViewRepresentable {
         // Set up observers with error handling
         context.coordinator.setupObservers(for: webView)
         
+        // Store webView reference for coordinator and tab
+        context.coordinator.webView = webView
+        if let tab = tab {
+            tab.webView = webView
+            print("WebView connected to tab: \(tab.id)")
+        } else {
+            print("Warning: WebView created without tab reference")
+        }
+        
         return webView
     }
     
@@ -68,6 +78,7 @@ struct WebView: NSViewRepresentable {
     
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let parent: WebView
+        weak var webView: WKWebView?
         private var progressObserver: NSKeyValueObservation?
         private var titleObserver: NSKeyValueObservation?
         
@@ -108,10 +119,13 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            print("Navigation failed: \(error.localizedDescription)")
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            print("Provisional navigation failed: \(error.localizedDescription)")
+            print("Error code: \((error as NSError).code)")
         }
         
         private func extractFavicon(from webView: WKWebView) {
