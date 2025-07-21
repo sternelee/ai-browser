@@ -3,9 +3,18 @@ import AppKit
 
 struct URLBar: View {
     @Binding var urlString: String
+    let themeColor: NSColor?
     let onSubmit: (String) -> Void
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
+    
+    // Convert NSColor to SwiftUI Color
+    private var swiftUIThemeColor: Color {
+        if let nsColor = themeColor {
+            return Color(nsColor)
+        }
+        return .clear
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -49,32 +58,80 @@ struct URLBar: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.bgSurface)
             
-            // Dynamic border with focus state
+            // Website theme color integration - seamless next-gen approach
+            if themeColor != nil && swiftUIThemeColor != .clear {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                swiftUIThemeColor.opacity(0.08),
+                                swiftUIThemeColor.opacity(0.04),
+                                Color.clear
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .animation(.easeInOut(duration: 0.4), value: themeColor)
+            }
+            
+            // Enhanced border with better focus state
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(
-                    isURLBarFocused ? Color.accentBeam : (hovering ? Color.borderGlass.opacity(0.8) : Color.borderGlass.opacity(0.4)),
-                    lineWidth: isURLBarFocused ? 2 : 1
+                    borderColor,
+                    lineWidth: borderWidth
                 )
-                .animation(.easeInOut(duration: 0.2), value: isURLBarFocused)
+                .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isURLBarFocused)
                 .animation(.easeInOut(duration: 0.2), value: hovering)
+                .animation(.easeInOut(duration: 0.4), value: themeColor)
             
-            // Subtle inner glow when focused
+            // Enhanced glow effect when focused
             if isURLBarFocused {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
                         RadialGradient(
                             colors: [
-                                Color.accentBeam.opacity(0.03),
+                                focusGlowColor.opacity(0.08),
+                                focusGlowColor.opacity(0.04),
                                 Color.clear
                             ],
                             center: .center,
-                            startRadius: 20,
-                            endRadius: 100
+                            startRadius: 30,
+                            endRadius: 120
                         )
                     )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: themeColor)
+                
+                // Outer glow for premium feel
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(
+                        focusGlowColor.opacity(0.3),
+                        lineWidth: 0.5
+                    )
+                    .blur(radius: 1)
                     .transition(.opacity)
             }
         }
+    }
+    
+    // Computed properties for enhanced styling
+    private var borderColor: Color {
+        if isURLBarFocused {
+            return themeColor != nil ? swiftUIThemeColor.opacity(0.8) : Color.accentBeam
+        } else if hovering {
+            return Color.borderGlass.opacity(0.8)
+        } else {
+            return Color.borderGlass.opacity(0.4)
+        }
+    }
+    
+    private var borderWidth: CGFloat {
+        isURLBarFocused ? 2.0 : 1.0
+    }
+    
+    private var focusGlowColor: Color {
+        return themeColor != nil ? swiftUIThemeColor : Color.accentBeam
     }
     
     private func navigateToURL() {
@@ -217,5 +274,5 @@ struct URLBarActionButtonStyle: ButtonStyle {
 }
 
 #Preview {
-    URLBar(urlString: .constant("google.com"), onSubmit: { _ in })
+    URLBar(urlString: .constant("google.com"), themeColor: nil, onSubmit: { _ in })
 }

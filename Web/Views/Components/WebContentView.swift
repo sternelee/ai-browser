@@ -72,15 +72,71 @@ struct WebContentView: View {
                 }
             }
             
-            // Loading progress bar
+            // Enhanced loading progress bar with theme color integration
             if tab.isLoading {
                 VStack {
-                    ProgressView(value: SafeNumericConversions.safeProgress(tab.estimatedProgress))
-                        .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                        .frame(height: 2)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            // Background track
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.15))
+                                .frame(height: 3)
+                            
+                            // Main progress fill with theme color
+                            Rectangle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            themeAwareProgressColor.opacity(0.9),
+                                            themeAwareProgressColor,
+                                            themeAwareProgressColor.opacity(0.8)
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: geometry.size.width * progressPercent, height: 3)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            
+                            // Enhanced glow effect
+                            Rectangle()
+                                .fill(themeAwareProgressColor.opacity(0.4))
+                                .frame(width: geometry.size.width * progressPercent, height: 3)
+                                .blur(radius: 2)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            
+                            // Extra bright glow for better visibility
+                            Rectangle()
+                                .fill(themeAwareProgressColor.opacity(0.6))
+                                .frame(width: geometry.size.width * progressPercent, height: 1)
+                                .blur(radius: 4)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                        }
+                        .clipShape(Capsule())
+                    }
+                    .frame(height: 3)
+                    .transition(.opacity.combined(with: .scale(scale: 1.0, anchor: .leading)))
+                    
                     Spacer()
                 }
             }
         }
+    }
+    
+    // Theme-aware progress color with fallback
+    private var themeAwareProgressColor: Color {
+        if let themeColor = tab.themeColor {
+            let nsColor = themeColor
+            // Ensure the color has good visibility
+            return Color(nsColor).opacity(0.9)
+        }
+        return Color.blue
+    }
+    
+    // Progress as percentage for width calculation
+    private var progressPercent: CGFloat {
+        return CGFloat(SafeNumericConversions.safeProgress(tab.estimatedProgress))
     }
 }

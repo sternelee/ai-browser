@@ -74,12 +74,24 @@ struct SidebarTabView: View {
         }) {
             Image(systemName: "plus")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color.secondary)
+                .foregroundColor(newTabHovering ? Color.primary : Color.secondary)
                 .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color.secondary.opacity(newTabHovering ? 0.1 : 0.0))
+                        .scaleEffect(newTabHovering ? 1.0 : 0.8)
+                )
         }
         .buttonStyle(PlainButtonStyle())
-        .scaleEffect(0.9) // Slightly smaller for minimal aesthetic
+        .scaleEffect(newTabHovering ? 1.0 : 0.9)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                newTabHovering = hovering
+            }
+        }
     }
+    
+    @State private var newTabHovering: Bool = false
     
     private var settingsButton: some View {
         Button(action: { 
@@ -87,12 +99,24 @@ struct SidebarTabView: View {
         }) {
             Image(systemName: "gearshape")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color.secondary)
+                .foregroundColor(settingsHovering ? Color.primary : Color.secondary)
                 .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color.secondary.opacity(settingsHovering ? 0.1 : 0.0))
+                        .scaleEffect(settingsHovering ? 1.0 : 0.8)
+                )
         }
         .buttonStyle(PlainButtonStyle())
-        .scaleEffect(0.9)
+        .scaleEffect(settingsHovering ? 1.0 : 0.9)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                settingsHovering = hovering
+            }
+        }
     }
+    
+    @State private var settingsHovering: Bool = false
     
     private func handleTabDrop(tabs: [Web.Tab], location: CGPoint) {
         guard let droppedTab = tabs.first,
@@ -144,20 +168,25 @@ struct SidebarTabItem: View {
         ZStack {
             backgroundView
             
-            ZStack {
-                // Favicon always perfectly centered
-                faviconView
-                    .frame(width: 24, height: 24)
+            HStack(spacing: 0) {
+                // Left side - favicon centered in its space
+                HStack {
+                    Spacer()
+                    faviconView
+                        .frame(width: 24, height: 24)
+                    Spacer()
+                }
+                .frame(width: 32)
                 
-                // Close button positioned further to the right
+                // Right side - close button with proper separation
                 HStack {
                     Spacer()
                     if showCloseButton && isHovered {
                         closeButton
                             .transition(.scale.combined(with: .opacity))
-                            .padding(.trailing, 4) // Push it more to the right
                     }
                 }
+                .frame(width: 16)
             }
             .frame(width: 48, height: 44)
         }

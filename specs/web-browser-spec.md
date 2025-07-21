@@ -95,6 +95,13 @@ Web/
    - Developer tools/inspect element
    - Print functionality
    - Zoom controls
+   - **URL Bar Autofill System**
+     - History-based suggestions with fuzzy matching
+     - Bookmark title and URL suggestions
+     - Most visited sites prioritization
+     - Real-time filtering as user types
+     - Keyboard navigation (↑↓ arrows, Enter to select)
+     - Smart ranking algorithm (frequency + recency)
 
 3. **Keyboard Shortcuts**
    - Cmd+T: New tab
@@ -224,6 +231,7 @@ Web/
 - [x] Essential browser features (print, zoom, developer tools)
 - [x] Download manager with progress tracking
 - [x] Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+R, etc.)
+- [ ] **URL Bar Autofill System** (See detailed spec in specs/url-autofill-spec.md)
 - [ ] Customizable toolbar system
 - [ ] Session restoration for closed tabs/windows
 

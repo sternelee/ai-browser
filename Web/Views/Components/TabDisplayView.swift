@@ -180,9 +180,13 @@ struct WebContentArea: View {
                         NavigationControls(tab: activeTab)
                     }
                     
-                    // URL bar with reduced height
-                    URLBar(urlString: $urlString, onSubmit: navigateToURL)
-                        .frame(maxWidth: .infinity)
+                    // URL bar with reduced height and theme color
+                    URLBar(
+                        urlString: $urlString, 
+                        themeColor: tabManager.activeTab?.themeColor,
+                        onSubmit: navigateToURL
+                    )
+                    .frame(maxWidth: .infinity)
                     
                     // Menu button
                     Button(action: showMenu) {

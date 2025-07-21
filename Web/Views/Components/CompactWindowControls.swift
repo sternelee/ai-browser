@@ -4,9 +4,29 @@ import SwiftUI
 struct CompactWindowControls: View {
     @State private var isHovered: Bool = false
     @State private var showFullControls: Bool = false
+    @State private var hostingWindow: NSWindow?
+    
+    private func findWindow(view: NSView?) -> NSWindow? {
+        var currentView = view
+        while let view = currentView {
+            if let window = view.window {
+                return window
+            }
+            currentView = view.superview
+        }
+        return nil
+    }
     
     private func getCurrentWindow() -> NSWindow? {
-        return NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow ?? NSApplication.shared.windows.first
+        // Try the stored hosting window first
+        if let window = hostingWindow {
+            return window
+        }
+        
+        // Try NSApplication methods as fallback
+        return NSApplication.shared.keyWindow ?? 
+               NSApplication.shared.mainWindow ?? 
+               NSApplication.shared.windows.first(where: { $0.isVisible })
     }
     
     var body: some View {
@@ -29,6 +49,12 @@ struct CompactWindowControls: View {
                 isHovered = hovering
             }
         }
+        .background(
+            // Invisible view to capture window reference
+            WindowAccessor { window in
+                self.hostingWindow = window
+            }
+        )
     }
     
     private var miniIndicator: some View {
@@ -58,7 +84,7 @@ struct CompactWindowControls: View {
             CompactWindowControlButton(
                 color: .red,
                 action: { 
-                    getCurrentWindow()?.performClose(nil)
+                    NSApplication.shared.terminate(nil)
                 }
             )
             
@@ -67,7 +93,12 @@ struct CompactWindowControls: View {
                 color: .orange,
                 isMinimizeButton: true,
                 action: { 
-                    getCurrentWindow()?.performMiniaturize(nil)
+                    for window in NSApplication.shared.windows {
+                        if window.isVisible {
+                            window.miniaturize(nil)
+                            break
+                        }
+                    }
                 }
             )
             
@@ -76,7 +107,12 @@ struct CompactWindowControls: View {
                 color: .green,
                 isMaximizeButton: true,
                 action: { 
-                    getCurrentWindow()?.performZoom(nil)
+                    for window in NSApplication.shared.windows {
+                        if window.isVisible {
+                            window.zoom(nil)
+                            break
+                        }
+                    }
                 }
             )
         }
@@ -184,6 +220,25 @@ struct CompactWindowControlButton: View {
             return 12 // Make minimize button bigger too
         } else {
             return 12 // Make close button bigger
+        }
+    }
+}
+
+// Helper view to access the containing NSWindow
+struct WindowAccessor: NSViewRepresentable {
+    let callback: (NSWindow?) -> Void
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.callback(view.window)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            self.callback(nsView.window)
         }
     }
 }
