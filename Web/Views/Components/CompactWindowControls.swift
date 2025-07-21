@@ -5,6 +5,10 @@ struct CompactWindowControls: View {
     @State private var isHovered: Bool = false
     @State private var showFullControls: Bool = false
     
+    private func getCurrentWindow() -> NSWindow? {
+        return NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow ?? NSApplication.shared.windows.first
+    }
+    
     var body: some View {
         ZStack {
             // Mini indicator (always visible)
@@ -54,9 +58,7 @@ struct CompactWindowControls: View {
             CompactWindowControlButton(
                 color: .red,
                 action: { 
-                    if let window = NSApplication.shared.windows.first {
-                        window.performClose(nil)
-                    }
+                    getCurrentWindow()?.performClose(nil)
                 }
             )
             
@@ -65,9 +67,7 @@ struct CompactWindowControls: View {
                 color: .orange,
                 isMinimizeButton: true,
                 action: { 
-                    if let window = NSApplication.shared.windows.first {
-                        window.performMiniaturize(nil)
-                    }
+                    getCurrentWindow()?.performMiniaturize(nil)
                 }
             )
             
@@ -76,9 +76,7 @@ struct CompactWindowControls: View {
                 color: .green,
                 isMaximizeButton: true,
                 action: { 
-                    if let window = NSApplication.shared.windows.first {
-                        window.performZoom(nil)
-                    }
+                    getCurrentWindow()?.performZoom(nil)
                 }
             )
         }
@@ -180,7 +178,13 @@ struct CompactWindowControlButton: View {
     }
     
     private var buttonSize: CGFloat {
-        isMaximizeButton ? 10 : 8 // Make maximize button bigger
+        if isMaximizeButton {
+            return 14 // Make maximize button much bigger
+        } else if isMinimizeButton {
+            return 12 // Make minimize button bigger too
+        } else {
+            return 12 // Make close button bigger
+        }
     }
 }
 

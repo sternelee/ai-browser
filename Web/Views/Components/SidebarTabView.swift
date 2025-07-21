@@ -144,26 +144,20 @@ struct SidebarTabItem: View {
         ZStack {
             backgroundView
             
-            HStack(spacing: 0) {
-                // Favicon always centered in its own space
-                HStack {
-                    Spacer()
-                    faviconView
-                        .frame(width: 24, height: 24)
-                    Spacer()
-                }
-                .frame(width: 32) // Fixed width for favicon area
+            ZStack {
+                // Favicon always perfectly centered
+                faviconView
+                    .frame(width: 24, height: 24)
                 
-                // Close button area (separate from favicon)
+                // Close button positioned further to the right
                 HStack {
+                    Spacer()
                     if showCloseButton && isHovered {
                         closeButton
                             .transition(.scale.combined(with: .opacity))
-                    } else {
-                        Spacer()
+                            .padding(.trailing, 4) // Push it more to the right
                     }
                 }
-                .frame(width: 16) // Fixed width for close button area
             }
             .frame(width: 48, height: 44)
         }
