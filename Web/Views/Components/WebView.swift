@@ -129,6 +129,7 @@ struct WebView: NSViewRepresentable {
         weak var webView: WKWebView?
         private var progressObserver: NSKeyValueObservation?
         private var titleObserver: NSKeyValueObservation?
+        private var urlObserver: NSKeyValueObservation?
         var lastLoadedURL: URL?
         
         // Static shared cache to prevent duplicate downloads across all tabs
@@ -155,10 +156,33 @@ struct WebView: NSViewRepresentable {
                     self?.parent.title = webView.title
                 }
             }
+            
+            urlObserver = webView.observe(\.url, options: .new) { [weak self] webView, _ in
+                DispatchQueue.main.async {
+                    if let url = webView.url {
+                        self?.parent.url = url
+                        if let tab = self?.parent.tab {
+                            tab.url = url
+                        }
+                    }
+                }
+            }
         }
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             parent.isLoading = true
+        }
+        
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            // Update URL immediately when navigation commits (before page finishes loading)
+            if let url = webView.url {
+                DispatchQueue.main.async {
+                    self.parent.url = url
+                    if let tab = self.parent.tab {
+                        tab.url = url
+                    }
+                }
+            }
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -477,6 +501,7 @@ struct WebView: NSViewRepresentable {
         deinit {
             progressObserver?.invalidate()
             titleObserver?.invalidate()
+            urlObserver?.invalidate()
         }
     }
 }

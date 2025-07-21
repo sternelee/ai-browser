@@ -167,7 +167,7 @@ struct WebContentArea: View {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 16))
                     }
-                    .buttonStyle(GlassButtonStyle(size: .medium))
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8) // Reduced from 12 to 8 for more minimal height

@@ -29,14 +29,15 @@ struct ContentView: View {
                     x: 0,
                     y: isExpanded ? 0 : 8
                 )
-                .padding(isExpanded ? 0 : 8) // No padding when expanded
+                .background(Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             
             // Browser content inside the styled window
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(isExpanded ? 0 : 16) // No inner padding when expanded
-                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 0 : 8))
+                .padding(4) // No inner padding when expanded
+                .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .onTapGesture(count: 2) {
             toggleExpanded()
