@@ -6,11 +6,37 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Browser content with padding from transparent parent window
+            // Subtle window background with blur and border
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.2),
+                                    Color.white.opacity(0.05)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.5
+                        )
+                )
+                .shadow(
+                    color: .black.opacity(0.15),
+                    radius: 20,
+                    x: 0,
+                    y: 8
+                )
+                .padding(8) // Subtle padding from window edges
+            
+            // Browser content inside the styled window
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(8) // Padding from screen edges via transparent parent window
+                .padding(16) // Inner padding for content
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             
             // Custom window controls in top-left corner
             VStack {

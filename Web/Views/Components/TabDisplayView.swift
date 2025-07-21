@@ -74,12 +74,12 @@ struct TabDisplayView: View {
     @ViewBuilder
     private func edgeToEdgeHoverZones(geometry: GeometryProxy) -> some View {
         ZStack {
-            // Left edge hover zone for sidebar (only at left edge)
+            // Left edge hover zone for sidebar (better usability)
             if displayMode == .sidebar {
                 HStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(width: 3) // Very thin hover zone at left edge only
+                        .frame(width: 12) // Increased from 3px to 12px for better UX
                         .onHover { hovering in
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 showSidebarOnHover = hovering
@@ -89,12 +89,12 @@ struct TabDisplayView: View {
                 }
             }
             
-            // Top edge hover zone for top bar (only at top edge)
+            // Top edge hover zone for top bar (better usability)
             if displayMode == .topBar {
                 VStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 3) // Very thin hover zone at top edge only
+                        .frame(height: 12) // Increased from 3px to 12px for better UX
                         .onHover { hovering in
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 showTopBarOnHover = hovering
@@ -104,12 +104,12 @@ struct TabDisplayView: View {
                 }
             }
             
-            // Bottom edge hover zone for new tab search (only at very bottom edge)
+            // Bottom edge hover zone for new tab search (better usability)
             VStack {
                 Spacer()
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 3) // Very thin hover zone - only 3px at bottom
+                    .frame(height: 12) // Increased from 3px to 12px for better UX
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             showBottomSearchOnHover = hovering
