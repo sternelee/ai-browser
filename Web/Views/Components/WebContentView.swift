@@ -248,14 +248,24 @@ struct ExistingWebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
-        // Don't reload - the WebView maintains its own state
-        // Just ensure the tab's properties are synced
+        // Check if we need to navigate to a new URL
+        if let tabURL = tab.url, webView.url?.absoluteString != tabURL.absoluteString {
+            let request = URLRequest(url: tabURL)
+            webView.load(request)
+        }
+        
+        // Sync the tab's properties with webview state
         DispatchQueue.main.async {
-            tab.canGoBack = webView.canGoBack
-            tab.canGoForward = webView.canGoForward
-            tab.isLoading = webView.isLoading
-            tab.estimatedProgress = webView.estimatedProgress
-            tab.title = webView.title ?? "New Tab"
+            self.tab.canGoBack = webView.canGoBack
+            self.tab.canGoForward = webView.canGoForward
+            self.tab.isLoading = webView.isLoading
+            self.tab.estimatedProgress = webView.estimatedProgress
+            self.tab.title = webView.title ?? "New Tab"
+            
+            // Update tab URL if webview URL changed (e.g., due to redirects)
+            if let webViewURL = webView.url, webViewURL != self.tab.url {
+                self.tab.url = webViewURL
+            }
         }
     }
 }

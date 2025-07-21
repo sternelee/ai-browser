@@ -3,7 +3,7 @@ import WebKit
 import Combine
 import UniformTypeIdentifiers
 
-class Tab: ObservableObject, Identifiable, Transferable {
+class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     let id = UUID()
     @Published var url: URL?
     @Published var title: String = "New Tab"
@@ -163,6 +163,11 @@ class Tab: ObservableObject, Identifiable, Transferable {
     
     deinit {
         hibernationTimer?.invalidate()
+    }
+    
+    // MARK: - Equatable Implementation
+    static func == (lhs: Tab, rhs: Tab) -> Bool {
+        return lhs.id == rhs.id
     }
     
     // MARK: - Transferable Implementation

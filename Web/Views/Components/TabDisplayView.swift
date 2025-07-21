@@ -196,6 +196,21 @@ struct WebContentArea: View {
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @State private var isEdgeToEdgeMode: Bool = false
     
+    // Computed property to get current URL string from active tab
+    private var currentURLString: Binding<String> {
+        Binding(
+            get: {
+                if let activeTab = tabManager.activeTab, let url = activeTab.url {
+                    return url.absoluteString
+                }
+                return urlString
+            },
+            set: { newValue in
+                urlString = newValue
+            }
+        )
+    }
+    
     var body: some View {
         // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
@@ -209,7 +224,7 @@ struct WebContentArea: View {
                     
                     // URL bar with reduced height and theme color
                     URLBar(
-                        urlString: $urlString, 
+                        urlString: currentURLString, 
                         themeColor: tabManager.activeTab?.themeColor,
                         onSubmit: navigateToURL,
                         pageTitle: tabManager.activeTab?.title
@@ -338,7 +353,7 @@ struct WebContentArea: View {
             // Web content with smart status bar overlay
             ZStack(alignment: .bottom) {
                 if let activeTab = tabManager.activeTab {
-                    WebContentView(tab: activeTab, urlString: $urlString)
+                    WebContentView(tab: activeTab, urlString: currentURLString)
                 } else {
                     NewTabView()
                 }
@@ -355,6 +370,10 @@ struct WebContentArea: View {
             if let firstTab = tabManager.tabs.first, firstTab.url == nil {
                 navigateToURL("google.com")
             }
+            syncURLString()
+        }
+        .onChange(of: tabManager.activeTab) { _, newTab in
+            syncURLString()
         }
     }
     
@@ -401,5 +420,13 @@ struct WebContentArea: View {
     
     private func showMenu() {
         // TODO: Implement menu functionality
+    }
+    
+    private func syncURLString() {
+        if let activeTab = tabManager.activeTab, let url = activeTab.url {
+            urlString = url.absoluteString
+        } else {
+            urlString = ""
+        }
     }
 }
