@@ -11,6 +11,10 @@ struct URLBar: View {
     @State private var editingText: String = ""
     @State private var displayString: String = ""
     
+    // Add FocusCoordinator integration
+    private let barID = UUID().uuidString
+    private let focusCoordinator = FocusCoordinator.shared
+    
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
         if let nsColor = themeColor {
@@ -94,8 +98,17 @@ struct URLBar: View {
                 }
                 .onChange(of: isURLBarFocused) { _, focused in
                     if focused {
-                        editingText = urlString
+                        // Attempt to acquire global focus lock
+                        if focusCoordinator.canFocus(barID) {
+                            focusCoordinator.setFocusedURLBar(barID, focused: true)
+                            editingText = urlString
+                        } else {
+                            // Another URL bar already has focus – immediately relinquish
+                            isURLBarFocused = false
+                        }
                     } else {
+                        // Release global focus lock when focus is lost
+                        focusCoordinator.setFocusedURLBar(barID, focused: false)
                         updateDisplayString()
                     }
                 }
@@ -129,6 +142,10 @@ struct URLBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear {
             updateDisplayString()
+        }
+        .onDisappear {
+            // Ensure global focus state is cleared when this bar disappears (e.g., on fast tab switches)
+            focusCoordinator.setFocusedURLBar(barID, focused: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusURLBarRequested)) { _ in
             isURLBarFocused = true

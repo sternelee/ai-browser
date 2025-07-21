@@ -9,10 +9,15 @@ struct HoverableURLBar: View {
     let tabManager: TabManager
     @State private var isVisible: Bool = false
     @State private var hideTimer: Timer?
+    @State private var initialShowTimer: Timer?
     @FocusState private var isURLBarFocused: Bool
     @State private var editingText: String = ""
     @State private var suggestions: [SearchSuggestion] = []
     @State private var displayString: String = ""
+    
+    // FocusCoordinator integration
+    private let barID = UUID().uuidString
+    private let focusCoordinator = FocusCoordinator.shared
     
     struct SearchSuggestion: Identifiable {
         let id = UUID()
@@ -113,10 +118,17 @@ struct HoverableURLBar: View {
                             }
                             .onChange(of: isURLBarFocused) { _, focused in
                                 if focused {
-                                    editingText = urlString
-                                    // Keep visible when focused
-                                    cancelHideTimer()
+                                    // Attempt to acquire global focus lock
+                                    if focusCoordinator.canFocus(barID) {
+                                        focusCoordinator.setFocusedURLBar(barID, focused: true)
+                                        editingText = urlString
+                                        // Keep visible when focused
+                                        cancelHideTimer()
+                                    } else {
+                                        isURLBarFocused = false
+                                    }
                                 } else {
+                                    focusCoordinator.setFocusedURLBar(barID, focused: false)
                                     // Hide after delay when unfocused
                                     scheduleHide()
                                     suggestions = []
@@ -228,6 +240,11 @@ struct HoverableURLBar: View {
         }
         .onAppear {
             updateDisplayString()
+            // Clear any stale global focus when this bar appears
+            focusCoordinator.setFocusedURLBar(barID, focused: false)
+        }
+        .onDisappear {
+            focusCoordinator.setFocusedURLBar(barID, focused: false)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isVisible)
     }
@@ -265,7 +282,7 @@ struct HoverableURLBar: View {
     
     private func handleHover(_ hovering: Bool) {
         if hovering {
-            cancelHideTimer()
+            cancelAllTimers()
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isVisible = true
             }
@@ -278,7 +295,7 @@ struct HoverableURLBar: View {
     }
     
     private func scheduleHide() {
-        cancelHideTimer()
+        cancelAllTimers()
         // Use DispatchQueue to prevent main thread blocking
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             guard !isURLBarFocused else { return }
@@ -293,6 +310,33 @@ struct HoverableURLBar: View {
         DispatchQueue.main.async {
             hideTimer?.invalidate()
             hideTimer = nil
+        }
+    }
+    
+    private func startInitialShowTimer() {
+        // Cancel any existing timers
+        cancelAllTimers()
+        
+        // Show immediately
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            isVisible = true
+        }
+        
+        // Hide after 2 seconds if not interacting
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            guard !isURLBarFocused else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                isVisible = false
+            }
+        }
+    }
+    
+    private func cancelAllTimers() {
+        DispatchQueue.main.async {
+            hideTimer?.invalidate()
+            hideTimer = nil
+            initialShowTimer?.invalidate()
+            initialShowTimer = nil
         }
     }
     
