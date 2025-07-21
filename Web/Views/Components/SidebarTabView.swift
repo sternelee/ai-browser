@@ -7,10 +7,14 @@ struct SidebarTabView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top spacing
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: 12)
+            // Window controls as first element in square format
+            CompactWindowControls()
+                .padding(.top, 8)
+            
+            // Small divider
+            CavedDivider()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             
             // Tab list with custom scrolling
             ScrollView(.vertical, showsIndicators: false) {

@@ -7,6 +7,26 @@ struct TopBarTabView: View {
     
     var body: some View {
         HStack(spacing: 0) {
+            // Window controls as first element in square format
+            CompactWindowControls()
+                .padding(.leading, 8)
+            
+            // Small vertical divider
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.15),
+                            Color.white.opacity(0.03)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 0.5)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+            
             tabScrollView
             controlsSection
         }
