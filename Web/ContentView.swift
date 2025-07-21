@@ -6,9 +6,12 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Subtle window background with blur and border (conditional padding)
             RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
                 .fill(.ultraThinMaterial)
+                .overlay(
+                    Color.black.opacity(0.45)
+                        .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 0 : 12))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
                         .strokeBorder(
@@ -36,7 +39,7 @@ struct ContentView: View {
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(4) // No inner padding when expanded
+                .padding(6)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .onTapGesture(count: 2) {
