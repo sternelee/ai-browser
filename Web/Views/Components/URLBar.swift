@@ -84,7 +84,6 @@ struct URLBar: View {
                 .onSubmit {
                     handleSubmit()
                 }
-                .submitLabel(.go)
                 .onChange(of: isURLBarFocused) { _, focused in
                     handleFocusChange(focused)
                 }
@@ -250,10 +249,7 @@ struct URLBar: View {
     }
     
     private func handleTextChange(_ newText: String) {
-        // Only load suggestions when focused and typing
-        if isURLBarFocused {
-            loadSuggestions(for: newText)
-        }
+        loadSuggestions(for: newText)
     }
     
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
@@ -286,11 +282,6 @@ struct URLBar: View {
             return
         }
         
-        // Show loading state immediately if focused
-        if isURLBarFocused {
-            showingSuggestions = true
-        }
-        
         // Start new task
         suggestionTask = Task {
             let newSuggestions = await autofillService.getSuggestions(for: trimmedQuery)
@@ -300,7 +291,7 @@ struct URLBar: View {
                 
                 suggestions = newSuggestions
                 selectedSuggestionIndex = 0
-                showingSuggestions = !newSuggestions.isEmpty || autofillService.isLoading
+                showingSuggestions = !suggestions.isEmpty || autofillService.isLoading
             }
         }
     }
@@ -316,7 +307,6 @@ struct URLBar: View {
         
         onSubmit(finalURL)
         dismissSuggestions()
-        isURLBarFocused = false
         isURLBarFocused = false
     }
     
