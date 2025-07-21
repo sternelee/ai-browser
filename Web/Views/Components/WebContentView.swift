@@ -28,13 +28,45 @@ struct WebContentView: View {
                     }
             } else {
                 // Active web view
-                if let url = tab.url {
-                    SimpleWebView(url: url)
-                        .onChange(of: tab.url) { _, newURL in
-                            if let url = newURL {
-                                urlString = url.absoluteString
-                            }
+                if tab.url != nil {
+                    WebView(
+                        url: Binding(
+                            get: { tab.url },
+                            set: { tab.url = $0 }
+                        ),
+                        canGoBack: Binding(
+                            get: { tab.canGoBack },
+                            set: { tab.canGoBack = $0 }
+                        ),
+                        canGoForward: Binding(
+                            get: { tab.canGoForward },
+                            set: { tab.canGoForward = $0 }
+                        ),
+                        isLoading: Binding(
+                            get: { tab.isLoading },
+                            set: { tab.isLoading = $0 }
+                        ),
+                        estimatedProgress: Binding(
+                            get: { tab.estimatedProgress },
+                            set: { tab.estimatedProgress = $0 }
+                        ),
+                        title: Binding(
+                            get: { tab.title },
+                            set: { tab.title = $0 ?? "New Tab" }
+                        ),
+                        favicon: Binding(
+                            get: { tab.favicon },
+                            set: { tab.favicon = $0 }
+                        ),
+                        tab: tab,
+                        onNavigationAction: nil,
+                        onDownloadRequest: nil
+                    )
+                    .onChange(of: tab.url) { _, newURL in
+                        if let url = newURL {
+                            urlString = url.absoluteString
                         }
+                    }
                 } else {
                     NewTabView()
                 }

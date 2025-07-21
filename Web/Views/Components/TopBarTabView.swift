@@ -237,10 +237,8 @@ struct TopBarTabPreview: View {
     
     var body: some View {
         HStack(spacing: 8) {
-            // Placeholder for favicon
-            Image(systemName: "globe")
-                .font(.system(size: 16))
-                .foregroundColor(Color.secondary)
+            // Use proper favicon view
+            FaviconView(tab: tab, size: 16)
             
             Text(tab.title.isEmpty ? "New Tab" : tab.title)
                 .font(.system(size: 13))

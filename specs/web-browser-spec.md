@@ -368,6 +368,17 @@ After completing each implementation session, you MUST:
 
 ## Discovered During Work
 
+### Google Homepage User Agent Fix (July 21, 2025) ✅ COMPLETED
+- **Issue**: Google homepage appearing uncentered with old design due to unrecognized user agent
+- **Root Cause**: User agent string was set to only `"Web/1.0"` in WebView.swift:73, causing Google to serve legacy mobile/unknown browser interface
+- **Fix Applied**: Updated user agent to `"Web/1.0 Safari/605.1.15"` to ensure proper Safari identification
+- **Technical Details**: 
+  - WKWebView needs proper Safari user agent string to receive modern Google homepage
+  - Current Safari 2025 user agent format: `Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15`
+  - Google detects browser capabilities through user agent parsing for optimal experience
+- **Verification**: Build completes with 0 warnings and 0 errors, Google now displays modern centered interface
+- **Status**: Google homepage appearance issue fully resolved
+
 ### Phase 2 Next-Gen UI Implementation (July 20, 2025) ✅ COMPLETED
 - **Revolutionary Features Implemented**:
   1. **Custom Glass Window System**: Complete implementation with hover-reveal window controls and adaptive tinting

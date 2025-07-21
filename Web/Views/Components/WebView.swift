@@ -103,10 +103,20 @@ struct WebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
-        // Only load if URL is different and not currently loading
-        if let url = url, webView.url != url, !webView.isLoading {
-            let request = URLRequest(url: url)
-            webView.load(request)
+        // Only load if URL has actually changed from what we last attempted to load
+        if let url = url {
+            let lastLoadedURL = context.coordinator.lastLoadedURL
+            let hasNeverLoaded = lastLoadedURL == nil
+            let isDifferentURL = lastLoadedURL?.absoluteString != url.absoluteString
+            
+            // Only load if this is a genuinely new URL that we haven't attempted to load
+            if hasNeverLoaded || isDifferentURL {
+                let request = URLRequest(url: url)
+                webView.load(request)
+                
+                // Store the URL in coordinator to track what we last attempted to load
+                context.coordinator.lastLoadedURL = url
+            }
         }
     }
     
@@ -119,6 +129,12 @@ struct WebView: NSViewRepresentable {
         weak var webView: WKWebView?
         private var progressObserver: NSKeyValueObservation?
         private var titleObserver: NSKeyValueObservation?
+        var lastLoadedURL: URL?
+        
+        // Static shared cache to prevent duplicate downloads across all tabs
+        private static var faviconCache: [String: NSImage] = [:]
+        private static var faviconDownloadTasks: Set<String> = []
+        private static let cacheQueue = DispatchQueue(label: "favicon.cache", attributes: .concurrent)
         
         init(_ parent: WebView) {
             self.parent = parent
@@ -151,9 +167,30 @@ struct WebView: NSViewRepresentable {
             parent.canGoBack = webView.canGoBack
             parent.canGoForward = webView.canGoForward
             
-            // Extract favicon with delay to ensure page is fully loaded
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.extractFavicon(from: webView)
+            // Only extract favicon if we don't have one for this domain
+            if let currentURL = webView.url, let host = currentURL.host {
+                Self.cacheQueue.sync {
+                    
+                    let hasCachedFavicon = Self.faviconCache[host] != nil
+                    let isDownloading = Self.faviconDownloadTasks.contains(host)
+                    
+                    if !hasCachedFavicon && !isDownloading {
+                        Self.faviconDownloadTasks.insert(host) // Mark as downloading immediately
+                        
+                        // Extract favicon with delay to ensure page is fully loaded
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.extractFavicon(from: webView, websiteHost: host)
+                        }
+                    } else if let cachedFavicon = Self.faviconCache[host] {
+                        // Use cached favicon
+                        DispatchQueue.main.async {
+                            self.parent.favicon = cachedFavicon
+                            if let tab = self.parent.tab {
+                                tab.favicon = cachedFavicon
+                            }
+                        }
+                    }
+                }
             }
         }
         
@@ -165,7 +202,7 @@ struct WebView: NSViewRepresentable {
             parent.isLoading = false
         }
         
-        private func extractFavicon(from webView: WKWebView) {
+        private func extractFavicon(from webView: WKWebView, websiteHost: String) {
             let script = """
             function getFaviconAndThemeColor() {
                 try {
@@ -246,141 +283,127 @@ struct WebView: NSViewRepresentable {
                 if let error = error {
                     print("Favicon extraction error: \(error)")
                     // Try fallback immediately
-                    if let currentURL = webView.url {
-                        let fallbackURL = URL(string: "\(currentURL.scheme!)://\(currentURL.host!)/favicon.ico")
-                        if let fallback = fallbackURL {
-                            self?.downloadFavicon(from: fallback)
-                        }
+                    let fallbackURL = URL(string: "https://\(websiteHost)/favicon.ico")
+                    if let fallback = fallbackURL {
+                        self?.downloadFavicon(from: fallback, websiteHost: websiteHost)
                     }
                     return
                 }
                 
                 if let data = result as? [String: Any] {
-                    // Debug logging
-                    if let debug = data["debug"] as? [String: Any] {
-                        print("Favicon debug info: \(debug)")
-                    }
-                    
                     if let faviconURL = data["favicon"] as? String, let url = URL(string: faviconURL) {
-                        print("Attempting to download favicon from: \(faviconURL)")
-                        self?.downloadFavicon(from: url)
+                        self?.downloadFavicon(from: url, websiteHost: websiteHost)
                     } else {
-                        print("No valid favicon URL found, trying fallback")
-                        // Fallback: try to get favicon from current URL's domain
-                        if let currentURL = webView.url {
-                            let fallbackURL = URL(string: "\(currentURL.scheme!)://\(currentURL.host!)/favicon.ico")
-                            if let fallback = fallbackURL {
-                                self?.downloadFavicon(from: fallback)
-                            }
+                        // Fallback: try to get favicon from website domain
+                        let fallbackURL = URL(string: "https://\(websiteHost)/favicon.ico")
+                        if let fallback = fallbackURL {
+                            self?.downloadFavicon(from: fallback, websiteHost: websiteHost)
                         }
                     }
                     
                     if let themeColor = data["themeColor"] as? String {
                         self?.updateThemeColor(themeColor)
                     }
-                } else {
-                    print("Invalid favicon extraction result: \(String(describing: result))")
                 }
             }
         }
         
-        private func downloadFavicon(from url: URL) {
+        private func downloadFavicon(from url: URL, websiteHost: String) {
             var request = URLRequest(url: url)
             request.timeoutInterval = 10
             request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
             
-            print("Downloading favicon from: \(url.absoluteString)")
-            
             URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                defer {
+                    // Always remove from download tasks when done using website host
+                    Self.cacheQueue.async(flags: .barrier) {
+                        Self.faviconDownloadTasks.remove(websiteHost)
+                    }
+                }
+                
                 if let error = error {
                     print("Favicon download error: \(error.localizedDescription)")
                     // If favicon download fails, try alternative fallbacks
-                    self?.tryFaviconFallbacks(originalURL: url)
+                    self?.tryFaviconFallbacks(websiteHost: websiteHost)
                     return
                 }
                 
                 guard let data = data else {
-                    print("No data received for favicon")
-                    self?.tryFaviconFallbacks(originalURL: url)
+                    self?.tryFaviconFallbacks(websiteHost: websiteHost)
                     return
                 }
                 
-                print("Received favicon data: \(data.count) bytes")
-                
                 // Validate that we got a proper image
                 if let image = NSImage(data: data), image.isValid {
-                    print("Successfully created NSImage from favicon data")
+                    // Cache the favicon using website host as key (not favicon URL host)
+                    Self.cacheQueue.async(flags: .barrier) {
+                        Self.faviconCache[websiteHost] = image
+                    }
+                    
                     DispatchQueue.main.async {
                         self?.parent.favicon = image
                         // Also update the tab model
                         if let tab = self?.parent.tab {
                             tab.favicon = image
-                            print("Favicon set successfully for tab: \(tab.title)")
                         }
                     }
                 } else {
-                    print("Failed to create valid NSImage from data, trying fallbacks")
                     // Data was not a valid image, try fallbacks
-                    self?.tryFaviconFallbacks(originalURL: url)
+                    self?.tryFaviconFallbacks(websiteHost: websiteHost)
                 }
             }.resume()
         }
         
-        private func tryFaviconFallbacks(originalURL: URL) {
-            guard let host = originalURL.host else { 
-                print("No host found for favicon fallback")
-                return 
-            }
-            
-            print("Trying favicon fallbacks for host: \(host)")
-            
+        private func tryFaviconFallbacks(websiteHost: String) {
             let fallbackURLs = [
-                "https://\(host)/apple-touch-icon.png",
-                "https://\(host)/favicon.png",
-                "https://\(host)/favicon.gif",
-                "https://www.google.com/s2/favicons?domain=\(host)&sz=32" // Google favicon service as last resort
+                "https://\(websiteHost)/apple-touch-icon.png",
+                "https://\(websiteHost)/favicon.png",
+                "https://\(websiteHost)/favicon.gif",
+                "https://www.google.com/s2/favicons?domain=\(websiteHost)&sz=32" // Google favicon service as last resort
             ]
-            
-            print("Fallback URLs: \(fallbackURLs)")
-            tryFaviconURL(from: fallbackURLs, index: 0)
+            tryFaviconURL(from: fallbackURLs, index: 0, websiteHost: websiteHost)
         }
         
-        private func tryFaviconURL(from urls: [String], index: Int) {
+        private func tryFaviconURL(from urls: [String], index: Int, websiteHost: String) {
             guard index < urls.count, let url = URL(string: urls[index]) else { 
-                print("Invalid fallback URL at index \(index)")
                 return 
             }
-            
-            print("Trying fallback favicon URL (\(index + 1)/\(urls.count)): \(url.absoluteString)")
             
             var request = URLRequest(url: url)
             request.timeoutInterval = 5
             request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
             
             URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                
+                defer {
+                    // Remove from download tasks when fallback completes using website host
+                    Self.cacheQueue.async(flags: .barrier) {
+                        Self.faviconDownloadTasks.remove(websiteHost)
+                    }
+                }
+                
                 if let error = error {
                     print("Fallback URL \(index + 1) failed: \(error.localizedDescription)")
                 } else if let data = data, 
                           let image = NSImage(data: data),
                           image.isValid {
-                    print("Successfully loaded favicon from fallback URL \(index + 1)")
+                    // Cache the favicon using website host as key
+                    Self.cacheQueue.async(flags: .barrier) {
+                        Self.faviconCache[websiteHost] = image
+                    }
+                    
                     DispatchQueue.main.async {
                         self?.parent.favicon = image
                         if let tab = self?.parent.tab {
                             tab.favicon = image
-                            print("Favicon set from fallback for tab: \(tab.title)")
                         }
                     }
                     return // Success, don't try more fallbacks
-                } else {
-                    print("Fallback URL \(index + 1) returned invalid image data")
                 }
                 
                 // Try next fallback
                 if index + 1 < urls.count {
-                    self?.tryFaviconURL(from: urls, index: index + 1)
-                } else {
-                    print("All favicon fallbacks exhausted")
+                    self?.tryFaviconURL(from: urls, index: index + 1, websiteHost: websiteHost)
                 }
             }.resume()
         }
