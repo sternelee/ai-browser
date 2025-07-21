@@ -4,6 +4,7 @@ import SwiftUI
 struct WebContentView: View {
     @ObservedObject var tab: Tab
     @Binding var urlString: String
+    @State private var pulsingScale: CGFloat = 1.0
     
     var body: some View {
         ZStack {
@@ -99,20 +100,38 @@ struct WebContentView: View {
                                 .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
                                 .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
                             
-                            // Enhanced glow effect
+                            // Primary glow layer
                             Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.4))
+                                .fill(themeAwareProgressColor.opacity(0.5))
                                 .frame(width: geometry.size.width * progressPercent, height: 3)
                                 .blur(radius: 2)
                                 .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
                                 .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
                             
-                            // Extra bright glow for better visibility
+                            // Secondary glow layer (wider)
                             Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.6))
-                                .frame(width: geometry.size.width * progressPercent, height: 1)
+                                .fill(themeAwareProgressColor.opacity(0.3))
+                                .frame(width: geometry.size.width * progressPercent, height: 5)
                                 .blur(radius: 4)
                                 .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            
+                            // Outer glow layer (widest)
+                            Rectangle()
+                                .fill(themeAwareProgressColor.opacity(0.2))
+                                .frame(width: geometry.size.width * progressPercent, height: 8)
+                                .blur(radius: 6)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            
+                            // Pulsing core highlight
+                            Rectangle()
+                                .fill(themeAwareProgressColor.opacity(0.8))
+                                .frame(width: geometry.size.width * progressPercent, height: 1)
+                                .blur(radius: 0.5)
+                                .scaleEffect(y: pulsingScale)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
                         }
                         .clipShape(Capsule())
                     }
@@ -120,6 +139,17 @@ struct WebContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 1.0, anchor: .leading)))
                     
                     Spacer()
+                }
+            }
+        }
+        .onReceive(tab.$isLoading) { isLoading in
+            if isLoading {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    pulsingScale = 1.5
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    pulsingScale = 1.0
                 }
             }
         }

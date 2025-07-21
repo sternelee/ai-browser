@@ -199,17 +199,41 @@ struct WebContentArea: View {
                 .padding(.vertical, 6) // Further reduced for even more minimal height
                 .background(
                     ZStack {
-                        // Beautiful glass material
+                        // Enhanced dark glass material
                         Rectangle()
-                            .fill(.regularMaterial)
+                            .fill(.thickMaterial)
                         
-                        // Soft glass overlay
+                        // Dark glassy base surface
+                        Rectangle()
+                            .fill(Color.bgSurface)
+                        
+                        // Theme-aware gradient overlay
+                        if let themeColor = tabManager.activeTab?.themeColor {
+                            Rectangle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(themeColor).opacity(0.15),
+                                            Color(themeColor).opacity(0.08),
+                                            Color(themeColor).opacity(0.03),
+                                            Color.clear
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .animation(.easeInOut(duration: 0.6), value: themeColor)
+                        }
+                        
+                        // Enhanced glass overlay with more depth
                         Rectangle()
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color.white.opacity(0.06),
-                                        Color.white.opacity(0.02)
+                                        Color.white.opacity(0.08),
+                                        Color.white.opacity(0.04),
+                                        Color.white.opacity(0.01),
+                                        Color.clear
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing

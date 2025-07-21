@@ -27,6 +27,7 @@ struct URLBar: View {
                 .font(.webBody)
                 .foregroundColor(.textPrimary)
                 .focused($isURLBarFocused)
+                .textSelection(.enabled)
                 .onSubmit {
                     navigateToURL()
                 }
@@ -85,31 +86,60 @@ struct URLBar: View {
                 .animation(.easeInOut(duration: 0.2), value: hovering)
                 .animation(.easeInOut(duration: 0.4), value: themeColor)
             
-            // Enhanced glow effect when focused
+            // Enhanced multi-layer glow effect when focused
             if isURLBarFocused {
+                // Inner radial glow
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                focusGlowColor.opacity(0.12),
+                                focusGlowColor.opacity(0.06),
+                                focusGlowColor.opacity(0.02),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 80
+                        )
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: themeColor)
+                
+                // Outer radial glow (larger)
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
                         RadialGradient(
                             colors: [
                                 focusGlowColor.opacity(0.08),
                                 focusGlowColor.opacity(0.04),
+                                focusGlowColor.opacity(0.01),
                                 Color.clear
                             ],
                             center: .center,
-                            startRadius: 30,
-                            endRadius: 120
+                            startRadius: 40,
+                            endRadius: 160
                         )
                     )
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: themeColor)
                 
-                // Outer glow for premium feel
+                // Enhanced border glow
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(
-                        focusGlowColor.opacity(0.3),
-                        lineWidth: 0.5
+                        focusGlowColor.opacity(0.4),
+                        lineWidth: 1
                     )
-                    .blur(radius: 1)
+                    .blur(radius: 2)
+                    .transition(.opacity)
+                
+                // Outer border glow (wider)
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(
+                        focusGlowColor.opacity(0.2),
+                        lineWidth: 1
+                    )
+                    .blur(radius: 4)
                     .transition(.opacity)
             }
         }

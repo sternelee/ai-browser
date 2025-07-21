@@ -84,7 +84,7 @@ struct CompactWindowControls: View {
             CompactWindowControlButton(
                 color: .red,
                 action: { 
-                    NSApplication.shared.terminate(nil)
+                    getCurrentWindow()?.close()
                 }
             )
             
@@ -93,12 +93,7 @@ struct CompactWindowControls: View {
                 color: .orange,
                 isMinimizeButton: true,
                 action: { 
-                    for window in NSApplication.shared.windows {
-                        if window.isVisible {
-                            window.miniaturize(nil)
-                            break
-                        }
-                    }
+                    getCurrentWindow()?.miniaturize(nil)
                 }
             )
             
@@ -107,12 +102,7 @@ struct CompactWindowControls: View {
                 color: .green,
                 isMaximizeButton: true,
                 action: { 
-                    for window in NSApplication.shared.windows {
-                        if window.isVisible {
-                            window.zoom(nil)
-                            break
-                        }
-                    }
+                    getCurrentWindow()?.zoom(nil)
                 }
             )
         }

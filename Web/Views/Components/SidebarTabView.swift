@@ -168,25 +168,24 @@ struct SidebarTabItem: View {
         ZStack {
             backgroundView
             
-            HStack(spacing: 0) {
-                // Left side - favicon centered in its space
-                HStack {
-                    Spacer()
-                    faviconView
-                        .frame(width: 24, height: 24)
-                    Spacer()
-                }
-                .frame(width: 32)
+            ZStack {
+                // Favicon perfectly centered in full width
+                faviconView
+                    .frame(width: 24, height: 24)
                 
-                // Right side - close button with proper separation
-                HStack {
-                    Spacer()
-                    if showCloseButton && isHovered {
-                        closeButton
-                            .transition(.scale.combined(with: .opacity))
+                // Close button positioned absolutely in top-right area
+                if showCloseButton && isHovered {
+                    HStack {
+                        Spacer()
+                        VStack {
+                            closeButton
+                                .transition(.scale.combined(with: .opacity))
+                            Spacer()
+                        }
                     }
+                    .padding(.top, 2)
+                    .padding(.trailing, 2)
                 }
-                .frame(width: 16)
             }
             .frame(width: 48, height: 44)
         }
@@ -298,7 +297,7 @@ struct SidebarTabItem: View {
                             endRadius: 10
                         )
                     )
-                    .frame(width: 20, height: 20)
+                    .frame(width: 16, height: 16)
                     .overlay(
                         Circle()
                             .fill(.ultraThinMaterial)
@@ -321,7 +320,7 @@ struct SidebarTabItem: View {
                 
                 // X mark
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 6, weight: .bold))
                     .foregroundColor(.white)
             }
         }
