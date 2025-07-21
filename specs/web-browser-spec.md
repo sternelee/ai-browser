@@ -60,6 +60,26 @@ Web/
 │   ├── AdBlockService.swift
 │   ├── PasswordManager.swift
 │   └── UpdateService.swift
+├── AI/
+│   ├── Models/
+│   │   ├── AIAssistant.swift
+│   │   ├── ContextManager.swift
+│   │   ├── ConversationHistory.swift
+│   │   └── AIResponse.swift
+│   ├── Services/
+│   │   ├── GemmaService.swift
+│   │   ├── ContextOptimizer.swift
+│   │   ├── SummarizationService.swift
+│   │   └── PrivacyManager.swift
+│   ├── Views/
+│   │   ├── AISidebar.swift
+│   │   ├── ChatBubbleView.swift
+│   │   ├── ContextPreview.swift
+│   │   └── AIStatusIndicator.swift
+│   └── Utils/
+│       ├── MLXWrapper.swift
+│       ├── ContextProcessor.swift
+│       └── ModelDownloader.swift
 ├── Utils/
 │   ├── Extensions/
 │   └── Helpers/
@@ -299,6 +319,42 @@ Web/
 - [ ] Cross-version compatibility testing
 - [ ] Final polish and deployment preparation
 
+### Session 10: Local AI Foundation (Week 10)
+- [ ] **MLX Framework Integration**: Apple Silicon optimization with Swift bindings
+- [ ] **Gemma 3n 4B Model**: Download, validation, and caching system (int4 quantized)
+- [ ] **Hardware Detection**: Automatic Apple Silicon vs Intel Mac configuration
+- [ ] **Context Extraction**: Real-time tab content processing and summarization pipeline
+- [ ] **AI Service Architecture**: Basic inference with streaming response support
+- [ ] **Local Encryption**: AES-256 encrypted storage for all AI conversation data
+- [ ] **Performance Baseline**: Achieve 80+ tokens/second on Apple Silicon Macs
+
+### Session 11: Context-Aware Chat Interface (Week 11)
+- [ ] **AI Sidebar UI**: Right-side collapsible glass morphism interface (320pt-480pt)
+- [ ] **Chat Experience**: Message bubbles, conversation threading, typing indicators
+- [ ] **Tab Context Integration**: Visual tab references and content preview cards
+- [ ] **Keyboard Shortcuts**: AI Assistant toggle (⇧⌘A), input focus, clear conversation
+- [ ] **Context Visualization**: Smart indicators showing referenced tabs and content
+- [ ] **Auto-behavior**: Expand on interaction, collapse after 30s inactivity
+- [ ] **Multi-tab Analysis**: Basic cross-tab content comparison and relationship detection
+
+### Session 12: Advanced AI Intelligence (Week 12)
+- [ ] **Natural Language Commands**: Voice input via macOS Speech Recognition
+- [ ] **Proactive Assistance**: Smart suggestions based on browsing patterns
+- [ ] **Session Analysis**: "Summarize all tabs," content extraction, page comparison
+- [ ] **Tab Organization**: AI-powered tab grouping and bookmark suggestions
+- [ ] **Context Actions**: Form filling assistance, link analysis, shopping comparison
+- [ ] **Workflow Intelligence**: Task completion detection and automation suggestions
+- [ ] **Cross-tab Understanding**: Semantic relationship mapping between open pages
+
+### Session 13: AI Optimization & Privacy (Week 13)
+- [ ] **Context Optimization**: Hierarchical summarization (page→tab→session→history)
+- [ ] **Performance Monitoring**: Real-time inference speed, memory usage analytics
+- [ ] **Privacy Controls**: Data retention settings, one-click purging, activity transparency
+- [ ] **Intel Mac Fallback**: llama.cpp integration for non-Apple Silicon hardware
+- [ ] **Security Audit**: Network isolation verification, encryption validation
+- [ ] **Context Intelligence**: Semantic clustering, dynamic window management
+- [ ] **Final Polish**: Performance benchmarking, documentation, user guides
+
 ## Keyboard Shortcuts Reference
 
 | Action | Keys |
@@ -317,6 +373,12 @@ Web/
 | Find in Page | ⌘ F |
 | Developer Tools | ⌥⌘ I |
 | Zoom In / Out / Reset | ⌘+ / ⌘– / ⌘0 |
+| **AI Assistant Sidebar** | **⇧⌘ A** |
+| **Focus AI Input** | **⌥⌘ A** |
+| **Summarize Current Tab** | **⌃⌘ S** |
+| **Analyze All Tabs** | **⌃⇧⌘ A** |
+| **Clear AI Conversation** | **⌃⌘ ⌫** |
+| **AI Voice Input** | **⌃⇧⌘ V** |
 
 ## Design Guidelines
 
@@ -469,16 +531,38 @@ After completing each implementation session, you MUST:
 - All Swift warnings eliminated from codebase
 - Build process now clean and production-ready
 
+## Local AI Integration Overview
+
+**Core Vision**: Revolutionary AI-first browser experience with complete privacy
+- **Model**: Gemma 3n 4B (int4 quantized) running locally via Apple MLX
+- **Interface**: Right-side collapsible glass morphism sidebar
+- **Context**: Multi-tab analysis with 128K token context window
+- **Privacy**: Zero external API calls, AES-256 local encryption
+- **Performance**: 80+ tokens/second on Apple Silicon
+
+**Key Features**:
+- Chat directly with tab content and browsing history
+- Cross-tab content comparison and analysis
+- Natural language commands with voice input
+- Proactive assistance based on browsing patterns
+- Complete offline operation with local AI processing
+
+**See**: `specs/local-ai-integration-spec.md` for detailed technical specification
+
 ## References
 - Arc Browser UX patterns
 - Safari implementation details
 - WebKit documentation
 - SwiftUI best practices
 - Zen Browser (for inspiration): https://github.com/zen-browser/desktop
+- **Comet Browser** (Perplexity): Agentic AI with task automation
+- **Dia Browser** (Browser Company): Tab context chat with 7-day history
+- **Gemma 3n Technical Report**: Hybrid attention and context optimization
+- **Apple MLX Framework**: Unified memory architecture for AI inference
 - **macOS 18 Finder Seamless Experience**: The principle of never obscuring content, demonstrated by macOS 18's Finder interface where hovering reveals controls without blocking the main content view. This serves as inspiration for the browser's edge-to-edge mode where website content is never obstructed - controls appear on hover from edges without overlaying the web content.
 
 ---
 
-**Last Updated:** Initial specification
-**Status:** Ready for implementation
-**Version:** 1.0.0
+**Last Updated:** July 21, 2025 - Local AI Integration Added
+**Status:** Ready for implementation (Phases 1-13)
+**Version:** 2.0.0
