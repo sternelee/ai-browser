@@ -11,21 +11,24 @@ struct WebLogo: View {
 }
 
 
-// Animated logo for loading states
+// Subtle animated logo for refined UX
 struct AnimatedWebLogo: View {
     @State private var isAnimating: Bool = false
     
     var body: some View {
         WebLogo()
-            .scaleEffect(isAnimating ? 1.1 : 1.0)
-            .opacity(isAnimating ? 0.8 : 1.0)
+            .scaleEffect(isAnimating ? 1.02 : 1.0)
+            .opacity(isAnimating ? 0.95 : 1.0)
             .animation(
-                .easeInOut(duration: 1.0)
+                .easeInOut(duration: 3.0)
                 .repeatForever(autoreverses: true),
                 value: isAnimating
             )
             .onAppear {
-                isAnimating = true
+                // Delayed start for more refined entrance
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isAnimating = true
+                }
             }
     }
 }

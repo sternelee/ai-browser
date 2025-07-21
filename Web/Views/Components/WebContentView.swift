@@ -5,6 +5,7 @@ struct WebContentView: View {
     @ObservedObject var tab: Tab
     @Binding var urlString: String
     @State private var pulsingScale: CGFloat = 1.0
+    @State private var hoveredLink: String? = nil
     
     var body: some View {
         ZStack {
@@ -59,6 +60,7 @@ struct WebContentView: View {
                             get: { tab.favicon },
                             set: { tab.favicon = $0 }
                         ),
+                        hoveredLink: $hoveredLink,
                         tab: tab,
                         onNavigationAction: nil,
                         onDownloadRequest: nil
@@ -140,6 +142,19 @@ struct WebContentView: View {
                     Spacer()
                 }
             }
+            
+            // Smart Status Bar positioned at bottom
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    SmartStatusBar(tab: tab, hoveredLink: hoveredLink)
+                        .frame(maxWidth: 400)
+                    Spacer()
+                }
+                .padding(.bottom, 16)
+            }
+            .allowsHitTesting(false) // Don't interfere with web content interaction
         }
         .onReceive(tab.$isLoading) { isLoading in
             if isLoading {

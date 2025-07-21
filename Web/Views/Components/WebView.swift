@@ -44,6 +44,7 @@ struct WebView: NSViewRepresentable {
     @Binding var estimatedProgress: Double
     @Binding var title: String?
     @Binding var favicon: NSImage?
+    @Binding var hoveredLink: String?
     
     let tab: Tab?
     let onNavigationAction: ((WKNavigationAction) -> WKNavigationActionPolicy)?
@@ -74,6 +75,16 @@ struct WebView: NSViewRepresentable {
         
         // Content blocking for ad blocker preparation
         let contentController = WKUserContentController()
+        
+        // Add link hover detection script
+        let linkHoverScript = WKUserScript(
+            source: linkHoverJavaScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        contentController.addUserScript(linkHoverScript)
+        contentController.add(context.coordinator, name: "linkHover")
+        
         config.userContentController = contentController
         
         // Create WebView with safe frame to prevent frame calculation issues
@@ -124,7 +135,37 @@ struct WebView: NSViewRepresentable {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    // JavaScript for link hover detection
+    private var linkHoverJavaScript: String {
+        """
+        (function() {
+            let statusTimeout;
+            
+            // Add event listeners for link hover
+            document.addEventListener('mouseover', function(e) {
+                if (e.target.tagName === 'A' && e.target.href) {
+                    clearTimeout(statusTimeout);
+                    window.webkit.messageHandlers.linkHover.postMessage({
+                        type: 'hover',
+                        url: e.target.href
+                    });
+                }
+            });
+            
+            document.addEventListener('mouseout', function(e) {
+                if (e.target.tagName === 'A' && e.target.href) {
+                    statusTimeout = setTimeout(() => {
+                        window.webkit.messageHandlers.linkHover.postMessage({
+                            type: 'clear'
+                        });
+                    }, 100);
+                }
+            });
+        })();
+        """
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let parent: WebView
         weak var webView: WKWebView?
         private var progressObserver: NSKeyValueObservation?
@@ -171,7 +212,7 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             parent.isLoading = true
-            parent.tab?.onLoadingStateChanged()
+            parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -191,7 +232,7 @@ struct WebView: NSViewRepresentable {
             parent.title = webView.title
             parent.canGoBack = webView.canGoBack
             parent.canGoForward = webView.canGoForward
-            parent.tab?.onLoadingStateChanged()
+            parent.tab?.notifyLoadingStateChanged()
             
             // Only extract favicon if we don't have one for this domain
             if let currentURL = webView.url, let host = currentURL.host {
@@ -222,12 +263,12 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            parent.tab?.onLoadingStateChanged()
+            parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
-            parent.tab?.onLoadingStateChanged()
+            parent.tab?.notifyLoadingStateChanged()
         }
         
         private func extractFavicon(from webView: WKWebView, websiteHost: String) {
@@ -500,6 +541,28 @@ struct WebView: NSViewRepresentable {
             }
             
             decisionHandler(.allow)
+        }
+        
+        // MARK: - WKScriptMessageHandler
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "linkHover" {
+                guard let body = message.body as? [String: Any] else { return }
+                
+                DispatchQueue.main.async {
+                    if let type = body["type"] as? String {
+                        switch type {
+                        case "hover":
+                            if let url = body["url"] as? String {
+                                self.parent.hoveredLink = url
+                            }
+                        case "clear":
+                            self.parent.hoveredLink = nil
+                        default:
+                            break
+                        }
+                    }
+                }
+            }
         }
         
         deinit {

@@ -5,8 +5,10 @@ struct URLBar: View {
     @Binding var urlString: String
     let themeColor: NSColor?
     let onSubmit: (String) -> Void
+    let pageTitle: String?
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
+    @State private var editingText: String = ""
     
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
@@ -16,13 +18,57 @@ struct URLBar: View {
         return .clear
     }
     
+    // Computed property for display text (title-first approach)
+    private var displayText: Binding<String> {
+        Binding(
+            get: {
+                if isURLBarFocused || hovering {
+                    return editingText
+                } else if let title = pageTitle, !title.isEmpty && title != "New Tab" && !urlString.isEmpty {
+                    return title
+                } else if !urlString.isEmpty {
+                    return cleanDisplayURL(urlString)
+                } else {
+                    return ""
+                }
+            },
+            set: { newValue in
+                editingText = newValue
+            }
+        )
+    }
+    
+    // Clean URL for display (remove protocol, www, etc.)
+    private func cleanDisplayURL(_ url: String) -> String {
+        var cleanURL = url
+        
+        // Remove protocol
+        if cleanURL.hasPrefix("https://") {
+            cleanURL = String(cleanURL.dropFirst(8))
+        } else if cleanURL.hasPrefix("http://") {
+            cleanURL = String(cleanURL.dropFirst(7))
+        }
+        
+        // Remove www.
+        if cleanURL.hasPrefix("www.") {
+            cleanURL = String(cleanURL.dropFirst(4))
+        }
+        
+        // Remove trailing slash
+        if cleanURL.hasSuffix("/") {
+            cleanURL = String(cleanURL.dropLast())
+        }
+        
+        return cleanURL
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
             // Security indicator with enhanced design
             SecurityIndicator(urlString: urlString)
             
-            // Main input field with enhanced styling
-            TextField("Search or enter website", text: $urlString)
+            // Main input field with title-first display
+            TextField("Search or enter website", text: displayText)
                 .textFieldStyle(.plain)
                 .font(.webBody)
                 .foregroundColor(.textPrimary)
@@ -30,6 +76,16 @@ struct URLBar: View {
                 .textSelection(.enabled)
                 .onSubmit {
                     navigateToURL()
+                }
+                .onChange(of: isURLBarFocused) { _, focused in
+                    if focused {
+                        editingText = urlString
+                    }
+                }
+                .onChange(of: urlString) { _, newURL in
+                    if !isURLBarFocused {
+                        editingText = newURL
+                    }
                 }
             
             // Quick actions with improved spacing
@@ -134,18 +190,20 @@ struct URLBar: View {
     }
     
     private func navigateToURL() {
+        let inputText = editingText.isEmpty ? urlString : editingText
         let finalURL: String
         
         // Determine if input is URL or search query
-        if isValidURL(urlString) {
-            finalURL = urlString.hasPrefix("http") ? urlString : "https://\(urlString)"
+        if isValidURL(inputText) {
+            finalURL = inputText.hasPrefix("http") ? inputText : "https://\(inputText)"
         } else {
             // Search Google
-            let searchQuery = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let searchQuery = inputText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             finalURL = "https://www.google.com/search?q=\(searchQuery)"
         }
         
         onSubmit(finalURL)
+        isURLBarFocused = false
     }
     
     private func isValidURL(_ string: String) -> Bool {
@@ -273,5 +331,5 @@ struct URLBarActionButtonStyle: ButtonStyle {
 }
 
 #Preview {
-    URLBar(urlString: .constant("google.com"), themeColor: nil, onSubmit: { _ in })
+    URLBar(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
 }

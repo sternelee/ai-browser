@@ -29,9 +29,9 @@ class Tab: ObservableObject, Identifiable, Transferable {
     // WebView reference (weak to prevent retain cycles)
     weak var webView: WKWebView?
     
-    // Hibernation threshold (5 minutes of inactivity)
-    private let hibernationThreshold: TimeInterval = 300
+    // Simple hibernation timer for backward compatibility
     private var hibernationTimer: Timer?
+    private let hibernationThreshold: TimeInterval = 300
     
     struct HistoryEntry {
         let url: URL
@@ -43,7 +43,7 @@ class Tab: ObservableObject, Identifiable, Transferable {
         self.url = url
         self.isIncognito = isIncognito
         
-        // Start hibernation timer
+        // Start simple hibernation timer
         startHibernationTimer()
     }
     
@@ -116,20 +116,19 @@ class Tab: ObservableObject, Identifiable, Transferable {
         startHibernationTimer()
     }
     
-    func onLoadingStateChanged() {
-        // Restart hibernation timer when loading state changes
-        // This ensures tabs can be hibernated after loading completes
-        if !isActive {
-            startHibernationTimer()
-        }
-    }
-    
     private func startHibernationTimer() {
         hibernationTimer?.invalidate()
         hibernationTimer = Timer.scheduledTimer(withTimeInterval: hibernationThreshold, repeats: false) { [weak self] _ in
             if !(self?.isActive ?? true) && !(self?.isLoading ?? false) {
                 self?.hibernate()
             }
+        }
+    }
+    
+    func notifyLoadingStateChanged() {
+        // Restart hibernation timer when loading state changes
+        if !isActive {
+            startHibernationTimer()
         }
     }
     

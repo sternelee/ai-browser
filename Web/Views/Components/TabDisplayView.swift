@@ -206,7 +206,8 @@ struct WebContentArea: View {
                     URLBar(
                         urlString: $urlString, 
                         themeColor: tabManager.activeTab?.themeColor,
-                        onSubmit: navigateToURL
+                        onSubmit: navigateToURL,
+                        pageTitle: tabManager.activeTab?.title
                     )
                     .frame(maxWidth: .infinity)
                     
@@ -329,11 +330,13 @@ struct WebContentArea: View {
                 )
             }
             
-            // Web content
-            if let activeTab = tabManager.activeTab {
-                WebContentView(tab: activeTab, urlString: $urlString)
-            } else {
-                NewTabView()
+            // Web content with smart status bar overlay
+            ZStack(alignment: .bottom) {
+                if let activeTab = tabManager.activeTab {
+                    WebContentView(tab: activeTab, urlString: $urlString)
+                } else {
+                    NewTabView()
+                }
             }
         }
         .background(Color.clear)
