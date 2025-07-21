@@ -10,6 +10,7 @@ struct TabDisplayView: View {
     @ObservedObject var tabManager: TabManager
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @State private var isEdgeToEdgeMode: Bool = false
+    @State private var isTopBarHidden: Bool = false
     @State private var showSidebarOnHover: Bool = false
     @State private var showTopBarOnHover: Bool = false
     @State private var showBottomSearchOnHover: Bool = false
@@ -20,8 +21,8 @@ struct TabDisplayView: View {
             ZStack {
                 // Main content area
                 VStack(spacing: 0) {
-                    // Top bar tabs (if enabled and not edge-to-edge)
-                    if displayMode == .topBar && (!isEdgeToEdgeMode || showTopBarOnHover) {
+                    // Top bar tabs (if enabled, not edge-to-edge, and not explicitly hidden)
+                    if displayMode == .topBar && !isTopBarHidden && (!isEdgeToEdgeMode || showTopBarOnHover) {
                         TopBarTabView(tabManager: tabManager)
                             .frame(height: 40)
                             .transition(.move(edge: .top).combined(with: .opacity))
@@ -49,13 +50,13 @@ struct TabDisplayView: View {
                     }
                 }
                 
-                // Edge-to-edge hover zones
-                if isEdgeToEdgeMode {
-                    edgeToEdgeHoverZones(geometry: geometry)
+                // Edge-to-edge hover zones or top bar hidden zones
+                if isEdgeToEdgeMode || isTopBarHidden {
+                    hoverZones(geometry: geometry)
                 }
                 
-                // Bottom search overlay (edge-to-edge mode only)
-                if isEdgeToEdgeMode {
+                // Bottom search overlay (edge-to-edge mode or when top bar is hidden)
+                if isEdgeToEdgeMode || isTopBarHidden {
                     VStack {
                         Spacer()
                         BottomHoverSearch(isVisible: $showBottomSearchOnHover, tabManager: tabManager)
@@ -65,6 +66,7 @@ struct TabDisplayView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displayMode)
         .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isEdgeToEdgeMode)
+        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isTopBarHidden)
         .animation(.easeInOut(duration: 0.2), value: showSidebarOnHover)
         .animation(.easeInOut(duration: 0.2), value: showTopBarOnHover)
         .onReceive(NotificationCenter.default.publisher(for: .toggleTabDisplay)) { _ in
@@ -72,6 +74,9 @@ struct TabDisplayView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             toggleEdgeToEdgeMode()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hideTopBar)) { _ in
+            toggleTopBarVisibility()
         }
         .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
             tabManager.createNewTab()
@@ -106,10 +111,10 @@ struct TabDisplayView: View {
     }
     
     @ViewBuilder
-    private func edgeToEdgeHoverZones(geometry: GeometryProxy) -> some View {
+    private func hoverZones(geometry: GeometryProxy) -> some View {
         ZStack {
-            // Left edge hover zone for sidebar (better usability)
-            if displayMode == .sidebar {
+            // Left edge hover zone for sidebar (when in edge-to-edge mode)
+            if displayMode == .sidebar && isEdgeToEdgeMode {
                 HStack {
                     Rectangle()
                         .fill(Color.clear)
@@ -121,8 +126,8 @@ struct TabDisplayView: View {
                 }
             }
             
-            // Top edge hover zone for top bar (better usability)
-            if displayMode == .topBar {
+            // Top edge hover zone for top bar (when in edge-to-edge mode)
+            if displayMode == .topBar && isEdgeToEdgeMode {
                 VStack {
                     Rectangle()
                         .fill(Color.clear)
@@ -136,7 +141,7 @@ struct TabDisplayView: View {
                 }
             }
             
-            // Bottom edge hover zone for new tab search (better usability)
+            // Bottom edge hover zone for new tab search (always when function is called)
             VStack {
                 Spacer()
                 Rectangle()
@@ -173,6 +178,15 @@ struct TabDisplayView: View {
         }
     }
     
+    private func toggleTopBarVisibility() {
+        isTopBarHidden.toggle()
+        
+        // Reset bottom search hover state when showing top bar again
+        if !isTopBarHidden {
+            showBottomSearchOnHover = false
+        }
+    }
+    
     private func handleSidebarHover(_ hovering: Bool) {
         hideTimer?.invalidate()
         hideTimer = nil
@@ -198,26 +212,29 @@ struct WebContentArea: View {
     @State private var urlString: String = ""
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @State private var isEdgeToEdgeMode: Bool = false
+    @State private var isTopBarHidden: Bool = false
     
     var body: some View {
         // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
-            // URL bar (hidden in edge-to-edge mode)
-            if !isEdgeToEdgeMode {
+            // URL bar (hidden in edge-to-edge mode or when top bar is explicitly hidden)
+            if !isEdgeToEdgeMode && !isTopBarHidden {
                 HStack(spacing: 12) {
                     // Navigation controls
                     if let activeTab = tabManager.activeTab {
                         NavigationControls(tab: activeTab)
                     }
                     
-                    // URL bar with reduced height and theme color
-                    URLBar(
-                        urlString: $urlString, 
-                        themeColor: tabManager.activeTab?.themeColor,
-                        onSubmit: navigateToURL,
-                        pageTitle: tabManager.activeTab?.title
-                    )
-                    .frame(maxWidth: .infinity)
+                    // URL bar with autofill suggestions in ZStack for proper layering
+                    ZStack(alignment: .bottom) {
+                        URLBarWithAutofill(
+                            urlString: $urlString,
+                            themeColor: tabManager.activeTab?.themeColor,
+                            onSubmit: navigateToURL,
+                            pageTitle: tabManager.activeTab?.title
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
                     
                     // Menu button
                     Button(action: showMenu) {
@@ -352,6 +369,9 @@ struct WebContentArea: View {
         .padding(2) // 2px margin as requested
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hideTopBar)) { _ in
+            isTopBarHidden.toggle()
         }
         .onAppear {
             // Initialize with a default URL if needed

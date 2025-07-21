@@ -100,12 +100,12 @@ class AutofillService: ObservableObject {
 ## Implementation Phases
 
 ### Phase 1: Core Autofill (Week 4.1)
-- [ ] Create AutofillService with Core Data integration
-- [ ] Implement basic history and bookmark suggestions
-- [ ] Add fuzzy matching algorithm
-- [ ] Create suggestion UI component with glass design
-- [ ] Integrate with existing URLBar component
-- [ ] Add keyboard navigation support
+- [x] Create AutofillService with Core Data integration
+- [x] Implement basic history and bookmark suggestions
+- [x] Add fuzzy matching algorithm
+- [x] Create suggestion UI component with glass design
+- [x] Integrate with existing URLBar component
+- [x] Add keyboard navigation support
 
 ### Phase 1.1: Smart Ranking (Week 4.2)
 - [ ] Implement frequency + recency scoring algorithm
@@ -192,7 +192,22 @@ private func selectSuggestion(at index: Int)
 
 ---
 
-**Status:** Ready for implementation
+## Discovered During Work
+
+### Issues Fixed (July 21, 2025)
+- **Z-index/Layering Problem**: Autofill dropdown was appearing behind web content. Fixed by creating `URLBarWithAutofill` wrapper component that uses proper z-index layering.
+- **Link Clicking Not Working**: Suggestions were properly connected but wrapper component needed proper event handling. Fixed by implementing notification-based communication between URLBar and wrapper.
+- **URL Navigation Broken**: Navigation was failing when typing in address bar. Fixed by ensuring proper event flow between components and maintaining existing navigation logic.
+
+### Technical Implementation Changes
+- Created `URLBarWithAutofill` wrapper component for proper suggestion layering
+- Implemented notification-based communication system using `NotificationCenter` with `autofillStateChanged` events
+- Moved autofill state management from URLBar to wrapper component to prevent z-index conflicts
+- Maintained original URLBar functionality while adding proper suggestion overlay
+
+---
+
+**Status:** Phase 1 Core Autofill Complete ✅
 **Priority:** High (Essential browser feature)
 **Estimated Duration:** 3 weeks (Phase 1 complete)
 **Dependencies:** Existing URLBar, HistoryItem, Bookmark models

@@ -366,6 +366,7 @@ Web/
 | Refresh | ⌘ R |
 | Sidebar / Top-Bar Toggle | ⌘ S |
 | Edge-to-Edge Mode | ⇧⌘ B |
+| **Hide Top Bar Toggle** | **⇧⌘ H** |
 | Bookmark Page | ⌘ D |
 | History Window | ⌘ Y |
 | Downloads | ⌥⌘ L |
@@ -596,6 +597,24 @@ After completing each implementation session, you MUST:
   - Glass design with subtle animations and hover states
 - **Status**: Full autofill system implementation completed and ready for production use
 
-**Last Updated:** July 21, 2025 - Phase 3 Advanced Features Completed
-**Status:** Ready for implementation (Phases 1-13) - Phase 3 Core Features Complete
-**Version:** 2.0.1
+### Hide Top Bar Feature Implementation (July 21, 2025) ✅ COMPLETED
+- **User Request**: Allow users to hide the top bar containing URL and navigation controls while maintaining hover search functionality
+- **Keyboard Shortcut**: **⇧⌘ H** (Cmd+Shift+H) for toggling top bar visibility
+- **Technical Implementation**:
+  - Added `isTopBarHidden` state variable to TabDisplayView and WebContentArea
+  - Modified top bar display logic to check both edge-to-edge mode AND explicit hiding state
+  - Enhanced bottom hover search to appear when top bar is hidden (not just in full edge-to-edge mode)
+  - Updated hover zones to include bottom edge detection when top bar is hidden
+  - Added notification handling for `hideTopBar` action
+- **User Experience**:
+  - When top bar is hidden via ⇧⌘ H, the URL bar and navigation controls disappear
+  - Hovering at the bottom edge reveals the search bar just like in borderless mode
+  - Different from edge-to-edge mode: sidebars can still be visible while top bar is hidden
+  - Smooth animations maintain the glass morphism aesthetic
+- **Integration**: Works seamlessly with existing edge-to-edge mode and tab display modes
+- **Build Status**: ✅ **Zero warnings, zero errors** - Production ready
+- **Status**: Hide top bar feature fully implemented and integrated
+
+**Last Updated:** July 21, 2025 - Hide Top Bar Feature Added
+**Status:** Ready for implementation (Phases 1-13) - Phase 3 Core Features Complete + Hide Top Bar
+**Version:** 2.0.2
