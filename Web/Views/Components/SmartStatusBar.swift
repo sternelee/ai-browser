@@ -84,12 +84,8 @@ struct SmartStatusBar: View {
     
     // MARK: - Public Methods
     func showLinkHover(_ urlString: String) {
-        if let url = URL(string: urlString) {
-            let host = url.host ?? urlString
-            updateStatus(type: .linkHover, message: host)
-        } else {
-            updateStatus(type: .linkHover, message: urlString)
-        }
+        // Show the full URL instead of just the domain
+        updateStatus(type: .linkHover, message: urlString)
     }
     
     func hideLinkHover() {

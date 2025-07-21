@@ -80,7 +80,7 @@ class TabManager: ObservableObject {
         tab.isActive = true
         tab.wakeUp() // Wake up if hibernated
         
-        print("Switched to tab: \(tab.title) (\(tab.url?.absoluteString ?? "no URL"))")
+        // Tab switched successfully
     }
     
     func moveTab(from source: IndexSet, to destination: Int) {

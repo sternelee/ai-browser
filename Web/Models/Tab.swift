@@ -83,7 +83,7 @@ class Tab: ObservableObject, Identifiable, Transferable {
         // This prevents content loss while still indicating hibernated state
         isHibernated = true
         
-        print("Tab hibernated: \(title)")
+        // Tab hibernated successfully
     }
     
     func wakeUp() {
@@ -92,7 +92,7 @@ class Tab: ObservableObject, Identifiable, Transferable {
         isHibernated = false
         updateLastAccessed()
         
-        print("Tab woken up: \(title)")
+        // Tab woken up successfully
     }
     
     private func createSnapshot() {

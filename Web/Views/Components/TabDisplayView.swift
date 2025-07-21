@@ -95,6 +95,11 @@ struct TabDisplayView: View {
                 tabManager.selectTabByNumber(number)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .createNewTabWithURL)) { notification in
+            if let url = notification.object as? URL {
+                tabManager.createNewTab(url: url)
+            }
+        }
     }
     
     @ViewBuilder
