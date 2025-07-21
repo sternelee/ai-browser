@@ -10,6 +10,7 @@ struct WebApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .background(WindowConfigurator())
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
