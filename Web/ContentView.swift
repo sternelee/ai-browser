@@ -9,7 +9,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    Color.black.opacity(0.45)
+                    Color.black.opacity(0.40)
                         .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 0 : 12))
                 )
                 .overlay(
