@@ -244,18 +244,40 @@ struct ExistingWebView: NSViewRepresentable {
     typealias NSViewType = WKWebView
     
     func makeNSView(context: Context) -> WKWebView {
-        return tab.webView!
+        guard let webView = tab.webView else {
+            fatalError("ExistingWebView called but tab.webView is nil for tab \(tab.id)")
+        }
+        
+        // Store tab ID in webView for ownership validation
+        context.coordinator.tabId = tab.id
+        
+        return webView
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // CRITICAL: Validate WebView ownership to prevent content bleeding between tabs
+        guard context.coordinator.tabId == tab.id else {
+            print("⚠️ WebView ownership mismatch detected! WebView belongs to tab \(context.coordinator.tabId ?? UUID()) but being used by tab \(tab.id)")
+            return // Abort update to prevent cross-tab contamination
+        }
+        
+        // Additional safety: Only update if this WebView actually belongs to this tab
+        guard webView === tab.webView else {
+            print("⚠️ WebView instance mismatch detected for tab \(tab.id)")
+            return // Prevent state updates from wrong WebView instance
+        }
+        
         // Check if we need to navigate to a new URL
         if let tabURL = tab.url, webView.url?.absoluteString != tabURL.absoluteString {
             let request = URLRequest(url: tabURL)
             webView.load(request)
         }
         
-        // Sync the tab's properties with webview state
+        // Sync the tab's properties with webview state - ONLY for the correct WebView
         DispatchQueue.main.async {
+            // Double-check ownership before updating properties
+            guard webView === self.tab.webView else { return }
+            
             self.tab.canGoBack = webView.canGoBack
             self.tab.canGoForward = webView.canGoForward
             self.tab.isLoading = webView.isLoading
@@ -267,5 +289,13 @@ struct ExistingWebView: NSViewRepresentable {
                 self.tab.url = webViewURL
             }
         }
+    }
+    
+    func makeCoordinator() -> ExistingWebViewCoordinator {
+        ExistingWebViewCoordinator()
+    }
+    
+    class ExistingWebViewCoordinator: NSObject {
+        var tabId: UUID?
     }
 }

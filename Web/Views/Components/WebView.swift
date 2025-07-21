@@ -104,9 +104,13 @@ struct WebView: NSViewRepresentable {
         // Set up observers with error handling
         context.coordinator.setupObservers(for: webView)
         
-        // Store webView reference for coordinator and tab
+        // Store webView reference for coordinator and tab with ownership validation
         context.coordinator.webView = webView
         if let tab = tab {
+            // CRITICAL: Ensure exclusive WebView ownership per tab
+            if let existingWebView = tab.webView, existingWebView !== webView {
+                print("⚠️ WARNING: Tab \(tab.id) already has a different WebView instance. This could cause content bleeding.")
+            }
             tab.webView = webView
         }
         

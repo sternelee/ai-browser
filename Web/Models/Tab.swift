@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import Combine
 import UniformTypeIdentifiers
+import ObjectiveC
 
 class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     let id = UUID()
@@ -27,7 +28,30 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     private(set) var forwardHistory: [HistoryEntry] = []
     
     // WebView reference - keeping strong reference to prevent deallocation during tab switches
-    var webView: WKWebView?
+    private var _webView: WKWebView?
+    
+    // Track WebView ownership using associated objects
+    private static var webViewOwnershipKey: UInt8 = 0
+    
+    var webView: WKWebView? {
+        get { _webView }
+        set {
+            // CRITICAL: Prevent WebView sharing between tabs to fix content duplication bug
+            if let newWebView = newValue {
+                // Check if this WebView is already assigned to another tab
+                let existingOwnerId = objc_getAssociatedObject(newWebView, &Self.webViewOwnershipKey) as? UUID
+                
+                if let existingId = existingOwnerId, existingId != id {
+                    print("🚨 CRITICAL: Attempting to assign WebView from another tab! Expected: \(id), Got: \(existingId)")
+                    return // Reject assignment to prevent content bleeding
+                }
+                
+                // Set ownership tracking for this WebView
+                objc_setAssociatedObject(newWebView, &Self.webViewOwnershipKey, id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            }
+            _webView = newValue
+        }
+    }
     
     // Simple hibernation timer for backward compatibility
     private var hibernationTimer: Timer?

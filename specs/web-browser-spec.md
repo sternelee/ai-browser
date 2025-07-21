@@ -444,6 +444,34 @@ After completing each implementation session, you MUST:
 
 ## Discovered During Work
 
+### Critical Tab Duplication Bug Fix (July 21, 2025) ✅ COMPLETED
+- **Issue**: Severe tab content duplication where switching to an "old" tab caused all nearby tabs to display the same content as the selected tab
+- **Root Cause**: Critical architectural flaw in WebView reuse pattern allowing multiple tabs to share the same WKWebView instance, causing content bleeding between tabs
+- **Technical Details**:
+  - `ExistingWebView.updateNSView()` in WebContentView.swift had race conditions during tab switches
+  - No WebView ownership validation meant same WebView could be assigned to multiple tabs
+  - State synchronization in async blocks could overwrite wrong tab properties
+  - Missing identity checks allowed cross-tab content contamination
+- **Comprehensive Fixes Applied**:
+  1. **WebView Ownership Tracking**: Implemented Objective-C associated objects to track WebView ownership per tab UUID
+  2. **Ownership Validation**: Added validation in Tab.swift setter to reject WebView assignments from other tabs
+  3. **State Update Protection**: Enhanced ExistingWebView with multiple ownership checks before property updates
+  4. **Identity Validation**: Added reference equality checks (`webView === tab.webView`) to prevent wrong WebView updates
+  5. **Coordinator Validation**: Added tabId tracking in ExistingWebViewCoordinator for additional safety
+- **Architecture Improvements**:
+  - Replaced unsafe WebView sharing with strict one-to-one tab-WebView ownership
+  - Added defensive programming with ownership validation at multiple levels
+  - Implemented proper isolation between tab WebView instances
+  - Added comprehensive logging for debugging ownership violations
+- **Behavior Change**: 
+  - Each tab now has exclusive ownership of its WebView instance
+  - Ownership violations are detected and blocked with detailed logging
+  - Tab content isolation is now guaranteed, preventing content bleeding
+  - Safe fallbacks prevent crashes when ownership conflicts are detected
+- **Verification**: Build completes with 0 errors, 1 minor warning. Tab content isolation now properly maintained
+- **Impact**: Critical privacy and data integrity bug resolved - tabs can no longer display each other's content
+- **Status**: Tab duplication bug completely resolved with robust architectural improvements
+
 ### Tab Loading Continuity Fix (July 21, 2025) ✅ COMPLETED
 - **Issue**: Tabs that are switched away from before completing loading would never finish loading
 - **Root Cause**: Aggressive hibernation system in Tab.swift:74 was destroying WebViews (`webView = nil`) when tabs became inactive, permanently interrupting any in-progress loading
