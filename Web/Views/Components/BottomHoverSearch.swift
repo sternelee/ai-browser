@@ -164,10 +164,12 @@ struct BottomHoverSearch: View {
             // Enhanced glass background
             RoundedRectangle(cornerRadius: 12)
                 .fill(.thickMaterial)
+                .allowsHitTesting(false)
             
             // Dark glass surface overlay
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.bgSurface)
+                .allowsHitTesting(false)
             
             // Focus ring with accent beam
             RoundedRectangle(cornerRadius: 12)
@@ -176,6 +178,7 @@ struct BottomHoverSearch: View {
                     lineWidth: isSearchFocused ? 2 : 1
                 )
                 .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+                .allowsHitTesting(false)
             
             // Subtle inner glow when focused
             if isSearchFocused {
@@ -192,6 +195,7 @@ struct BottomHoverSearch: View {
                         )
                     )
                     .transition(.opacity)
+                    .allowsHitTesting(false)
             }
         }
     }

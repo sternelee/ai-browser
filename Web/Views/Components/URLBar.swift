@@ -54,6 +54,7 @@ struct URLBar: View {
             // Fully transparent background for clean input
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.clear)
+                .allowsHitTesting(false)
             
             // Subtle theme color integration
             if themeColor != nil && swiftUIThemeColor != .clear {
@@ -71,6 +72,7 @@ struct URLBar: View {
                         )
                     )
                     .animation(.easeInOut(duration: 0.4), value: themeColor)
+                    .allowsHitTesting(false)
             }
             
             // Seamless focus enhancement
@@ -92,6 +94,7 @@ struct URLBar: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: themeColor)
+                    .allowsHitTesting(false)
                 
                 // Minimal surface elevation
                 RoundedRectangle(cornerRadius: 8)
@@ -108,6 +111,7 @@ struct URLBar: View {
                     )
                     .transition(.opacity)
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isURLBarFocused)
+                    .allowsHitTesting(false)
             }
             
             // Ultra-subtle border (only when not focused)
@@ -118,6 +122,7 @@ struct URLBar: View {
                         lineWidth: 0.5
                     )
                     .animation(.easeInOut(duration: 0.2), value: hovering)
+                    .allowsHitTesting(false)
             }
         }
     }
