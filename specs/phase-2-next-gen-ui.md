@@ -1276,6 +1276,13 @@ struct AdaptiveGlassBackground: View {
 - **Minimalist navigation buttons**: Removed background boxes from back/forward/reload buttons, increased touch target to 20x20
 - **Next-gen sidebar close button**: Redesigned close button to appear on the right with subtle red tint, glass material background, and proper positioning
 
+### ✅ Final Polish & UX Fixes (Third Session)
+- **Fixed favicon positioning**: Favicon now stays centered in sidebar tabs instead of moving when close button appears
+- **Compact active tab styling**: Made selected tab background box 6px smaller (3px padding) while maintaining same internal spacing
+- **Fixed borderless mode clicking**: Resolved issue where hover zones blocked tab clicks by using allowsHitTesting() conditionally
+- **Enhanced window controls**: Minimize button now uses orange-to-yellow gradient, maximize button increased from 8px to 10px
+- **Functional window controls**: All window control buttons now properly trigger minimize, maximize, and close actions
+
 ### Revolutionary Features *(macOS 18 Finder-Inspired)*
 - **Favicon-only sidebar**: Industry-first minimal design showing only favicons
 - **Smart window controls**: Appear only on hover for ultimate minimalism

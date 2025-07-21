@@ -83,7 +83,7 @@ struct TabDisplayView: View {
                 HStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(width: showSidebarOnHover ? 60 : 12) // Expand when sidebar is shown to prevent disappearing
+                        .frame(width: 12) // Keep consistent small trigger zone
                         .onHover { hovering in
                             handleSidebarHover(hovering)
                         }
@@ -152,8 +152,8 @@ struct TabDisplayView: View {
                 showSidebarOnHover = true
             }
         } else {
-            // Add a small delay before hiding to prevent flickering
-            hideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+            // Add a longer delay before hiding to allow clicking on tabs
+            hideTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     showSidebarOnHover = false
                 }

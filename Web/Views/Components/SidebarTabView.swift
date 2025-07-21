@@ -145,17 +145,25 @@ struct SidebarTabItem: View {
             backgroundView
             
             HStack(spacing: 0) {
-                Spacer()
-                
-                faviconView
-                    .frame(width: 24, height: 24)
-                
-                Spacer()
-                
-                if showCloseButton && isHovered {
-                    closeButton
-                        .transition(.scale.combined(with: .opacity))
+                // Favicon always centered in its own space
+                HStack {
+                    Spacer()
+                    faviconView
+                        .frame(width: 24, height: 24)
+                    Spacer()
                 }
+                .frame(width: 32) // Fixed width for favicon area
+                
+                // Close button area (separate from favicon)
+                HStack {
+                    if showCloseButton && isHovered {
+                        closeButton
+                            .transition(.scale.combined(with: .opacity))
+                    } else {
+                        Spacer()
+                    }
+                }
+                .frame(width: 16) // Fixed width for close button area
             }
             .frame(width: 48, height: 44)
         }
@@ -253,33 +261,50 @@ struct SidebarTabItem: View {
             }
         }) {
             ZStack {
-                // Next-gen macOS style background
+                // Liquidy, bigger background with blur effect
                 Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 16, height: 16)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.red.opacity(0.8),
+                                Color.red.opacity(0.6),
+                                Color.red.opacity(0.3)
+                            ],
+                            center: .topLeading,
+                            startRadius: 1,
+                            endRadius: 10
+                        )
+                    )
+                    .frame(width: 20, height: 20)
                     .overlay(
                         Circle()
-                            .fill(
-                                RadialGradient(
+                            .fill(.ultraThinMaterial)
+                            .blendMode(.overlay)
+                    )
+                    .overlay(
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
                                     colors: [
-                                        Color.red.opacity(0.1),
-                                        Color.clear
+                                        Color.white.opacity(0.4),
+                                        Color.white.opacity(0.1)
                                     ],
-                                    center: .center,
-                                    startRadius: 2,
-                                    endRadius: 8
-                                )
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 0.5
                             )
                     )
                 
                 // X mark
                 Image(systemName: "xmark")
-                    .font(.system(size: 6, weight: .bold))
-                    .foregroundColor(.red.opacity(0.8))
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.white)
             }
         }
         .buttonStyle(.plain)
-        .offset(x: -2) // Slight inward offset for better positioning
+        .scaleEffect(isHovered ? 1.1 : 1.0)
+        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isHovered)
     }
     
     private func extractFaviconColor(from image: NSImage?) {

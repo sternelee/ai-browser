@@ -53,19 +53,33 @@ struct CompactWindowControls: View {
             // Close button
             CompactWindowControlButton(
                 color: .red,
-                action: { NSApplication.shared.keyWindow?.performClose(nil) }
+                action: { 
+                    if let window = NSApplication.shared.windows.first {
+                        window.performClose(nil)
+                    }
+                }
             )
             
-            // Minimize button
+            // Minimize button with different gradient
             CompactWindowControlButton(
-                color: .yellow,
-                action: { NSApplication.shared.keyWindow?.performMiniaturize(nil) }
+                color: .orange,
+                isMinimizeButton: true,
+                action: { 
+                    if let window = NSApplication.shared.windows.first {
+                        window.performMiniaturize(nil)
+                    }
+                }
             )
             
-            // Zoom button
+            // Zoom button (bigger and more functional)
             CompactWindowControlButton(
                 color: .green,
-                action: { NSApplication.shared.keyWindow?.performZoom(nil) }
+                isMaximizeButton: true,
+                action: { 
+                    if let window = NSApplication.shared.windows.first {
+                        window.performZoom(nil)
+                    }
+                }
             )
         }
         .padding(6)
@@ -94,24 +108,23 @@ struct CompactWindowControls: View {
 // Compact window control button for tight spaces
 struct CompactWindowControlButton: View {
     let color: Color
+    let isMinimizeButton: Bool
+    let isMaximizeButton: Bool
     let action: () -> Void
     @State private var isHovered: Bool = false
+    
+    init(color: Color, isMinimizeButton: Bool = false, isMaximizeButton: Bool = false, action: @escaping () -> Void) {
+        self.color = color
+        self.isMinimizeButton = isMinimizeButton
+        self.isMaximizeButton = isMaximizeButton
+        self.action = action
+    }
     
     var body: some View {
         Button(action: action) {
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            color.opacity(0.85),
-                            color.opacity(0.65)
-                        ],
-                        center: .topLeading,
-                        startRadius: 1,
-                        endRadius: 4
-                    )
-                )
-                .frame(width: 8, height: 8)
+                .fill(buttonGradient)
+                .frame(width: buttonSize, height: buttonSize)
                 .overlay(
                     Circle()
                         .strokeBorder(
@@ -140,6 +153,34 @@ struct CompactWindowControlButton: View {
                 isHovered = hovering
             }
         }
+    }
+    
+    private var buttonGradient: RadialGradient {
+        if isMinimizeButton {
+            return RadialGradient(
+                colors: [
+                    Color.orange.opacity(0.9),
+                    Color.yellow.opacity(0.7)
+                ],
+                center: .topLeading,
+                startRadius: 1,
+                endRadius: 4
+            )
+        } else {
+            return RadialGradient(
+                colors: [
+                    color.opacity(0.85),
+                    color.opacity(0.65)
+                ],
+                center: .topLeading,
+                startRadius: 1,
+                endRadius: 4
+            )
+        }
+    }
+    
+    private var buttonSize: CGFloat {
+        isMaximizeButton ? 10 : 8 // Make maximize button bigger
     }
 }
 
