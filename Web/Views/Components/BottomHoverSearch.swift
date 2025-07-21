@@ -168,7 +168,7 @@ struct BottomHoverSearch: View {
             
             // Dark glass surface overlay
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
+                .fill(Color.bgSurface)
                 .allowsHitTesting(false)
             
             // Focus ring with accent beam
@@ -263,7 +263,7 @@ struct BottomHoverSearch: View {
             
             // Dark glass surface overlay
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
+                .fill(Color.bgSurface)
             
             // Subtle border
             RoundedRectangle(cornerRadius: 12)

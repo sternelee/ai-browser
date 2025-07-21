@@ -5,21 +5,17 @@ import AppKit
 extension Color {
     // Base colors
     static let bgBase = Color(red: 0.043, green: 0.043, blue: 0.043) // #0B0B0B
-    static let bgPrimary = Color(red: 0.043, green: 0.043, blue: 0.043) // #0B0B0B (alias for bgBase)
-    static let bgSecondary = Color.black.opacity(0.8)
     static let bgSurface = Color.white.opacity(0.06)
     
     // Text colors
     static let textPrimary = Color.white
     static let textSecondary = Color.white.opacity(0.35)
-    static let textTertiary = Color.white.opacity(0.25)
     
     // Accent colors
     static let accentBeam = Color(red: 1.0, green: 0.647, blue: 0.510).opacity(0.35) // #FFA582 @ 35%
     
     // Border colors
     static let borderGlass = Color.white.opacity(0.22)
-    static let borderSubtle = Color.white.opacity(0.15)
     static let strokeCavedTop = Color.black.opacity(0.9)
     static let strokeCavedBot = Color.white.opacity(0.06)
 }
@@ -41,7 +37,7 @@ struct GlassModifier: ViewModifier {
                 ZStack {
                     // Base glass surface
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
+                        .fill(Color.bgSurface)
                     
                     // Glass border
                     RoundedRectangle(cornerRadius: 8)
@@ -70,8 +66,6 @@ extension Font {
     static let webH1 = Font.custom("SF Pro Display", size: 28).weight(.semibold)
     static let webH2 = Font.custom("SF Pro Display", size: 22).weight(.medium)
     static let webBody = Font.custom("SF Pro Text", size: 15).weight(.regular)
-    static let webCaption = Font.custom("SF Pro Text", size: 13).weight(.regular)
-    static let webCaption2 = Font.custom("SF Pro Text", size: 11).weight(.regular)
     static let webMicro = Font.custom("SF Pro Text", size: 12).weight(.regular)
 }
 
@@ -106,7 +100,7 @@ struct GlassButtonStyle: ButtonStyle {
                 ZStack {
                     // Glass background
                     RoundedRectangle(cornerRadius: size.cornerRadius)
-                        .fill(.ultraThinMaterial)
+                        .fill(Color.bgSurface)
                     
                     // Border
                     RoundedRectangle(cornerRadius: size.cornerRadius)

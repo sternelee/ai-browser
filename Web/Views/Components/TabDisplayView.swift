@@ -100,9 +100,6 @@ struct TabDisplayView: View {
                 tabManager.createNewTab(url: url)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .newIncognitoWindowRequested)) { _ in
-            tabManager.createNewTab(isIncognito: true)
-        }
     }
     
     @ViewBuilder

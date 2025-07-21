@@ -87,38 +87,11 @@ struct WebView: NSViewRepresentable {
         
         config.userContentController = contentController
         
-        return createWebView(with: config, context: context)
-    }
-    
-    private func createWebView(with config: WKWebViewConfiguration, context: Context) -> WKWebView {
-        // Check if this is an incognito tab and use appropriate configuration
-        if let tab = tab, tab.isIncognito {
-            if let incognitoConfig = IncognitoSession.shared.getIncognitoConfiguration() {
-                return createConfiguredWebView(with: incognitoConfig, context: context, isIncognito: true)
-            }
-        }
-        
-        return createConfiguredWebView(with: config, context: context, isIncognito: false)
-    }
-    
-    private func createConfiguredWebView(with config: WKWebViewConfiguration, context: Context, isIncognito: Bool) -> WKWebView {
-        // Create SmoothScrollingWebView with safe frame to prevent frame calculation issues
+        // Create WebView with safe frame to prevent frame calculation issues
         let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
-        let webView = SmoothScrollingWebView(frame: safeFrame, configuration: config)
+        let webView = WKWebView(frame: safeFrame, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        
-        // Configure security services if not in incognito mode
-        if !isIncognito {
-            // Configure ad blocker
-            AdBlockService.shared.configureWebView(webView)
-            
-            // Configure password manager
-            PasswordManager.shared.configureAutofill(for: webView)
-        } else {
-            // Configure incognito-specific privacy features
-            IncognitoSession.shared.configurePrivateWebView(webView)
-        }
         
         // Configure for optimal web content including WebGL
         // Note: WebGL is enabled by default in WKWebView on macOS
