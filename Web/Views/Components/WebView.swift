@@ -115,13 +115,16 @@ struct WebView: NSViewRepresentable {
     
     func updateNSView(_ webView: WKWebView, context: Context) {
         // Only load if URL has actually changed from what we last attempted to load
+        // AND we're not dealing with an existing webview that already has content
         if let url = url {
             let lastLoadedURL = context.coordinator.lastLoadedURL
             let hasNeverLoaded = lastLoadedURL == nil
             let isDifferentURL = lastLoadedURL?.absoluteString != url.absoluteString
+            let isCurrentlyDifferent = webView.url?.absoluteString != url.absoluteString
             
             // Only load if this is a genuinely new URL that we haven't attempted to load
-            if hasNeverLoaded || isDifferentURL {
+            // and it's different from what the webview is currently showing
+            if (hasNeverLoaded || isDifferentURL) && isCurrentlyDifferent {
                 let request = URLRequest(url: url)
                 webView.load(request)
                 

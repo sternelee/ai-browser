@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // Web content view for displaying individual tabs
 struct WebContentView: View {
@@ -6,6 +7,7 @@ struct WebContentView: View {
     @Binding var urlString: String
     @State private var pulsingScale: CGFloat = 1.0
     @State private var hoveredLink: String? = nil
+    @State private var hasInitializedWebView: Bool = false
     
     var body: some View {
         ZStack {
@@ -29,49 +31,17 @@ struct WebContentView: View {
                         tab.wakeUp()
                     }
             } else {
-                // Active web view
+                // Active web view - only create WebView once per tab to maintain state
                 if tab.url != nil {
-                    WebView(
-                        url: Binding(
-                            get: { tab.url },
-                            set: { tab.url = $0 }
-                        ),
-                        canGoBack: Binding(
-                            get: { tab.canGoBack },
-                            set: { tab.canGoBack = $0 }
-                        ),
-                        canGoForward: Binding(
-                            get: { tab.canGoForward },
-                            set: { tab.canGoForward = $0 }
-                        ),
-                        isLoading: Binding(
-                            get: { tab.isLoading },
-                            set: { tab.isLoading = $0 }
-                        ),
-                        estimatedProgress: Binding(
-                            get: { tab.estimatedProgress },
-                            set: { tab.estimatedProgress = $0 }
-                        ),
-                        title: Binding(
-                            get: { tab.title },
-                            set: { tab.title = $0 ?? "New Tab" }
-                        ),
-                        favicon: Binding(
-                            get: { tab.favicon },
-                            set: { tab.favicon = $0 }
-                        ),
-                        hoveredLink: $hoveredLink,
-                        tab: tab,
-                        onNavigationAction: nil,
-                        onDownloadRequest: nil
-                    )
-                    .onChange(of: tab.url) { _, newURL in
-                        if let url = newURL {
-                            urlString = url.absoluteString
+                    PersistentWebView(tab: tab, urlString: $urlString, hoveredLink: $hoveredLink)
+                        .onAppear {
+                            hasInitializedWebView = true
                         }
-                    }
                 } else {
                     NewTabView()
+                        .onAppear {
+                            hasInitializedWebView = false
+                        }
                 }
             }
             
@@ -200,6 +170,92 @@ struct WebContentView: View {
         } else {
             let adjustedProgress = (progress - 0.3) / 0.7 // Map 0.3-1.0 to 0.0-1.0
             return pow(adjustedProgress, 2.0) * 12.0 // Quadratic curve, max 12pt blur
+        }
+    }
+}
+
+// Persistent WebView that maintains state per tab
+struct PersistentWebView: View {
+    @ObservedObject var tab: Tab
+    @Binding var urlString: String
+    @Binding var hoveredLink: String?
+    
+    var body: some View {
+        // Only create a new WebView if the tab doesn't already have one
+        Group {
+            if tab.webView == nil {
+                // Create new WebView and store it in the tab
+                WebView(
+                    url: Binding(
+                        get: { tab.url },
+                        set: { tab.url = $0 }
+                    ),
+                    canGoBack: Binding(
+                        get: { tab.canGoBack },
+                        set: { tab.canGoBack = $0 }
+                    ),
+                    canGoForward: Binding(
+                        get: { tab.canGoForward },
+                        set: { tab.canGoForward = $0 }
+                    ),
+                    isLoading: Binding(
+                        get: { tab.isLoading },
+                        set: { tab.isLoading = $0 }
+                    ),
+                    estimatedProgress: Binding(
+                        get: { tab.estimatedProgress },
+                        set: { tab.estimatedProgress = $0 }
+                    ),
+                    title: Binding(
+                        get: { tab.title },
+                        set: { tab.title = $0 ?? "New Tab" }
+                    ),
+                    favicon: Binding(
+                        get: { tab.favicon },
+                        set: { tab.favicon = $0 }
+                    ),
+                    hoveredLink: $hoveredLink,
+                    tab: tab,
+                    onNavigationAction: nil,
+                    onDownloadRequest: nil
+                )
+                .onChange(of: tab.url) { _, newURL in
+                    if let url = newURL {
+                        urlString = url.absoluteString
+                    }
+                }
+            } else {
+                // Use existing WebView wrapped in a NSViewRepresentable
+                ExistingWebView(tab: tab)
+                    .onChange(of: tab.url) { _, newURL in
+                        if let url = newURL {
+                            urlString = url.absoluteString
+                        }
+                    }
+            }
+        }
+    }
+}
+
+// Wrapper for existing WebView instances
+struct ExistingWebView: NSViewRepresentable {
+    @ObservedObject var tab: Tab
+    
+    typealias NSViewType = WKWebView
+    
+    func makeNSView(context: Context) -> WKWebView {
+        return tab.webView!
+    }
+    
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        // Don't reload - the WebView maintains its own state
+        // Just ensure the tab's properties are synced
+        DispatchQueue.main.async {
+            tab.canGoBack = webView.canGoBack
+            tab.canGoForward = webView.canGoForward
+            tab.isLoading = webView.isLoading
+            tab.estimatedProgress = webView.estimatedProgress
+            tab.title = webView.title ?? "New Tab"
         }
     }
 }

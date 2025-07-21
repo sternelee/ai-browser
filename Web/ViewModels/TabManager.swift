@@ -69,6 +69,9 @@ class TabManager: ObservableObject {
     }
     
     func setActiveTab(_ tab: Tab) {
+        // Don't do anything if this tab is already active
+        guard activeTab?.id != tab.id else { return }
+        
         // Deactivate current tab
         activeTab?.isActive = false
         
@@ -76,6 +79,8 @@ class TabManager: ObservableObject {
         activeTab = tab
         tab.isActive = true
         tab.wakeUp() // Wake up if hibernated
+        
+        print("Switched to tab: \(tab.title) (\(tab.url?.absoluteString ?? "no URL"))")
     }
     
     func moveTab(from source: IndexSet, to destination: Int) {

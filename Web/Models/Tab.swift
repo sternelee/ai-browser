@@ -26,12 +26,12 @@ class Tab: ObservableObject, Identifiable, Transferable {
     private(set) var backHistory: [HistoryEntry] = []
     private(set) var forwardHistory: [HistoryEntry] = []
     
-    // WebView reference (weak to prevent retain cycles)
-    weak var webView: WKWebView?
+    // WebView reference - keeping strong reference to prevent deallocation during tab switches
+    var webView: WKWebView?
     
     // Simple hibernation timer for backward compatibility
     private var hibernationTimer: Timer?
-    private let hibernationThreshold: TimeInterval = 300
+    private let hibernationThreshold: TimeInterval = 1800 // Increased to 30 minutes to prevent aggressive hibernation
     
     struct HistoryEntry {
         let url: URL
@@ -71,23 +71,28 @@ class Tab: ObservableObject, Identifiable, Transferable {
     
     // MARK: - Performance Management
     func hibernate() {
+        // Only hibernate if tab has been inactive for a very long time and not loading
+        // Don't hibernate tabs that are actively loading or recently accessed
         guard !isActive && !isHibernated && !isLoading else { return }
+        guard Date().timeIntervalSince(lastAccessed) > hibernationThreshold else { return }
         
         // Create snapshot before hibernating
         createSnapshot()
         
-        // Remove WebView to free memory
-        webView?.removeFromSuperview()
-        webView = nil
+        // Keep WebView in memory but mark as hibernated for UI purposes
+        // This prevents content loss while still indicating hibernated state
         isHibernated = true
+        
+        print("Tab hibernated: \(title)")
     }
     
     func wakeUp() {
         guard isHibernated else { return }
         
         isHibernated = false
-        // WebView will be recreated when needed
         updateLastAccessed()
+        
+        print("Tab woken up: \(title)")
     }
     
     private func createSnapshot() {
