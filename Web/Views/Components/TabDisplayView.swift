@@ -23,7 +23,6 @@ struct TabDisplayView: View {
                     if displayMode == .topBar && (!isEdgeToEdgeMode || showTopBarOnHover) {
                         TopBarTabView(tabManager: tabManager)
                             .frame(height: 40)
-                            .background(.ultraThinMaterial)
                             .transition(.move(edge: .top).combined(with: .opacity))
                             .opacity(isEdgeToEdgeMode && !showTopBarOnHover ? 0 : 1)
                     }
@@ -34,7 +33,6 @@ struct TabDisplayView: View {
                         if displayMode == .sidebar && (!isEdgeToEdgeMode || showSidebarOnHover) {
                             SidebarTabView(tabManager: tabManager)
                                 .frame(width: 60)
-                                .background(.ultraThinMaterial)
                                 .transition(.move(edge: .leading).combined(with: .opacity))
                                 .opacity(isEdgeToEdgeMode && !showSidebarOnHover ? 0 : 1)
                         }

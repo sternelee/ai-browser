@@ -62,44 +62,6 @@ struct SidebarTabView: View {
             }
         }
         .frame(width: 60)
-        .background(
-            // Beautiful seamless glass background
-            ZStack {
-                // Primary glass material
-                RoundedRectangle(cornerRadius: 0)
-                    .fill(.regularMaterial)
-                
-                // Soft glass overlay with gradient
-                RoundedRectangle(cornerRadius: 0)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.08),
-                                Color.white.opacity(0.02)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // Subtle inner border
-                HStack {
-                    Spacer()
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.15),
-                                    Color.white.opacity(0.03)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 0.5)
-                }
-            }
-        )
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true

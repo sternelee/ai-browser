@@ -31,7 +31,6 @@ struct TopBarTabView: View {
             controlsSection
         }
         .frame(height: 40)
-        .background(topBarBackground)
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true

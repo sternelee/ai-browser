@@ -2,14 +2,15 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var isEdgeToEdgeMode: Bool = false
+    @State private var isExpanded: Bool = false
     
     var body: some View {
         ZStack {
-            // Subtle window background with blur and border
-            RoundedRectangle(cornerRadius: 12)
+            // Subtle window background with blur and border (conditional padding)
+            RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [
@@ -23,22 +24,43 @@ struct ContentView: View {
                         )
                 )
                 .shadow(
-                    color: .black.opacity(0.15),
-                    radius: 20,
+                    color: .black.opacity(isExpanded ? 0 : 0.15),
+                    radius: isExpanded ? 0 : 20,
                     x: 0,
-                    y: 8
+                    y: isExpanded ? 0 : 8
                 )
-                .padding(8) // Subtle padding from window edges
+                .padding(isExpanded ? 0 : 8) // No padding when expanded
             
             // Browser content inside the styled window
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(16) // Inner padding for content
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(isExpanded ? 0 : 16) // No inner padding when expanded
+                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 0 : 8))
+        }
+        .onTapGesture(count: 2) {
+            toggleExpanded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isExpanded)
+    }
+    
+    private func toggleExpanded() {
+        guard let window = NSApplication.shared.keyWindow else { return }
+        
+        if isExpanded {
+            // Return to normal size
+            isExpanded = false
+            // Let the window handle its own sizing
+        } else {
+            // Expand to fill screen
+            isExpanded = true
+            if let screen = window.screen {
+                let screenFrame = screen.visibleFrame
+                window.setFrame(screenFrame, display: true, animate: true)
+            }
         }
     }
 }
