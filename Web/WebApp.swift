@@ -99,11 +99,6 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
             
-            Button("Hide Top Bar") {
-                NotificationCenter.default.post(name: .hideTopBar, object: nil)
-            }
-            .keyboardShortcut("h", modifiers: [.command, .shift])
-            
             Button("Next Tab") {
                 NotificationCenter.default.post(name: .nextTabRequested, object: nil)
             }
@@ -142,7 +137,6 @@ extension Notification.Name {
     // Phase 2: Next-Gen UI shortcuts
     static let toggleTabDisplay = Notification.Name("toggleTabDisplay")
     static let toggleEdgeToEdge = Notification.Name("toggleEdgeToEdge")
-    static let hideTopBar = Notification.Name("hideTopBar")
     static let navigateBack = Notification.Name("navigateBack")
     static let navigateForward = Notification.Name("navigateForward")
     

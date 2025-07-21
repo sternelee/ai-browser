@@ -113,7 +113,7 @@ struct WebContentView: View {
                 }
             }
             
-            // Smart Status Bar positioned at bottom-left - only show for link hover, not loading
+            // Smart Status Bar positioned at bottom-left
             VStack {
                 Spacer()
                 HStack {

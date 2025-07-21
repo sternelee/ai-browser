@@ -82,7 +82,13 @@ struct SmartStatusBar: View {
         .onChange(of: hoveredLink) { _, _ in
             updateForHoveredLink()
         }
-        // Removed auto-loading display - status bar only shows for link hover and explicit states
+        .onChange(of: tab.isLoading) { _, isLoading in
+            if isLoading {
+                showLoading()
+            } else {
+                hideStatusWithDelay()
+            }
+        }
         .onChange(of: tab.estimatedProgress) { _, newProgress in
             progress = newProgress
         }
