@@ -250,9 +250,9 @@ struct NewTabView: View {
     
     private func navigateToURL(_ urlString: String) {
         if let url = URL(string: addHttpIfNeeded(urlString)) {
-            // Create new tab with URL
+            // Navigate in current tab instead of creating new one
             NotificationCenter.default.post(
-                name: .createNewTabWithURL,
+                name: .navigateCurrentTab,
                 object: url
             )
         }
@@ -262,7 +262,7 @@ struct NewTabView: View {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "https://www.google.com/search?q=\(encodedQuery)") {
             NotificationCenter.default.post(
-                name: .createNewTabWithURL,
+                name: .navigateCurrentTab,
                 object: url
             )
         }
@@ -414,10 +414,6 @@ struct FloatingParticlesView: View {
     }
 }
 
-// Extension for notification
-extension Notification.Name {
-    static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
-}
 
 struct MinimalActionCard: View {
     let icon: String

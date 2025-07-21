@@ -18,22 +18,26 @@ struct URLBar: View {
         return .clear
     }
     
-    // Computed property for display text (title-first approach)
+    // Computed property for display text (title-first approach) - simplified to prevent lock-ups
     private var displayText: Binding<String> {
         Binding(
             get: {
+                // Simplified logic to prevent complex state dependencies
                 if isURLBarFocused || hovering {
                     return editingText
-                } else if let title = pageTitle, !title.isEmpty && title != "New Tab" && !urlString.isEmpty {
-                    return title
-                } else if !urlString.isEmpty {
-                    return cleanDisplayURL(urlString)
-                } else {
-                    return ""
                 }
+                // Use cached values to prevent repeated calculations
+                let hasValidTitle = pageTitle?.isEmpty == false && pageTitle != "New Tab"
+                if hasValidTitle && !urlString.isEmpty {
+                    return pageTitle!
+                }
+                return urlString.isEmpty ? "" : cleanDisplayURL(urlString)
             },
             set: { newValue in
-                editingText = newValue
+                // Prevent circular updates by checking if value actually changed
+                if editingText != newValue {
+                    editingText = newValue
+                }
             }
         )
     }
@@ -83,8 +87,15 @@ struct URLBar: View {
                     }
                 }
                 .onChange(of: urlString) { _, newURL in
-                    if !isURLBarFocused {
+                    // Only update if not focused and the URL actually changed
+                    if !isURLBarFocused && editingText != newURL {
                         editingText = newURL
+                    }
+                }
+                .onChange(of: pageTitle) { _, newTitle in
+                    // Only update if not focused and avoid triggering other onChange handlers
+                    if !isURLBarFocused && urlString != editingText {
+                        editingText = urlString
                     }
                 }
             

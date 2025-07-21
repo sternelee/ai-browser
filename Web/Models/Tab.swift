@@ -67,6 +67,12 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     func navigate(to url: URL) {
         self.url = url
         updateLastAccessed()
+        
+        // Trigger navigation in the webView if it exists
+        if let webView = webView {
+            let request = URLRequest(url: url)
+            webView.load(request)
+        }
     }
     
     // MARK: - Performance Management

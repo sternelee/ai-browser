@@ -94,6 +94,11 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
             
+            Button("Toggle Top Bar") {
+                NotificationCenter.default.post(name: .toggleTopBar, object: nil)
+            }
+            .keyboardShortcut("h", modifiers: [.command, .shift])
+            
             Button("Next Tab") {
                 NotificationCenter.default.post(name: .nextTabRequested, object: nil)
             }
@@ -138,4 +143,7 @@ extension Notification.Name {
     static let nextTabRequested = Notification.Name("nextTabRequested")
     static let previousTabRequested = Notification.Name("previousTabRequested")
     static let selectTabByNumber = Notification.Name("selectTabByNumber")
+    static let navigateCurrentTab = Notification.Name("navigateCurrentTab")
+    static let toggleTopBar = Notification.Name("toggleTopBar")
+    static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
 }

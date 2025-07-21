@@ -75,6 +75,7 @@ Web/
 | Find in Page | ⌘F | NotificationCenter.findInPageRequested |
 | Downloads | ⇧⌘J | NotificationCenter.showDownloadsRequested |
 | Developer Tools | ⌥⌘I | NotificationCenter.showDeveloperToolsRequested |
+| Cycle Top Bar Mode | ⇧⌘H | NotificationCenter.toggleTopBar |
 
 ## Critical Implementation Notes
 

@@ -9,10 +9,12 @@ enum TabDisplayMode: String, CaseIterable {
 struct TabDisplayView: View {
     @ObservedObject var tabManager: TabManager
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
+    @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
     @State private var showSidebarOnHover: Bool = false
     @State private var showTopBarOnHover: Bool = false
     @State private var showBottomSearchOnHover: Bool = false
+    @State private var showHoverableURLBar: Bool = false
     @State private var hideTimer: Timer?
     
     var body: some View {
@@ -54,11 +56,36 @@ struct TabDisplayView: View {
                     edgeToEdgeHoverZones(geometry: geometry)
                 }
                 
-                // Bottom search overlay (edge-to-edge mode only)
-                if isEdgeToEdgeMode {
+                // Hoverable URL bar overlay (when top bar is hidden or in edge-to-edge mode)
+                if hideTopBar || isEdgeToEdgeMode {
                     VStack {
+                        if let activeTab = tabManager.activeTab, let url = activeTab.url {
+                            HoverableURLBar(
+                                urlString: .constant(url.absoluteString),
+                                themeColor: activeTab.themeColor,
+                                onSubmit: { urlString in
+                                    // Handle URL submission
+                                    if let newURL = URL(string: urlString) {
+                                        activeTab.navigate(to: newURL)
+                                    }
+                                },
+                                pageTitle: activeTab.title,
+                                tabManager: tabManager
+                            )
+                        } else {
+                            HoverableURLBar(
+                                urlString: .constant(""),
+                                themeColor: nil,
+                                onSubmit: { urlString in
+                                    if let url = URL(string: urlString) {
+                                        _ = tabManager.createNewTab(url: url)
+                                    }
+                                },
+                                pageTitle: nil,
+                                tabManager: tabManager
+                            )
+                        }
                         Spacer()
-                        BottomHoverSearch(isVisible: $showBottomSearchOnHover, tabManager: tabManager)
                     }
                 }
             }
@@ -100,6 +127,9 @@ struct TabDisplayView: View {
                 tabManager.createNewTab(url: url)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
+            hideTopBar.toggle()
+        }
     }
     
     @ViewBuilder
@@ -133,17 +163,19 @@ struct TabDisplayView: View {
                 }
             }
             
-            // Bottom edge hover zone for new tab search (better usability)
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: 12) // Increased from 3px to 12px for better UX
-                    .onHover { hovering in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showBottomSearchOnHover = hovering
+            // Bottom edge hover zone for hoverable URL bar (when top bar hidden)
+            if hideTopBar || displayMode == .hidden {
+                VStack {
+                    Spacer()
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(height: 12) // Increased from 3px to 12px for better UX
+                        .onHover { hovering in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showHoverableURLBar = hovering
+                            }
                         }
-                    }
+                }
             }
         }
     }
@@ -167,6 +199,7 @@ struct TabDisplayView: View {
             showSidebarOnHover = false
             showTopBarOnHover = false
             showBottomSearchOnHover = false
+            showHoverableURLBar = false
         }
     }
     
@@ -194,6 +227,7 @@ struct WebContentArea: View {
     @ObservedObject var tabManager: TabManager
     @State private var urlString: String = ""
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
+    @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
     
     // Computed property to get current URL string from active tab
@@ -214,8 +248,8 @@ struct WebContentArea: View {
     var body: some View {
         // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
-            // URL bar (hidden in edge-to-edge mode)
-            if !isEdgeToEdgeMode {
+            // URL bar (hidden in edge-to-edge mode or when hideTopBar is enabled)
+            if !isEdgeToEdgeMode && !hideTopBar {
                 HStack(spacing: 12) {
                     // Navigation controls
                     if let activeTab = tabManager.activeTab {
@@ -364,6 +398,9 @@ struct WebContentArea: View {
         .padding(2) // 2px margin as requested
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
+            // This ensures both components stay in sync
         }
         .onAppear {
             // Initialize with a default URL if needed
