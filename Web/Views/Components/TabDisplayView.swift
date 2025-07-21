@@ -220,7 +220,7 @@ struct WebContentArea: View {
                 .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(1) // 1px margin as requested
+        .padding(2) // 2px margin as requested
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
         }
