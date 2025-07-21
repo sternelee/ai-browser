@@ -73,6 +73,28 @@ struct TabDisplayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             toggleEdgeToEdgeMode()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
+            tabManager.createNewTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .closeTabRequested)) { _ in
+            if let activeTab = tabManager.activeTab {
+                tabManager.closeTab(activeTab)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reopenTabRequested)) { _ in
+            _ = tabManager.reopenLastClosedTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nextTabRequested)) { _ in
+            tabManager.selectNextTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .previousTabRequested)) { _ in
+            tabManager.selectPreviousTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .selectTabByNumber)) { notification in
+            if let number = notification.object as? Int {
+                tabManager.selectTabByNumber(number)
+            }
+        }
     }
     
     @ViewBuilder
@@ -199,44 +221,108 @@ struct WebContentArea: View {
                 .padding(.vertical, 6) // Further reduced for even more minimal height
                 .background(
                     ZStack {
-                        // Enhanced dark glass material
+                        // Clean base with subtle material
                         Rectangle()
-                            .fill(.thickMaterial)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.3)
                         
-                        // Dark glassy base surface
-                        Rectangle()
-                            .fill(Color.bgSurface)
-                        
-                        // Theme-aware gradient overlay
+                        // Next-gen ambient gradient system
                         if let themeColor = tabManager.activeTab?.themeColor {
+                            // Primary ambient glow (top-left origin)
                             Rectangle()
                                 .fill(
-                                    LinearGradient(
+                                    EllipticalGradient(
                                         colors: [
-                                            Color(themeColor).opacity(0.15),
                                             Color(themeColor).opacity(0.08),
+                                            Color(themeColor).opacity(0.05),
+                                            Color(themeColor).opacity(0.02),
+                                            Color.clear
+                                        ],
+                                        center: .init(x: 0.1, y: 0.0),
+                                        startRadiusFraction: 0.1,
+                                        endRadiusFraction: 1.2
+                                    )
+                                )
+                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+                            
+                            // Secondary ambient point (center-right)
+                            Rectangle()
+                                .fill(
+                                    EllipticalGradient(
+                                        colors: [
+                                            Color.clear,
+                                            Color(themeColor).opacity(0.04),
+                                            Color(themeColor).opacity(0.07),
                                             Color(themeColor).opacity(0.03),
                                             Color.clear
                                         ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
+                                        center: .init(x: 0.85, y: 0.5),
+                                        startRadiusFraction: 0.15,
+                                        endRadiusFraction: 0.9
                                     )
                                 )
-                                .animation(.easeInOut(duration: 0.6), value: themeColor)
+                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+                            
+                            // Tertiary diffused glow (bottom spread)
+                            Rectangle()
+                                .fill(
+                                    EllipticalGradient(
+                                        colors: [
+                                            Color.clear,
+                                            Color.clear,
+                                            Color(themeColor).opacity(0.03),
+                                            Color(themeColor).opacity(0.06),
+                                            Color(themeColor).opacity(0.02),
+                                            Color.clear
+                                        ],
+                                        center: .init(x: 0.4, y: 1.0),
+                                        startRadiusFraction: 0.2,
+                                        endRadiusFraction: 0.8
+                                    )
+                                )
+                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+                        } else {
+                            // Subtle fallback ambient system
+                            Rectangle()
+                                .fill(
+                                    EllipticalGradient(
+                                        colors: [
+                                            Color.accentBeam.opacity(0.04),
+                                            Color.accentBeam.opacity(0.02),
+                                            Color.clear
+                                        ],
+                                        center: .init(x: 0.2, y: 0.0),
+                                        startRadiusFraction: 0.15,
+                                        endRadiusFraction: 1.0
+                                    )
+                                )
+                            
+                            Rectangle()
+                                .fill(
+                                    EllipticalGradient(
+                                        colors: [
+                                            Color.clear,
+                                            Color.accentBeam.opacity(0.03),
+                                            Color.accentBeam.opacity(0.01),
+                                            Color.clear
+                                        ],
+                                        center: .init(x: 0.7, y: 1.0),
+                                        startRadiusFraction: 0.3,
+                                        endRadiusFraction: 0.7
+                                    )
+                                )
                         }
                         
-                        // Enhanced glass overlay with more depth
+                        // Minimal surface highlight
                         Rectangle()
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color.white.opacity(0.08),
-                                        Color.white.opacity(0.04),
-                                        Color.white.opacity(0.01),
+                                        Color.white.opacity(0.015),
                                         Color.clear
                                     ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                                    startPoint: .top,
+                                    endPoint: .bottom
                                 )
                             )
                     }

@@ -376,6 +376,25 @@ After completing each implementation session, you MUST:
 
 ## Discovered During Work
 
+### Tab Loading Continuity Fix (July 21, 2025) ✅ COMPLETED
+- **Issue**: Tabs that are switched away from before completing loading would never finish loading
+- **Root Cause**: Aggressive hibernation system in Tab.swift:74 was destroying WebViews (`webView = nil`) when tabs became inactive, permanently interrupting any in-progress loading
+- **Technical Details**:
+  - Original hibernation guard: `guard !isActive && !isHibernated else { return }`
+  - Missing protection for loading state meant WebViews could be destroyed mid-load
+  - Hibernation timer logic didn't account for loading state when firing
+- **Fixes Applied**:
+  1. **Loading State Protection**: Updated hibernation guard to `guard !isActive && !isHibernated && !isLoading else { return }` in Tab.swift:74
+  2. **Enhanced Timer Logic**: Modified hibernation timer to check loading state: `if !(self?.isActive ?? true) && !(self?.isLoading ?? false)` in Tab.swift:122
+  3. **Loading State Monitoring**: Added `onLoadingStateChanged()` method to restart hibernation timer when loading completes
+  4. **WebView Integration**: Updated WebView.swift navigation delegates (lines 174, 194, 225, 230) to notify tabs when loading state changes
+- **Behavior Change**: 
+  - Tabs now remain active in memory while loading, regardless of whether they're the active tab
+  - Once loading completes, inactive tabs can be hibernated normally after the 5-minute threshold
+  - Loading state is preserved when switching between tabs during page load
+- **Verification**: Build completes with 0 warnings and 0 errors, tab loading now continues when switching tabs
+- **Status**: Tab loading continuity issue fully resolved
+
 ### Google Homepage User Agent Fix (July 21, 2025) ✅ COMPLETED
 - **Issue**: Google homepage appearing uncentered with old design due to unrecognized user agent
 - **Root Cause**: User agent string was set to only `"Web/1.0"` in WebView.swift:73, causing Google to serve legacy mobile/unknown browser interface

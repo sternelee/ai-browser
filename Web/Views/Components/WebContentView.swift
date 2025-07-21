@@ -73,9 +73,9 @@ struct WebContentView: View {
                 }
             }
             
-            // Enhanced loading progress bar with theme color integration
+            // Enhanced loading progress bar positioned closer to top bar
             if tab.isLoading {
-                VStack {
+                VStack(spacing: 0) {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             // Background track
@@ -83,60 +83,59 @@ struct WebContentView: View {
                                 .fill(Color.secondary.opacity(0.15))
                                 .frame(height: 3)
                             
-                            // Main progress fill with theme color
+                            // Main progress fill with default blue
+                            Rectangle()
+                                .fill(Color.blue)
+                                .frame(width: geometry.size.width * progressPercent, height: 3)
+                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            
+                            // Progressive blur overlay - no blur at start, maximum at end
                             Rectangle()
                                 .fill(
                                     LinearGradient(
                                         colors: [
-                                            themeAwareProgressColor.opacity(0.9),
-                                            themeAwareProgressColor,
-                                            themeAwareProgressColor.opacity(0.8)
+                                            Color.clear, // No effect at start
+                                            Color.clear,
+                                            Color.blue.opacity(0.2),
+                                            Color.blue.opacity(0.5) // Max glow near end
                                         ],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
-                                .frame(width: geometry.size.width * progressPercent, height: 3)
+                                .frame(width: geometry.size.width * progressPercent, height: 6)
+                                .blur(radius: progressiveBlurRadius)
                                 .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
-                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
                             
-                            // Primary glow layer
-                            Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.5))
-                                .frame(width: geometry.size.width * progressPercent, height: 3)
-                                .blur(radius: 2)
-                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
-                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
-                            
-                            // Secondary glow layer (wider)
-                            Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.3))
-                                .frame(width: geometry.size.width * progressPercent, height: 5)
-                                .blur(radius: 4)
-                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
-                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
-                            
-                            // Outer glow layer (widest)
-                            Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.2))
-                                .frame(width: geometry.size.width * progressPercent, height: 8)
-                                .blur(radius: 6)
-                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
-                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
-                            
-                            // Pulsing core highlight
-                            Rectangle()
-                                .fill(themeAwareProgressColor.opacity(0.8))
-                                .frame(width: geometry.size.width * progressPercent, height: 1)
-                                .blur(radius: 0.5)
-                                .scaleEffect(y: pulsingScale)
-                                .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
-                                .animation(.easeInOut(duration: 0.5), value: tab.themeColor)
+                            // Enhanced progressive trailing glow
+                            if tab.estimatedProgress > 0.3 {
+                                Rectangle()
+                                    .fill(
+                                        RadialGradient(
+                                            colors: [
+                                                Color.blue.opacity(0.6),
+                                                Color.blue.opacity(0.3),
+                                                Color.blue.opacity(0.1),
+                                                Color.clear
+                                            ],
+                                            center: .center,
+                                            startRadius: 1,
+                                            endRadius: 15
+                                        )
+                                    )
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: geometry.size.width * progressPercent - 4, y: 1)
+                                    .blur(radius: progressiveBlurRadius * 0.8)
+                                    .scaleEffect(pulsingScale)
+                                    .animation(.easeOut(duration: 0.2), value: tab.estimatedProgress)
+                            }
                         }
                         .clipShape(Capsule())
                     }
                     .frame(height: 3)
                     .transition(.opacity.combined(with: .scale(scale: 1.0, anchor: .leading)))
+                    .padding(.top, 0) // No margin - positioned directly against top bar
                     
                     Spacer()
                 }
@@ -159,8 +158,16 @@ struct WebContentView: View {
     private var themeAwareProgressColor: Color {
         if let themeColor = tab.themeColor {
             let nsColor = themeColor
-            // Ensure the color has good visibility
-            return Color(nsColor).opacity(0.9)
+            // Convert to SwiftUI color and ensure good saturation
+            let swiftColor = Color(nsColor)
+            
+            // Boost saturation for better visibility in progress bars
+            let components = NSColor(swiftColor).usingColorSpace(.sRGB) ?? NSColor.blue
+            let red = min(1.0, components.redComponent * 1.2)
+            let green = min(1.0, components.greenComponent * 1.2)  
+            let blue = min(1.0, components.blueComponent * 1.2)
+            
+            return Color(red: red, green: green, blue: blue)
         }
         return Color.blue
     }
@@ -168,5 +175,17 @@ struct WebContentView: View {
     // Progress as percentage for width calculation
     private var progressPercent: CGFloat {
         return CGFloat(SafeNumericConversions.safeProgress(tab.estimatedProgress))
+    }
+    
+    // Progressive blur radius - starts at 0, increases dramatically toward end
+    private var progressiveBlurRadius: CGFloat {
+        let progress = SafeNumericConversions.safeProgress(tab.estimatedProgress)
+        // Exponential curve: no blur at start (0-30%), dramatic increase at end (70-100%)
+        if progress < 0.3 {
+            return 0.0
+        } else {
+            let adjustedProgress = (progress - 0.3) / 0.7 // Map 0.3-1.0 to 0.0-1.0
+            return pow(adjustedProgress, 2.0) * 12.0 // Quadratic curve, max 12pt blur
+        }
     }
 }

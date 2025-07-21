@@ -171,6 +171,7 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             parent.isLoading = true
+            parent.tab?.onLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -190,6 +191,7 @@ struct WebView: NSViewRepresentable {
             parent.title = webView.title
             parent.canGoBack = webView.canGoBack
             parent.canGoForward = webView.canGoForward
+            parent.tab?.onLoadingStateChanged()
             
             // Only extract favicon if we don't have one for this domain
             if let currentURL = webView.url, let host = currentURL.host {
@@ -220,10 +222,12 @@ struct WebView: NSViewRepresentable {
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            parent.tab?.onLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.isLoading = false
+            parent.tab?.onLoadingStateChanged()
         }
         
         private func extractFavicon(from webView: WKWebView, websiteHost: String) {

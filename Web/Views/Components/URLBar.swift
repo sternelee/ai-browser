@@ -51,114 +51,78 @@ struct URLBar: View {
     
     private var urlBarBackground: some View {
         ZStack {
-            // Enhanced glass background
+            // Fully transparent background for clean input
             RoundedRectangle(cornerRadius: 8)
-                .fill(.regularMaterial)
+                .fill(Color.clear)
             
-            // Dark glass surface overlay
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.bgSurface)
-            
-            // Website theme color integration - seamless next-gen approach
+            // Subtle theme color integration
             if themeColor != nil && swiftUIThemeColor != .clear {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
-                        LinearGradient(
+                        EllipticalGradient(
                             colors: [
-                                swiftUIThemeColor.opacity(0.08),
                                 swiftUIThemeColor.opacity(0.04),
+                                swiftUIThemeColor.opacity(0.02),
                                 Color.clear
                             ],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                            center: .center,
+                            startRadiusFraction: 0.3,
+                            endRadiusFraction: 1.0
                         )
                     )
                     .animation(.easeInOut(duration: 0.4), value: themeColor)
             }
             
-            // Enhanced border with better focus state
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(
-                    borderColor,
-                    lineWidth: borderWidth
-                )
-                .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isURLBarFocused)
-                .animation(.easeInOut(duration: 0.2), value: hovering)
-                .animation(.easeInOut(duration: 0.4), value: themeColor)
-            
-            // Enhanced multi-layer glow effect when focused
+            // Seamless focus enhancement
             if isURLBarFocused {
-                // Inner radial glow
+                // Subtle inner ambient glow
                 RoundedRectangle(cornerRadius: 8)
                     .fill(
-                        RadialGradient(
+                        EllipticalGradient(
                             colors: [
-                                focusGlowColor.opacity(0.12),
                                 focusGlowColor.opacity(0.06),
-                                focusGlowColor.opacity(0.02),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 80
-                        )
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: themeColor)
-                
-                // Outer radial glow (larger)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                focusGlowColor.opacity(0.08),
-                                focusGlowColor.opacity(0.04),
+                                focusGlowColor.opacity(0.03),
                                 focusGlowColor.opacity(0.01),
                                 Color.clear
                             ],
                             center: .center,
-                            startRadius: 40,
-                            endRadius: 160
+                            startRadiusFraction: 0.3,
+                            endRadiusFraction: 1.2
                         )
                     )
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: themeColor)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: themeColor)
                 
-                // Enhanced border glow
+                // Minimal surface elevation
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.02),
+                                Color.clear,
+                                Color.black.opacity(0.01)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .transition(.opacity)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isURLBarFocused)
+            }
+            
+            // Ultra-subtle border (only when not focused)
+            if !isURLBarFocused {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(
-                        focusGlowColor.opacity(0.4),
-                        lineWidth: 1
+                        hovering ? Color.borderGlass.opacity(0.3) : Color.borderGlass.opacity(0.15),
+                        lineWidth: 0.5
                     )
-                    .blur(radius: 2)
-                    .transition(.opacity)
-                
-                // Outer border glow (wider)
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        focusGlowColor.opacity(0.2),
-                        lineWidth: 1
-                    )
-                    .blur(radius: 4)
-                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: hovering)
             }
         }
     }
     
-    // Computed properties for enhanced styling
-    private var borderColor: Color {
-        if isURLBarFocused {
-            return themeColor != nil ? swiftUIThemeColor.opacity(0.8) : Color.accentBeam
-        } else if hovering {
-            return Color.borderGlass.opacity(0.8)
-        } else {
-            return Color.borderGlass.opacity(0.4)
-        }
-    }
-    
-    private var borderWidth: CGFloat {
-        isURLBarFocused ? 2.0 : 1.0
-    }
+    // Seamless focus styling
     
     private var focusGlowColor: Color {
         return themeColor != nil ? swiftUIThemeColor : Color.accentBeam

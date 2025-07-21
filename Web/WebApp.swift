@@ -93,6 +93,26 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .toggleEdgeToEdge, object: nil)
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
+            
+            Button("Next Tab") {
+                NotificationCenter.default.post(name: .nextTabRequested, object: nil)
+            }
+            .keyboardShortcut("]", modifiers: [.command, .shift])
+            
+            Button("Previous Tab") {
+                NotificationCenter.default.post(name: .previousTabRequested, object: nil)
+            }
+            .keyboardShortcut("[", modifiers: [.command, .shift])
+        }
+        
+        // Tab selection shortcuts (Cmd+1 through Cmd+9)
+        CommandGroup(after: .windowArrangement) {
+            ForEach(1...9, id: \.self) { number in
+                Button("Go to Tab \(number)") {
+                    NotificationCenter.default.post(name: .selectTabByNumber, object: number)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+            }
         }
     }
 }
@@ -113,4 +133,9 @@ extension Notification.Name {
     static let toggleEdgeToEdge = Notification.Name("toggleEdgeToEdge")
     static let navigateBack = Notification.Name("navigateBack")
     static let navigateForward = Notification.Name("navigateForward")
+    
+    // Tab navigation shortcuts
+    static let nextTabRequested = Notification.Name("nextTabRequested")
+    static let previousTabRequested = Notification.Name("previousTabRequested")
+    static let selectTabByNumber = Notification.Name("selectTabByNumber")
 }

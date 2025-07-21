@@ -122,4 +122,31 @@ class TabManager: ObservableObject {
             tab.url?.absoluteString.lowercased().contains(query.lowercased()) == true
         }
     }
+    
+    // MARK: - Tab Navigation
+    func selectNextTab() {
+        guard let currentTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == currentTab.id }) else { return }
+        
+        let nextIndex = (currentIndex + 1) % tabs.count
+        setActiveTab(tabs[nextIndex])
+    }
+    
+    func selectPreviousTab() {
+        guard let currentTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == currentTab.id }) else { return }
+        
+        let previousIndex = currentIndex == 0 ? tabs.count - 1 : currentIndex - 1
+        setActiveTab(tabs[previousIndex])
+    }
+    
+    func selectTab(at index: Int) {
+        guard index >= 0 && index < tabs.count else { return }
+        setActiveTab(tabs[index])
+    }
+    
+    func selectTabByNumber(_ number: Int) {
+        let index = number - 1 // Convert 1-based to 0-based index
+        selectTab(at: index)
+    }
 }

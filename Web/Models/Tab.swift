@@ -71,7 +71,7 @@ class Tab: ObservableObject, Identifiable, Transferable {
     
     // MARK: - Performance Management
     func hibernate() {
-        guard !isActive && !isHibernated else { return }
+        guard !isActive && !isHibernated && !isLoading else { return }
         
         // Create snapshot before hibernating
         createSnapshot()
@@ -116,10 +116,18 @@ class Tab: ObservableObject, Identifiable, Transferable {
         startHibernationTimer()
     }
     
+    func onLoadingStateChanged() {
+        // Restart hibernation timer when loading state changes
+        // This ensures tabs can be hibernated after loading completes
+        if !isActive {
+            startHibernationTimer()
+        }
+    }
+    
     private func startHibernationTimer() {
         hibernationTimer?.invalidate()
         hibernationTimer = Timer.scheduledTimer(withTimeInterval: hibernationThreshold, repeats: false) { [weak self] _ in
-            if !(self?.isActive ?? true) {
+            if !(self?.isActive ?? true) && !(self?.isLoading ?? false) {
                 self?.hibernate()
             }
         }
