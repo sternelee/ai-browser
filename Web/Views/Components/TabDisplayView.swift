@@ -130,6 +130,15 @@ struct TabDisplayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
             hideTopBar.toggle()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) { notification in
+            if let url = notification.object as? URL {
+                if let activeTab = tabManager.activeTab {
+                    activeTab.navigate(to: url)
+                } else {
+                    _ = tabManager.createNewTab(url: url)
+                }
+            }
+        }
     }
     
     @ViewBuilder

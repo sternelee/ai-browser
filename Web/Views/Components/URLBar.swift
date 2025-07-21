@@ -9,6 +9,7 @@ struct URLBar: View {
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
+    @State private var displayString: String = ""
     
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
@@ -18,28 +19,38 @@ struct URLBar: View {
         return .clear
     }
     
-    // Computed property for display text (title-first approach) - simplified to prevent lock-ups
+    // Simple binding for display text using state variable
     private var displayText: Binding<String> {
         Binding(
-            get: {
-                // Simplified logic to prevent complex state dependencies
+            get: { 
                 if isURLBarFocused || hovering {
                     return editingText
+                } else {
+                    return displayString
                 }
-                // Use cached values to prevent repeated calculations
-                let hasValidTitle = pageTitle?.isEmpty == false && pageTitle != "New Tab"
-                if hasValidTitle && !urlString.isEmpty {
-                    return pageTitle!
-                }
-                return urlString.isEmpty ? "" : cleanDisplayURL(urlString)
             },
             set: { newValue in
-                // Prevent circular updates by checking if value actually changed
-                if editingText != newValue {
+                if isURLBarFocused || hovering {
                     editingText = newValue
+                } else {
+                    displayString = newValue
                 }
             }
         )
+    }
+    
+    // Update display string based on current state
+    private func updateDisplayString() {
+        guard !isURLBarFocused && !hovering else { return }
+        
+        let hasValidTitle = pageTitle?.isEmpty == false && pageTitle != "New Tab"
+        if hasValidTitle && !urlString.isEmpty {
+            displayString = pageTitle!
+        } else if !urlString.isEmpty {
+            displayString = cleanDisplayURL(urlString)
+        } else {
+            displayString = ""
+        }
     }
     
     // Clean URL for display (remove protocol, www, etc.)
@@ -84,18 +95,25 @@ struct URLBar: View {
                 .onChange(of: isURLBarFocused) { _, focused in
                     if focused {
                         editingText = urlString
+                    } else {
+                        updateDisplayString()
                     }
                 }
                 .onChange(of: urlString) { _, newURL in
-                    // Only update if not focused and the URL actually changed
                     if !isURLBarFocused && editingText != newURL {
                         editingText = newURL
                     }
+                    updateDisplayString()
                 }
                 .onChange(of: pageTitle) { _, newTitle in
-                    // Only update if not focused and avoid triggering other onChange handlers
-                    if !isURLBarFocused && urlString != editingText {
-                        editingText = urlString
+                    updateDisplayString()
+                }
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        self.hovering = hovering
+                    }
+                    if !hovering {
+                        updateDisplayString()
                     }
                 }
             
@@ -109,10 +127,8 @@ struct URLBar: View {
         .padding(.vertical, 4) // Further reduced for even more minimal height
         .background(urlBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.hovering = hovering
-            }
+        .onAppear {
+            updateDisplayString()
         }
     }
     

@@ -108,6 +108,16 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .previousTabRequested, object: nil)
             }
             .keyboardShortcut("[", modifiers: [.command, .shift])
+            
+            Button("Next Tab (Arrow)") {
+                NotificationCenter.default.post(name: .nextTabRequested, object: nil)
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            
+            Button("Previous Tab (Arrow)") {
+                NotificationCenter.default.post(name: .previousTabRequested, object: nil)
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
         }
         
         // Tab selection shortcuts (Cmd+1 through Cmd+9)

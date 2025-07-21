@@ -12,6 +12,7 @@ struct HoverableURLBar: View {
     @FocusState private var isURLBarFocused: Bool
     @State private var editingText: String = ""
     @State private var suggestions: [SearchSuggestion] = []
+    @State private var displayString: String = ""
     
     struct SearchSuggestion: Identifiable {
         let id = UUID()
@@ -31,24 +32,37 @@ struct HoverableURLBar: View {
         return .clear
     }
     
-    // Computed property for display text (title-first approach)
+    // Simple binding for display text using state variable
     private var displayText: Binding<String> {
         Binding(
-            get: {
+            get: { 
                 if isURLBarFocused {
                     return editingText
-                } else if let title = pageTitle, !title.isEmpty && title != "New Tab" && !urlString.isEmpty {
-                    return title
-                } else if !urlString.isEmpty {
-                    return cleanDisplayURL(urlString)
                 } else {
-                    return ""
+                    return displayString
                 }
             },
             set: { newValue in
-                editingText = newValue
+                if isURLBarFocused {
+                    editingText = newValue
+                } else {
+                    displayString = newValue
+                }
             }
         )
+    }
+    
+    // Update display string based on current state
+    private func updateDisplayString() {
+        guard !isURLBarFocused else { return }
+        
+        if let title = pageTitle, !title.isEmpty && title != "New Tab" && !urlString.isEmpty {
+            displayString = title
+        } else if !urlString.isEmpty {
+            displayString = cleanDisplayURL(urlString)
+        } else {
+            displayString = ""
+        }
     }
     
     // Clean URL for display (remove protocol, www, etc.)
@@ -112,6 +126,10 @@ struct HoverableURLBar: View {
                                 if !isURLBarFocused {
                                     editingText = newURL
                                 }
+                                updateDisplayString()
+                            }
+                            .onChange(of: pageTitle) { _, _ in
+                                updateDisplayString()
                             }
                             .onChange(of: editingText) { _, newValue in
                                 updateSuggestions(for: newValue)
@@ -207,6 +225,9 @@ struct HoverableURLBar: View {
         }
         .onHover { hovering in
             handleHover(hovering)
+        }
+        .onAppear {
+            updateDisplayString()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isVisible)
     }

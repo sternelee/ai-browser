@@ -129,6 +129,8 @@ Web/
    - Cmd+Shift+T: Reopen closed tab
    - Cmd+L: Focus URL bar
    - Cmd+R: Refresh
+   - **Cmd+← / Cmd+→: Navigate between tabs (new)**
+   - **Cmd+Shift+[ / Cmd+Shift+]: Alternative tab navigation**
    - Cmd+D: Bookmark
    - Cmd+H: History
    - Cmd+Shift+N: Incognito mode
@@ -143,6 +145,8 @@ Web/
    - Collapsible title bar (Arc-style)
    - Cmd+S: Toggle sidebar/top bar
    - Favicon-only minimal sidebar mode
+   - **Drag-to-reorder tabs**: Full drag and drop support for tab reordering in both sidebar and top bar modes
+   - **Keyboard navigation**: Cmd+Arrow keys for quick tab switching
    - Hover-reveal window controls
    - Smooth spring animations
 
@@ -366,6 +370,8 @@ Web/
 | Refresh | ⌘ R |
 | Sidebar / Top-Bar Toggle | ⌘ S |
 | Edge-to-Edge Mode | ⇧⌘ B |
+| **Next Tab** | **⌘ → or ⇧⌘ ]** |
+| **Previous Tab** | **⌘ ← or ⇧⌘ [** |
 | Bookmark Page | ⌘ D |
 | History Window | ⌘ Y |
 | Downloads | ⌥⌘ L |
