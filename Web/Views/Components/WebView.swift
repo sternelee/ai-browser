@@ -254,6 +254,12 @@ struct WebView: NSViewRepresentable {
             parent.canGoForward = webView.canGoForward
             parent.tab?.notifyLoadingStateChanged()
             
+            // Record visit for Autofill history
+            if let url = webView.url {
+                let title = webView.title ?? url.absoluteString
+                AutofillService.shared.recordVisit(url: url.absoluteString, title: title)
+            }
+            
             // Only extract favicon if we don't have one for this domain
             if let currentURL = webView.url, let host = currentURL.host {
                 Self.cacheQueue.sync {

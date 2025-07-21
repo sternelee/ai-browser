@@ -164,7 +164,7 @@ struct HoverableURLBar: View {
                         // Navigation and action controls
                         HStack(spacing: 6) {
                             // Navigation controls
-                            if let activeTab = tabManager.activeTab {
+                            if tabManager.activeTab != nil {
                                 SimpleActionButton(icon: "chevron.left", action: {
                                     NotificationCenter.default.post(name: .navigateBack, object: nil)
                                 })
@@ -386,27 +386,28 @@ struct HoverableURLBar: View {
             suggestions = []
             return
         }
-        
-        var newSuggestions: [SearchSuggestion] = []
-        
-        // Add search suggestion
-        newSuggestions.append(SearchSuggestion(text: query, type: .search))
-        
-        // Add URL suggestion if it looks like a URL
-        if query.contains(".") && !query.contains(" ") {
-            let urlText = query.hasPrefix("http") ? query : "https://\(query)"
-            newSuggestions.append(SearchSuggestion(text: urlText, type: .url))
-        }
-        
-        // Add mock history suggestions
-        let mockHistory = ["github.com", "stackoverflow.com", "developer.apple.com", "google.com"]
-        for item in mockHistory {
-            if item.contains(query.lowercased()) {
-                newSuggestions.append(SearchSuggestion(text: item, type: .history))
+        // Use the shared AutofillService for suggestions
+        Task {
+            let autofillResults = await AutofillService.shared.getSuggestions(for: query)
+            // Map AutofillSuggestion to local SearchSuggestion for display
+            let mapped: [SearchSuggestion] = autofillResults.map { suggestion in
+                let type: SearchSuggestion.SuggestionType
+                switch suggestion.sourceType {
+                case .history, .mostVisited:
+                    type = .history
+                case .bookmark:
+                    type = .url
+                case .searchSuggestion:
+                    type = .search
+                }
+                return SearchSuggestion(text: suggestion.title, type: type)
+            }
+            // Prepend a Google search suggestion as first item
+            let searchItem = SearchSuggestion(text: query, type: .search)
+            await MainActor.run {
+                suggestions = [searchItem] + mapped.prefix(5)
             }
         }
-        
-        suggestions = newSuggestions
     }
     
     private func suggestionItem(_ suggestion: SearchSuggestion) -> some View {

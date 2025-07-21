@@ -255,7 +255,7 @@ Web/
 - [x] Essential browser features (print, zoom, developer tools)
 - [x] Download manager with progress tracking
 - [x] Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+R, etc.)
-- [ ] **URL Bar Autofill System** (See detailed spec in specs/url-autofill-spec.md)
+- [x] **URL Bar Autofill System** (See detailed spec in specs/url-autofill-spec.md)
 - [ ] Customizable toolbar system
 - [ ] Session restoration for closed tabs/windows
 

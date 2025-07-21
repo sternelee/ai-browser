@@ -303,6 +303,13 @@ struct WebContentArea: View {
     @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
     
+    // Computed property to determine if URL bar should be shown
+    private var shouldShowURLBar: Bool {
+        // Hide URL bar when showing new tab (when activeTab.url is nil)
+        guard let activeTab = tabManager.activeTab else { return false }
+        return activeTab.url != nil
+    }
+    
     // Computed property to get current URL string from active tab - NO SHARED STATE
     private var currentURLString: Binding<String> {
         Binding(
@@ -325,8 +332,8 @@ struct WebContentArea: View {
     var body: some View {
         // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
-            // URL bar (hidden in edge-to-edge mode or when hideTopBar is enabled)
-            if !isEdgeToEdgeMode && !hideTopBar {
+            // URL bar (hidden in edge-to-edge mode, when hideTopBar is enabled, or when showing new tab)
+            if !isEdgeToEdgeMode && !hideTopBar && shouldShowURLBar {
                 HStack(spacing: 12) {
                     // Navigation controls
                     if let activeTab = tabManager.activeTab {

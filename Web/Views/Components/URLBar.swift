@@ -10,6 +10,7 @@ struct URLBar: View {
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
     @State private var displayString: String = ""
+    @State private var suggestions: [AutofillSuggestion] = []
     
     // Add FocusCoordinator integration
     private let barID = UUID().uuidString
@@ -121,6 +122,9 @@ struct URLBar: View {
                 .onChange(of: pageTitle) { _, newTitle in
                     updateDisplayString()
                 }
+                .onChange(of: editingText) { _, newValue in
+                    updateSuggestions(for: newValue)
+                }
                 .onHover { hovering in
                     withAnimation(.easeInOut(duration: 0.2)) {
                         self.hovering = hovering
@@ -149,6 +153,27 @@ struct URLBar: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusURLBarRequested)) { _ in
             isURLBarFocused = true
+        }
+        .overlay(alignment: .topLeading) {
+            // Suggestion list overlay – does not affect layout height
+            if isURLBarFocused && !suggestions.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(suggestions.prefix(5)) { suggestion in
+                        suggestionRow(suggestion)
+                        if suggestion.id != suggestions.prefix(5).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(.ultraThinMaterial)
+                        .shadow(radius: 8)
+                )
+                .offset(y: 34) // show below URLBar
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .zIndex(1000)
+            }
         }
     }
     
@@ -268,6 +293,59 @@ struct URLBar: View {
         }
         
         return false
+    }
+    
+    private func suggestionRow(_ suggestion: AutofillSuggestion) -> some View {
+        Button(action: {
+            isURLBarFocused = false
+            editingText = suggestion.url
+            navigateToURL(from: suggestion)
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: icon(for: suggestion.sourceType))
+                    .foregroundColor(.textSecondary)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(suggestion.title)
+                        .foregroundColor(.textPrimary)
+                    Text(suggestion.url)
+                        .font(.caption2)
+                        .foregroundColor(.textSecondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func updateSuggestions(for query: String) {
+        guard isURLBarFocused && !query.isEmpty else {
+            suggestions = []
+            return
+        }
+        Task {
+            let results = await AutofillService.shared.getSuggestions(for: query)
+            await MainActor.run {
+                suggestions = results
+            }
+        }
+    }
+
+    private func icon(for type: SuggestionSourceType) -> String {
+        switch type {
+        case .history, .mostVisited:
+            return "clock.arrow.circlepath"
+        case .bookmark:
+            return "bookmark"
+        case .searchSuggestion:
+            return "magnifyingglass"
+        }
+    }
+
+    private func navigateToURL(from suggestion: AutofillSuggestion) {
+        onSubmit(suggestion.url)
     }
     
 }
