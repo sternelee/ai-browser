@@ -53,18 +53,65 @@ struct BottomHoverSearch: View {
     }
     
     private var searchBar: some View {
-        HStack(spacing: 12) {
-            searchIcon
-            searchTextField
-            if !searchText.isEmpty {
-                clearButton
+        HStack(spacing: 8) {
+            // Quick action buttons
+            contextualButtons
+            
+            // Divider
+            Rectangle()
+                .fill(Color.borderGlass)
+                .frame(width: 1, height: 20)
+                .opacity(0.5)
+            
+            // Search area
+            HStack(spacing: 12) {
+                searchIcon
+                searchTextField
+                if !searchText.isEmpty {
+                    clearButton
+                }
             }
+            .frame(minWidth: 200)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(searchBarBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: -4)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: -8)
+    }
+    
+    private var contextualButtons: some View {
+        HStack(spacing: 6) {
+            // New tab button
+            ContextualButton(
+                icon: "plus",
+                action: { _ = tabManager.createNewTab() }
+            )
+            
+            // Back button
+            ContextualButton(
+                icon: "chevron.left",
+                action: { NotificationCenter.default.post(name: .navigateBack, object: nil) }
+            )
+            
+            // Forward button
+            ContextualButton(
+                icon: "chevron.right",
+                action: { NotificationCenter.default.post(name: .navigateForward, object: nil) }
+            )
+            
+            // Reload button
+            ContextualButton(
+                icon: "arrow.clockwise",
+                action: { NotificationCenter.default.post(name: .reloadRequested, object: nil) }
+            )
+            
+            // Downloads button
+            ContextualButton(
+                icon: "arrow.down.circle",
+                action: { NotificationCenter.default.post(name: .showDownloadsRequested, object: nil) }
+            )
+        }
     }
     
     private var searchIcon: some View {
@@ -287,6 +334,47 @@ struct BottomHoverSearch: View {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "https://www.google.com/search?q=\(encodedQuery)") {
             _ = tabManager.createNewTab(url: url)
+        }
+    }
+}
+
+// Contextual button for the bottom toolbar
+struct ContextualButton: View {
+    let icon: String
+    let action: () -> Void
+    @State private var isHovered: Bool = false
+    @State private var isPressed: Bool = false
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.textSecondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(
+                            isHovered ? Color.white.opacity(0.1) : Color.clear
+                        )
+                )
+                .scaleEffect(isPressed ? 0.9 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isPressed = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    isPressed = false
+                }
+            }
+            action()
         }
     }
 }
