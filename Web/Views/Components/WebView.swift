@@ -161,6 +161,23 @@ struct WebView: NSViewRepresentable {
                     }, 100);
                 }
             });
+            
+            // Clear status bar when clicking on links
+            document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && e.target.href) {
+                    clearTimeout(statusTimeout);
+                    window.webkit.messageHandlers.linkHover.postMessage({
+                        type: 'clear'
+                    });
+                }
+            });
+            
+            // Also clear status bar on navigation start
+            document.addEventListener('beforeunload', function() {
+                window.webkit.messageHandlers.linkHover.postMessage({
+                    type: 'clear'
+                });
+            });
         })();
         """
     }

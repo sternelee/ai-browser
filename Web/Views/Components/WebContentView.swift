@@ -143,16 +143,15 @@ struct WebContentView: View {
                 }
             }
             
-            // Smart Status Bar positioned at bottom
+            // Smart Status Bar positioned at bottom-left
             VStack {
                 Spacer()
                 HStack {
-                    Spacer()
                     SmartStatusBar(tab: tab, hoveredLink: hoveredLink)
-                        .frame(maxWidth: 400)
                     Spacer()
                 }
                 .padding(.bottom, 16)
+                .padding(.leading, 16)
             }
             .allowsHitTesting(false) // Don't interfere with web content interaction
         }

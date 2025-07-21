@@ -18,32 +18,32 @@ struct SmartStatusBar: View {
                 HStack(spacing: 12) {
                     // Status icon
                     statusIcon
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                     
                     // Status text
                     Text(statusMessage)
-                        .font(.system(.caption, weight: .regular))
+                        .font(.system(size: 11, weight: .regular))
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
-                    Spacer()
                     
                     // Progress indicator for loading
                     if statusType == .loading || statusType == .download {
                         ProgressView(value: progress)
                             .progressViewStyle(LinearProgressViewStyle())
-                            .frame(width: 60)
-                            .scaleEffect(0.8)
+                            .frame(width: 50)
+                            .scaleEffect(0.7)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(.ultraThinMaterial)
                         .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 )
+                .fixedSize(horizontal: true, vertical: false) // Adapt to content width
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: statusType)
             }
