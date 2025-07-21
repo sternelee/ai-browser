@@ -142,7 +142,7 @@ struct TabDisplayView: View {
     }
 }
 
-// Web content area wrapper
+// Web content area wrapper with rounded corners and margin
 struct WebContentArea: View {
     @ObservedObject var tabManager: TabManager
     @State private var urlString: String = ""
@@ -150,6 +150,7 @@ struct WebContentArea: View {
     @State private var isEdgeToEdgeMode: Bool = false
     
     var body: some View {
+        // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
             // URL bar (hidden in edge-to-edge mode)
             if !isEdgeToEdgeMode {
@@ -201,6 +202,27 @@ struct WebContentArea: View {
                 NewTabView()
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.1),
+                                    Color.white.opacity(0.05)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.5
+                        )
+                )
+                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(1) // 1px margin as requested
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
         }

@@ -7,16 +7,10 @@ struct SidebarTabView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top section with new tab button
-            VStack(spacing: 8) {
-                newTabButton
-                    .padding(.top, 12)
-                
-                if !tabManager.tabs.isEmpty {
-                    CavedDivider()
-                        .padding(.horizontal, 12)
-                }
-            }
+            // Top spacing
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 12)
             
             // Tab list with custom scrolling
             ScrollView(.vertical, showsIndicators: false) {
@@ -43,6 +37,10 @@ struct SidebarTabView: View {
                                 .opacity(0.8)
                         }
                     }
+                    
+                    // Plus button positioned after tabs (where next tab would be)
+                    newTabButton
+                        .padding(.top, 2)
                 }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 6)
@@ -50,7 +48,7 @@ struct SidebarTabView: View {
             
             Spacer()
             
-            // Bottom section with settings
+            // Bottom section with settings only
             VStack(spacing: 8) {
                 CavedDivider()
                     .padding(.horizontal, 12)

@@ -12,8 +12,12 @@ struct FaviconView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: size, height: size)
+            } else if tab.url == nil || tab.title == "New Tab" {
+                // Show Web logo for new tabs
+                WebLogo()
+                    .frame(width: size, height: size)
             } else {
-                // Default globe icon while loading or if no favicon
+                // Default globe icon while loading or if no favicon for existing pages
                 Image(systemName: "globe")
                     .font(.system(size: size * 0.7, weight: .medium))
                     .foregroundColor(.secondary)
