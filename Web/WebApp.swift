@@ -156,4 +156,5 @@ extension Notification.Name {
     static let navigateCurrentTab = Notification.Name("navigateCurrentTab")
     static let toggleTopBar = Notification.Name("toggleTopBar")
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
+    static let focusURLBarRequested = Notification.Name("focusURLBarRequested")
 }

@@ -5,7 +5,7 @@ struct HoverableURLBar: View {
     @Binding var urlString: String
     let themeColor: NSColor?
     let onSubmit: (String) -> Void
-    let pageTitle: String?
+    let pageTitle: String
     let tabManager: TabManager
     @State private var isVisible: Bool = false
     @State private var hideTimer: Timer?
@@ -56,8 +56,8 @@ struct HoverableURLBar: View {
     private func updateDisplayString() {
         guard !isURLBarFocused else { return }
         
-        if let title = pageTitle, !title.isEmpty && title != "New Tab" && !urlString.isEmpty {
-            displayString = title
+        if !pageTitle.isEmpty && pageTitle != "New Tab" && !urlString.isEmpty {
+            displayString = pageTitle
         } else if !urlString.isEmpty {
             displayString = cleanDisplayURL(urlString)
         } else {

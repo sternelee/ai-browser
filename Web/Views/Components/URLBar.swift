@@ -5,7 +5,7 @@ struct URLBar: View {
     @Binding var urlString: String
     let themeColor: NSColor?
     let onSubmit: (String) -> Void
-    let pageTitle: String?
+    let pageTitle: String
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
@@ -43,9 +43,9 @@ struct URLBar: View {
     private func updateDisplayString() {
         guard !isURLBarFocused && !hovering else { return }
         
-        let hasValidTitle = pageTitle?.isEmpty == false && pageTitle != "New Tab"
+        let hasValidTitle = !pageTitle.isEmpty && pageTitle != "New Tab"
         if hasValidTitle && !urlString.isEmpty {
-            displayString = pageTitle!
+            displayString = pageTitle
         } else if !urlString.isEmpty {
             displayString = cleanDisplayURL(urlString)
         } else {
@@ -129,6 +129,9 @@ struct URLBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear {
             updateDisplayString()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusURLBarRequested)) { _ in
+            isURLBarFocused = true
         }
     }
     

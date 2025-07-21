@@ -16,18 +16,19 @@ struct TabDisplayView: View {
     @State private var showBottomSearchOnHover: Bool = false
     @State private var showHoverableURLBar: Bool = false
     @State private var hideTimer: Timer?
+    @State private var topTabAutoHideTimer: Timer?
+    @State private var showTopTabTemporary: Bool = false
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Main content area
                 VStack(spacing: 0) {
-                    // Top bar tabs (if enabled and not edge-to-edge)
-                    if displayMode == .topBar && (!isEdgeToEdgeMode || showTopBarOnHover) {
+                    // Top bar tabs (with borderless auto-hide behavior)
+                    if displayMode == .topBar && shouldShowTopTab {
                         TopBarTabView(tabManager: tabManager)
                             .frame(height: 40)
                             .transition(.move(edge: .top).combined(with: .opacity))
-                            .opacity(isEdgeToEdgeMode && !showTopBarOnHover ? 0 : 1)
                     }
                     
                     // Web content
@@ -81,7 +82,7 @@ struct TabDisplayView: View {
                                         _ = tabManager.createNewTab(url: url)
                                     }
                                 },
-                                pageTitle: nil,
+                                pageTitle: "New Tab",
                                 tabManager: tabManager
                             )
                         }
@@ -129,6 +130,13 @@ struct TabDisplayView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
             hideTopBar.toggle()
+            // Restart auto-hide timer when entering borderless mode
+            if hideTopBar {
+                startTopTabAutoHideTimer()
+            } else {
+                topTabAutoHideTimer?.invalidate()
+                showTopTabTemporary = false
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) { notification in
             if let url = notification.object as? URL {
@@ -137,6 +145,52 @@ struct TabDisplayView: View {
                 } else {
                     _ = tabManager.createNewTab(url: url)
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reloadRequested)) { _ in
+            if let activeTab = tabManager.activeTab {
+                activeTab.reload()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusAddressBarRequested)) { _ in
+            // Focus the URL bar - we'll need to implement this with a focus coordinator
+            NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
+        }
+        .onAppear {
+            startTopTabAutoHideTimer()
+        }
+    }
+    
+    // Computed property to determine if top tab should be shown
+    private var shouldShowTopTab: Bool {
+        // In borderless mode with hidden top bar: show temporarily or on hover
+        if hideTopBar {
+            return showTopTabTemporary || showTopBarOnHover
+        }
+        // In edge-to-edge mode: show on hover only
+        else if isEdgeToEdgeMode {
+            return showTopBarOnHover
+        }
+        // Normal mode: always show
+        else {
+            return true
+        }
+    }
+    
+    private func startTopTabAutoHideTimer() {
+        // Only start timer in borderless mode with hidden top bar
+        guard hideTopBar else { return }
+        
+        // Cancel existing timer
+        topTabAutoHideTimer?.invalidate()
+        
+        // Show tab temporarily
+        showTopTabTemporary = true
+        
+        // Set timer to hide after 2 seconds
+        topTabAutoHideTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 0.3)) {
+                showTopTabTemporary = false
             }
         }
     }
@@ -164,9 +218,7 @@ struct TabDisplayView: View {
                         .fill(Color.clear)
                         .frame(height: 12) // Increased from 3px to 12px for better UX
                         .onHover { hovering in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                showTopBarOnHover = hovering
-                            }
+                            handleTopBarHover(hovering)
                         }
                     Spacer()
                 }
@@ -229,27 +281,43 @@ struct TabDisplayView: View {
             }
         }
     }
+    
+    private func handleTopBarHover(_ hovering: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showTopBarOnHover = hovering
+        }
+        
+        // In borderless mode, restart the auto-hide timer when hover ends
+        if hideTopBar && !hovering {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                startTopTabAutoHideTimer()
+            }
+        }
+    }
 }
 
 // Web content area wrapper with rounded corners and margin
 struct WebContentArea: View {
     @ObservedObject var tabManager: TabManager
-    @State private var urlString: String = ""
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
     
-    // Computed property to get current URL string from active tab
+    // Computed property to get current URL string from active tab - NO SHARED STATE
     private var currentURLString: Binding<String> {
         Binding(
             get: {
                 if let activeTab = tabManager.activeTab, let url = activeTab.url {
                     return url.absoluteString
                 }
-                return urlString
+                return ""
             },
             set: { newValue in
-                urlString = newValue
+                // Update the active tab's URL directly, not a shared state
+                if let activeTab = tabManager.activeTab,
+                   let url = URL(string: newValue) {
+                    activeTab.url = url
+                }
             }
         )
     }
@@ -270,7 +338,7 @@ struct WebContentArea: View {
                         urlString: currentURLString, 
                         themeColor: tabManager.activeTab?.themeColor,
                         onSubmit: navigateToURL,
-                        pageTitle: tabManager.activeTab?.title
+                        pageTitle: tabManager.activeTab?.title ?? "New Tab"
                     )
                     .frame(maxWidth: .infinity)
                     
@@ -416,10 +484,6 @@ struct WebContentArea: View {
             if let firstTab = tabManager.tabs.first, firstTab.url == nil {
                 navigateToURL("google.com")
             }
-            syncURLString()
-        }
-        .onChange(of: tabManager.activeTab) { _, newTab in
-            syncURLString()
         }
     }
     
@@ -443,8 +507,8 @@ struct WebContentArea: View {
         
         guard let validURL = processedURL else { return }
         
+        // Navigate to URL - tab manages its own state
         activeTab.navigate(to: validURL)
-        urlString = validURL.absoluteString
     }
     
     private func isValidURL(_ string: String) -> Bool {
@@ -468,11 +532,4 @@ struct WebContentArea: View {
         // TODO: Implement menu functionality
     }
     
-    private func syncURLString() {
-        if let activeTab = tabManager.activeTab, let url = activeTab.url {
-            urlString = url.absoluteString
-        } else {
-            urlString = ""
-        }
-    }
 }
