@@ -143,7 +143,7 @@ struct BackHistoryView: View {
                     .fill(.thickMaterial)
                 
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.bgSurface)
+                    .fill(.ultraThinMaterial)
                 
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(Color.borderGlass, lineWidth: 1)

@@ -10,6 +10,13 @@ struct URLBar: View {
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
     
+    // Autofill state
+    @StateObject private var autofillService = AutofillService()
+    @State private var showingSuggestions = false
+    @State private var suggestions: [AutofillSuggestion] = []
+    @State private var selectedSuggestionIndex = 0
+    @State private var suggestionTask: Task<Void, Never>?
+    
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
         if let nsColor = themeColor {
@@ -63,44 +70,69 @@ struct URLBar: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Security indicator with enhanced design
-            SecurityIndicator(urlString: urlString)
-            
-            // Main input field with title-first display
-            TextField("Search or enter website", text: displayText)
-                .textFieldStyle(.plain)
-                .font(.webBody)
-                .foregroundColor(.textPrimary)
-                .focused($isURLBarFocused)
-                .textSelection(.enabled)
-                .onSubmit {
-                    navigateToURL()
-                }
-                .onChange(of: isURLBarFocused) { _, focused in
-                    if focused {
-                        editingText = urlString
+        VStack(spacing: 0) {
+            // Main URL bar
+            HStack(spacing: 12) {
+                // Security indicator with enhanced design
+                SecurityIndicator(urlString: urlString)
+                
+                // Main input field with title-first display
+                TextField("Search or enter website", text: displayText)
+                    .textFieldStyle(.plain)
+                    .font(.webBody)
+                    .foregroundColor(.textPrimary)
+                    .focused($isURLBarFocused)
+                    .textSelection(.enabled)
+                    .onSubmit {
+                        handleSubmit()
                     }
-                }
-                .onChange(of: urlString) { _, newURL in
-                    if !isURLBarFocused {
-                        editingText = newURL
+                    .onChange(of: isURLBarFocused) { _, focused in
+                        handleFocusChange(focused)
                     }
+                    .onChange(of: urlString) { _, newURL in
+                        if !isURLBarFocused {
+                            editingText = newURL
+                        }
+                    }
+                    .onChange(of: editingText) { _, newText in
+                        handleTextChange(newText)
+                    }
+                    .onKeyPress { keyPress in
+                        handleKeyPress(keyPress)
+                    }
+                
+                // Quick actions with improved spacing
+                HStack(spacing: 6) {
+                    ShareButton(urlString: urlString)
+                    BookmarkButton(urlString: urlString, autofillService: autofillService)
                 }
-            
-            // Quick actions with improved spacing
-            HStack(spacing: 6) {
-                ShareButton(urlString: urlString)
-                BookmarkButton(urlString: urlString)
             }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4) // Further reduced for even more minimal height
-        .background(urlBarBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.hovering = hovering
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .background(urlBarBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.hovering = hovering
+                }
+            }
+            
+            // Autofill suggestions dropdown
+            if showingSuggestions && !suggestions.isEmpty {
+                AutofillSuggestionsView(
+                    suggestions: suggestions,
+                    selectedIndex: selectedSuggestionIndex,
+                    onSelect: selectSuggestion,
+                    onDismiss: dismissSuggestions
+                )
+                .padding(.top, 4)
+                .zIndex(1000)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingSuggestions)
+            } else if showingSuggestions && autofillService.isLoading {
+                AutofillLoadingView()
+                    .padding(.top, 4)
+                    .zIndex(1000)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingSuggestions)
             }
         }
     }
@@ -189,21 +221,124 @@ struct URLBar: View {
         return themeColor != nil ? swiftUIThemeColor : Color.accentBeam
     }
     
+    // MARK: - Autofill Methods
+    
+    private func handleSubmit() {
+        if showingSuggestions && !suggestions.isEmpty && selectedSuggestionIndex < suggestions.count {
+            // Select the currently highlighted suggestion
+            let selectedSuggestion = suggestions[selectedSuggestionIndex]
+            selectSuggestion(selectedSuggestion)
+        } else {
+            // Normal navigation
+            navigateToURL()
+        }
+    }
+    
+    private func handleFocusChange(_ focused: Bool) {
+        if focused {
+            editingText = urlString
+            // Show suggestions immediately if there's text
+            if !editingText.isEmpty {
+                loadSuggestions(for: editingText)
+            }
+        } else {
+            // Hide suggestions when unfocused
+            dismissSuggestions()
+        }
+    }
+    
+    private func handleTextChange(_ newText: String) {
+        loadSuggestions(for: newText)
+    }
+    
+    private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard showingSuggestions else { return .ignored }
+        
+        switch keyPress.key {
+        case .downArrow:
+            selectedSuggestionIndex = min(selectedSuggestionIndex + 1, suggestions.count - 1)
+            return .handled
+        case .upArrow:
+            selectedSuggestionIndex = max(selectedSuggestionIndex - 1, 0)
+            return .handled
+        case .escape:
+            dismissSuggestions()
+            return .handled
+        default:
+            return .ignored
+        }
+    }
+    
+    private func loadSuggestions(for query: String) {
+        // Cancel previous task
+        suggestionTask?.cancel()
+        
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Hide suggestions for very short queries
+        guard trimmedQuery.count >= 1 else {
+            dismissSuggestions()
+            return
+        }
+        
+        // Start new task
+        suggestionTask = Task {
+            let newSuggestions = await autofillService.getSuggestions(for: trimmedQuery)
+            
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                
+                suggestions = newSuggestions
+                selectedSuggestionIndex = 0
+                showingSuggestions = !suggestions.isEmpty || autofillService.isLoading
+            }
+        }
+    }
+    
+    private func selectSuggestion(_ suggestion: AutofillSuggestion) {
+        editingText = suggestion.url
+        
+        // Navigate to the selected URL
+        let finalURL = suggestion.url.hasPrefix("http") ? suggestion.url : "https://\(suggestion.url)"
+        
+        // Record the visit
+        autofillService.recordVisit(url: finalURL, title: suggestion.title)
+        
+        onSubmit(finalURL)
+        dismissSuggestions()
+        isURLBarFocused = false
+    }
+    
+    private func dismissSuggestions() {
+        suggestionTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showingSuggestions = false
+            suggestions.removeAll()
+        }
+    }
+    
     private func navigateToURL() {
         let inputText = editingText.isEmpty ? urlString : editingText
         let finalURL: String
+        let title: String
         
         // Determine if input is URL or search query
         if isValidURL(inputText) {
             finalURL = inputText.hasPrefix("http") ? inputText : "https://\(inputText)"
+            title = cleanDisplayURL(finalURL)
         } else {
             // Search Google
             let searchQuery = inputText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             finalURL = "https://www.google.com/search?q=\(searchQuery)"
+            title = "Search for \"\(inputText)\""
         }
+        
+        // Record the visit for autofill suggestions
+        autofillService.recordVisit(url: finalURL, title: title)
         
         onSubmit(finalURL)
         isURLBarFocused = false
+        dismissSuggestions()
     }
     
     private func isValidURL(_ string: String) -> Bool {
@@ -290,6 +425,7 @@ struct ShareButton: View {
 // Bookmark button component
 struct BookmarkButton: View {
     let urlString: String
+    let autofillService: AutofillService
     @State private var isBookmarked = false
     @State private var hovering: Bool = false
     
@@ -307,11 +443,51 @@ struct BookmarkButton: View {
                 self.hovering = hovering
             }
         }
+        .onAppear {
+            checkBookmarkStatus()
+        }
+        .onChange(of: urlString) { _, _ in
+            checkBookmarkStatus()
+        }
     }
     
     private func toggleBookmark() {
+        if isBookmarked {
+            autofillService.removeBookmark(url: urlString)
+        } else {
+            // Extract title from URL for now - in real app would use page title
+            let title = cleanDisplayURL(urlString)
+            autofillService.addBookmark(url: urlString, title: title)
+        }
         isBookmarked.toggle()
-        // TODO: Implement actual bookmark functionality
+    }
+    
+    private func checkBookmarkStatus() {
+        // In a real app, this would check the bookmark status from the service
+        // For now, we'll keep the existing behavior
+    }
+    
+    private func cleanDisplayURL(_ url: String) -> String {
+        var cleanURL = url
+        
+        // Remove protocol
+        if cleanURL.hasPrefix("https://") {
+            cleanURL = String(cleanURL.dropFirst(8))
+        } else if cleanURL.hasPrefix("http://") {
+            cleanURL = String(cleanURL.dropFirst(7))
+        }
+        
+        // Remove www.
+        if cleanURL.hasPrefix("www.") {
+            cleanURL = String(cleanURL.dropFirst(4))
+        }
+        
+        // Remove trailing slash
+        if cleanURL.hasSuffix("/") {
+            cleanURL = String(cleanURL.dropLast())
+        }
+        
+        return cleanURL
     }
 }
 
@@ -322,7 +498,7 @@ struct URLBarActionButtonStyle: ButtonStyle {
         configuration.label
             .background(
                 Circle()
-                    .fill(Color.bgSurface)
+                    .fill(.ultraThinMaterial)
                     .opacity(configuration.isPressed ? 0.8 : 0.0)
             )
             .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
@@ -331,5 +507,10 @@ struct URLBarActionButtonStyle: ButtonStyle {
 }
 
 #Preview {
-    URLBar(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
+    VStack {
+        URLBar(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
+        URLBar(urlString: .constant(""), themeColor: nil, onSubmit: { _ in }, pageTitle: nil)
+    }
+    .padding()
+    .background(.ultraThinMaterial)
 }

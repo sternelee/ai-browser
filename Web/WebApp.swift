@@ -52,6 +52,11 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .reopenTabRequested, object: nil)
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
+            
+            Button("New Incognito Window") {
+                NotificationCenter.default.post(name: .newIncognitoWindowRequested, object: nil)
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
         }
         
         CommandGroup(after: .toolbar) {
@@ -122,6 +127,7 @@ extension Notification.Name {
     static let newTabRequested = Notification.Name("newTabRequested")
     static let closeTabRequested = Notification.Name("closeTabRequested")
     static let reopenTabRequested = Notification.Name("reopenTabRequested")
+    static let newIncognitoWindowRequested = Notification.Name("newIncognitoWindowRequested")
     static let reloadRequested = Notification.Name("reloadRequested")
     static let focusAddressBarRequested = Notification.Name("focusAddressBarRequested")
     static let findInPageRequested = Notification.Name("findInPageRequested")
