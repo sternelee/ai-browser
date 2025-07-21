@@ -8,6 +8,7 @@ struct BottomHoverSearch: View {
     @State private var searchText: String = ""
     @FocusState private var isSearchFocused: Bool
     @State private var suggestions: [SearchSuggestion] = []
+    @State private var isHovering: Bool = false
     
     struct SearchSuggestion: Identifiable {
         let id = UUID()
@@ -33,9 +34,13 @@ struct BottomHoverSearch: View {
         .frame(maxWidth: 500)
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
-        .offset(y: isVisible ? 0 : 100)
-        .opacity(isVisible ? 1 : 0)
+        .offset(y: (isVisible || isHovering) ? 0 : 100)
+        .opacity((isVisible || isHovering) ? 1 : 0)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isVisible)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isHovering)
+        .onHover { hovering in
+            isHovering = hovering
+        }
         .onAppear {
             if isVisible {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -44,7 +49,14 @@ struct BottomHoverSearch: View {
             }
         }
         .onChange(of: isVisible) { _, visible in
-            if !visible {
+            if !visible && !isHovering {
+                isSearchFocused = false
+                searchText = ""
+                suggestions = []
+            }
+        }
+        .onChange(of: isHovering) { _, hovering in
+            if !hovering && !isVisible {
                 isSearchFocused = false
                 searchText = ""
                 suggestions = []

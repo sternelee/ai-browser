@@ -74,45 +74,48 @@ struct TabDisplayView: View {
     @ViewBuilder
     private func edgeToEdgeHoverZones(geometry: GeometryProxy) -> some View {
         ZStack {
-            // Left edge hover zone for sidebar (macOS 18 Finder-style)
+            // Left edge hover zone for sidebar (only at left edge)
             if displayMode == .sidebar {
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: 20) // Larger hover zone for better UX
-                    .frame(maxHeight: .infinity)
-                    .position(x: 10, y: geometry.size.height / 2)
-                    .onHover { hovering in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showSidebarOnHover = hovering
+                HStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(width: 3) // Very thin hover zone at left edge only
+                        .onHover { hovering in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showSidebarOnHover = hovering
+                            }
                         }
-                    }
-            }
-            
-            // Top edge hover zone for top bar (macOS 18 Finder-style)
-            if displayMode == .topBar {
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: 20) // Larger hover zone
-                    .frame(maxWidth: .infinity)
-                    .position(x: geometry.size.width / 2, y: 10)
-                    .onHover { hovering in
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            showTopBarOnHover = hovering
-                        }
-                    }
-            }
-            
-            // Bottom edge hover zone for new tab search (inspired by macOS 18)
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: 20)
-                .frame(maxWidth: .infinity)
-                .position(x: geometry.size.width / 2, y: geometry.size.height - 10)
-                .onHover { hovering in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        showBottomSearchOnHover = hovering
-                    }
+                    Spacer()
                 }
+            }
+            
+            // Top edge hover zone for top bar (only at top edge)
+            if displayMode == .topBar {
+                VStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(height: 3) // Very thin hover zone at top edge only
+                        .onHover { hovering in
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showTopBarOnHover = hovering
+                            }
+                        }
+                    Spacer()
+                }
+            }
+            
+            // Bottom edge hover zone for new tab search (only at very bottom edge)
+            VStack {
+                Spacer()
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 3) // Very thin hover zone - only 3px at bottom
+                    .onHover { hovering in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showBottomSearchOnHover = hovering
+                        }
+                    }
+            }
         }
     }
     

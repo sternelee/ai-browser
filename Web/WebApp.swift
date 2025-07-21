@@ -12,8 +12,8 @@ struct WebApp: App {
             ContentView()
                 .background(WindowConfigurator())
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified)
+        .windowStyle(.automatic)
+        .defaultSize(width: 1200, height: 800)
         .commands {
             BrowserCommands()
         }

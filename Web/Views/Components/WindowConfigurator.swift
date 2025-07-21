@@ -29,10 +29,14 @@ struct WindowConfigurator: NSViewRepresentable {
         window.isOpaque = false
         window.hasShadow = true
         
-        // Remove title bar completely - this eliminates the top padding
-        window.styleMask.insert(.fullSizeContentView)
+        // Completely remove title bar and all window chrome
+        window.styleMask = [.borderless, .resizable]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.toolbar = nil // Remove any toolbar
+        
+        // Re-add resizing capability while keeping borderless
+        window.styleMask.insert(.resizable)
         
         // Make window movable by dragging anywhere
         window.isMovableByWindowBackground = true
@@ -41,17 +45,23 @@ struct WindowConfigurator: NSViewRepresentable {
         if let contentView = window.contentView {
             contentView.wantsLayer = true
             contentView.layer?.backgroundColor = NSColor.clear.cgColor
+            
+            // Ensure content view takes up the entire window frame
+            contentView.autoresizingMask = [.width, .height]
         }
         
-        // Completely hide window controls - we'll add custom ones with hover
+        // Completely hide and disable window controls - we'll add custom ones with hover
         if let closeButton = window.standardWindowButton(.closeButton) {
             closeButton.isHidden = true
+            closeButton.alphaValue = 0.0
         }
         if let miniButton = window.standardWindowButton(.miniaturizeButton) {
             miniButton.isHidden = true
+            miniButton.alphaValue = 0.0
         }
         if let zoomButton = window.standardWindowButton(.zoomButton) {
             zoomButton.isHidden = true
+            zoomButton.alphaValue = 0.0
         }
     }
     
