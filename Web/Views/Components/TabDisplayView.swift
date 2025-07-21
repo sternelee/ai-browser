@@ -351,6 +351,8 @@ struct WebContentArea: View {
                             )
                     }
                 )
+                // Elevate entire top bar above web content so URLBar overlay (autofill suggestions) appears above WebView
+                .zIndex(2)
             }
             
             // Web content with smart status bar overlay
