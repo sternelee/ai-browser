@@ -34,6 +34,7 @@ struct WebContentView: View {
                 // Active web view - only create WebView once per tab to maintain state
                 if tab.url != nil {
                     PersistentWebView(tab: tab, urlString: $urlString, hoveredLink: $hoveredLink)
+                        .id(tab.id)
                         .onAppear {
                             hasInitializedWebView = true
                         }
@@ -219,6 +220,7 @@ struct PersistentWebView: View {
                     onNavigationAction: nil,
                     onDownloadRequest: nil
                 )
+                .id(tab.id)
                 .onChange(of: tab.url) { _, newURL in
                     if let url = newURL {
                         urlString = url.absoluteString
@@ -227,6 +229,7 @@ struct PersistentWebView: View {
             } else {
                 // Use existing WebView wrapped in a NSViewRepresentable
                 ExistingWebView(tab: tab)
+                    .id(tab.id)
                     .onChange(of: tab.url) { _, newURL in
                         if let url = newURL {
                             urlString = url.absoluteString
