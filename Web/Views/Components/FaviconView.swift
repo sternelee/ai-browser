@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct FaviconView: View {
-    let tab: Web.Tab
+    @ObservedObject var tab: Web.Tab
     let size: CGFloat
     
     var body: some View {

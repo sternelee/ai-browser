@@ -29,7 +29,7 @@ struct URLBar: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 6) // Reduced from 10 to 6 for more minimal height
+        .padding(.vertical, 4) // Further reduced for even more minimal height
         .background(urlBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onHover { hovering in
@@ -151,9 +151,9 @@ struct ShareButton: View {
             Image(systemName: "square.and.arrow.up")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary)
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
         }
-        .buttonStyle(URLBarActionButtonStyle())
+        .buttonStyle(.plain)
         .disabled(urlString.isEmpty)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -184,9 +184,9 @@ struct BookmarkButton: View {
             Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isBookmarked ? Color.accentBeam : (urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary))
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
         }
-        .buttonStyle(URLBarActionButtonStyle())
+        .buttonStyle(.plain)
         .disabled(urlString.isEmpty)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {

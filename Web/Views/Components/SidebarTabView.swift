@@ -18,7 +18,7 @@ struct SidebarTabView: View {
             
             // Tab list with custom scrolling
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 8) {
                     ForEach(tabManager.tabs) { tab in
                         SidebarTabItem(
                             tab: tab,
@@ -61,7 +61,7 @@ struct SidebarTabView: View {
                     .padding(.bottom, 12)
             }
         }
-        .frame(width: 60)
+        .frame(width: 50)
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
@@ -135,13 +135,16 @@ struct SidebarTabItem: View {
         .onReceive(tab.$favicon) { favicon in
             extractFaviconColor(from: favicon)
         }
+        .onReceive(tab.$url) { _ in
+            // Trigger UI update when URL changes to ensure favicon gets updated
+        }
     }
     
     private var tabItemContent: some View {
         ZStack {
             backgroundView
             
-            VStack(spacing: 0) {
+            HStack(spacing: 0) {
                 Spacer()
                 
                 faviconView
@@ -159,53 +162,64 @@ struct SidebarTabItem: View {
     }
     
     private var backgroundView: some View {
-        RoundedRectangle(cornerRadius: 10)
-            .fill(backgroundMaterial)
-            .overlay(
-                // Soft glass border
+        Group {
+            if isActive {
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                borderColor.opacity(0.6),
-                                borderColor.opacity(0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isActive ? 1 : 0.5
+                    .fill(backgroundMaterial)
+                    .overlay(
+                        // Soft glass border only for active tabs
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        borderColor.opacity(0.8),
+                                        borderColor.opacity(0.4)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
                     )
-            )
+            } else {
+                // No background for non-active tabs
+                Color.clear
+            }
+        }
             .shadow(
-                color: isActive ? .black.opacity(0.1) : .clear,
-                radius: isActive ? 8 : 2,
+                color: isActive ? extractedColor.opacity(0.3) : .clear,
+                radius: isActive ? 12 : 0,
                 x: 0,
-                y: isActive ? 2 : 1
+                y: isActive ? 3 : 0
             )
             .overlay(
-                // Subtle color accent from favicon with better blending
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                extractedColor.opacity(isActive ? 0.15 : 0.05),
-                                extractedColor.opacity(0.02),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 10,
-                            endRadius: 25
-                        )
-                    )
-                    .animation(.easeInOut(duration: 0.3), value: extractedColor)
+                // Subtle color accent from favicon with better blending - only for active tabs
+                Group {
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        extractedColor.opacity(0.25),
+                                        extractedColor.opacity(0.15),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 8,
+                                    endRadius: 20
+                                )
+                            )
+                            .animation(.easeInOut(duration: 0.3), value: extractedColor)
+                    }
+                }
             )
     }
     
     private var backgroundMaterial: Material {
         if isActive {
-            return .regularMaterial
+            return .thickMaterial
         } else if isHovered {
-            return .thinMaterial
+            return .ultraThinMaterial
         } else {
             return .ultraThinMaterial
         }
@@ -238,21 +252,34 @@ struct SidebarTabItem: View {
                 tabManager.closeTab(tab)
             }
         }) {
-            Image(systemName: "xmark")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundColor(Color.secondary)
-                .frame(width: 14, height: 14)
-                .background(
-                    Circle()
-                        .fill(Color.black.opacity(0.05))
-                        .overlay(
-                            Circle()
-                                .strokeBorder(.gray.opacity(0.3), lineWidth: 0.5)
-                        )
-                )
+            ZStack {
+                // Next-gen macOS style background
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 16, height: 16)
+                    .overlay(
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.red.opacity(0.1),
+                                        Color.clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 2,
+                                    endRadius: 8
+                                )
+                            )
+                    )
+                
+                // X mark
+                Image(systemName: "xmark")
+                    .font(.system(size: 6, weight: .bold))
+                    .foregroundColor(.red.opacity(0.8))
+            }
         }
         .buttonStyle(.plain)
-        .scaleEffect(0.9)
+        .offset(x: -2) // Slight inward offset for better positioning
     }
     
     private func extractFaviconColor(from image: NSImage?) {

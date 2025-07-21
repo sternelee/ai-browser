@@ -166,8 +166,9 @@ struct TopBarTabItem: View {
                 // Favicon with proper view
                 if tab.isLoading {
                     ProgressView()
-                        .scaleEffect(0.6)
+                        .scaleEffect(0.5)
                         .tint(.textSecondary)
+                        .frame(width: 16, height: 16)
                 } else {
                     FaviconView(tab: tab, size: 16)
                 }

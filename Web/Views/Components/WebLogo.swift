@@ -15,15 +15,15 @@ struct WebLogo: View {
                             logoBackgroundColor.opacity(0.05)
                         ],
                         center: .center,
-                        startRadius: 10,
-                        endRadius: 40
+                        startRadius: 6,
+                        endRadius: 20
                     )
                 )
             
             // Main "W" shape
             LogoShape()
                 .fill(logoForegroundColor)
-                .frame(width: 32, height: 24)
+                .frame(width: 16, height: 12)
         }
     }
     

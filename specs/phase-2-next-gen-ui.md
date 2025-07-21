@@ -1260,6 +1260,22 @@ struct AdaptiveGlassBackground: View {
 
 ## Implementation Notes
 
+### ✅ Completed Improvements (Latest Session)
+- **Enhanced tab spacing**: Increased gap between sidebar tabs from 2px to 8px for better visual separation
+- **Glowy selected tab effect**: Only active tabs now have enhanced gradient, shadow, and border effects for better focus
+- **Optimized sidebar width**: Reduced from 60px to 50px for more screen real estate
+- **Improved URL bar**: Reduced height with smaller padding (4px vs 6px) and removed button background boxes
+- **Fixed Web logo size**: Reduced favicon size from 32x24 to 16x12 for proper proportions
+- **Enhanced hover behavior**: Fixed borderless mode sidebar with expanded hover zones and delay timers to prevent flickering
+- **Better delete button UX**: Close button now replaces favicon on hover instead of stacking vertically
+
+### ✅ Additional UI Refinements (Second Session)
+- **Removed boxes from non-selected tabs**: Non-active sidebar tabs now have clean, minimal appearance without background boxes
+- **Fixed favicon auto-updating**: Made FaviconView properly reactive with @ObservedObject to ensure favicon updates appear in sidebar
+- **Fixed spinner size**: Constrained progress spinner in top tab bar to 16x16 with proper frame to prevent height issues
+- **Minimalist navigation buttons**: Removed background boxes from back/forward/reload buttons, increased touch target to 20x20
+- **Next-gen sidebar close button**: Redesigned close button to appear on the right with subtle red tint, glass material background, and proper positioning
+
 ### Revolutionary Features *(macOS 18 Finder-Inspired)*
 - **Favicon-only sidebar**: Industry-first minimal design showing only favicons
 - **Smart window controls**: Appear only on hover for ultimate minimalism

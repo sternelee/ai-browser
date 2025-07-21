@@ -13,6 +13,7 @@ struct TabDisplayView: View {
     @State private var showSidebarOnHover: Bool = false
     @State private var showTopBarOnHover: Bool = false
     @State private var showBottomSearchOnHover: Bool = false
+    @State private var hideTimer: Timer?
     
     var body: some View {
         GeometryReader { geometry in
@@ -32,9 +33,14 @@ struct TabDisplayView: View {
                         // Sidebar tabs (if enabled and not edge-to-edge)
                         if displayMode == .sidebar && (!isEdgeToEdgeMode || showSidebarOnHover) {
                             SidebarTabView(tabManager: tabManager)
-                                .frame(width: 60)
+                                .frame(width: 50)
                                 .transition(.move(edge: .leading).combined(with: .opacity))
                                 .opacity(isEdgeToEdgeMode && !showSidebarOnHover ? 0 : 1)
+                                .onHover { hovering in
+                                    if isEdgeToEdgeMode {
+                                        handleSidebarHover(hovering)
+                                    }
+                                }
                         }
                         
                         // Main web content
@@ -77,11 +83,9 @@ struct TabDisplayView: View {
                 HStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(width: 12) // Increased from 3px to 12px for better UX
+                        .frame(width: showSidebarOnHover ? 60 : 12) // Expand when sidebar is shown to prevent disappearing
                         .onHover { hovering in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                showSidebarOnHover = hovering
-                            }
+                            handleSidebarHover(hovering)
                         }
                     Spacer()
                 }
@@ -138,6 +142,24 @@ struct TabDisplayView: View {
             showBottomSearchOnHover = false
         }
     }
+    
+    private func handleSidebarHover(_ hovering: Bool) {
+        hideTimer?.invalidate()
+        hideTimer = nil
+        
+        if hovering {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                showSidebarOnHover = true
+            }
+        } else {
+            // Add a small delay before hiding to prevent flickering
+            hideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showSidebarOnHover = false
+                }
+            }
+        }
+    }
 }
 
 // Web content area wrapper with rounded corners and margin
@@ -170,7 +192,7 @@ struct WebContentArea: View {
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8) // Reduced from 12 to 8 for more minimal height
+                .padding(.vertical, 6) // Further reduced for even more minimal height
                 .background(
                     ZStack {
                         // Beautiful glass material

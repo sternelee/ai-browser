@@ -70,10 +70,10 @@ struct NavigationButton: View {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(foregroundColor)
-                .frame(width: 16, height: 16)
+                .frame(width: 20, height: 20)
                 .rotationEffect(.degrees(isLoading && icon == "arrow.clockwise" ? rotationAngle : 0))
         }
-        .buttonStyle(NavigationButtonStyle(isEnabled: isEnabled, isHovered: hovering))
+        .buttonStyle(.plain)
         .disabled(!isEnabled)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -111,39 +111,12 @@ struct NavigationButtonStyle: ButtonStyle {
     
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(8)
-            .background(buttonBackground(isPressed: configuration.isPressed))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
     
     private func buttonBackground(isPressed: Bool) -> some View {
-        ZStack {
-            // Base glass material
-            RoundedRectangle(cornerRadius: 6)
-                .fill(.regularMaterial)
-            
-            // Dark glass surface overlay
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.bgSurface)
-            
-            // Interactive states
-            if isPressed {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.1))
-            } else if isHovered && isEnabled {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.05))
-            }
-            
-            // Subtle border
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(
-                    Color.borderGlass.opacity(isEnabled ? 0.5 : 0.2),
-                    lineWidth: 0.5
-                )
-        }
+        Color.clear // No background - just the icon
     }
 }
 
