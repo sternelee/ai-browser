@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum TabDisplayMode: String, CaseIterable {
+    case sidebar = "sidebar"
+    case topBar = "topBar"
+    case hidden = "hidden"
+}
+
 struct TabDisplayView: View {
     @ObservedObject var tabManager: TabManager
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
@@ -7,12 +13,6 @@ struct TabDisplayView: View {
     @State private var showSidebarOnHover: Bool = false
     @State private var showTopBarOnHover: Bool = false
     @State private var showBottomSearchOnHover: Bool = false
-    
-    enum TabDisplayMode: String, CaseIterable {
-        case sidebar = "sidebar"
-        case topBar = "topBar"
-        case hidden = "hidden"
-    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -50,8 +50,8 @@ struct TabDisplayView: View {
                     edgeToEdgeHoverZones(geometry: geometry)
                 }
                 
-                // Bottom search overlay (edge-to-edge mode)
-                if isEdgeToEdgeMode && showBottomSearchOnHover {
+                // Bottom search overlay (edge-to-edge mode only)
+                if isEdgeToEdgeMode {
                     VStack {
                         Spacer()
                         BottomHoverSearch(isVisible: $showBottomSearchOnHover, tabManager: tabManager)
@@ -143,30 +143,53 @@ struct TabDisplayView: View {
 struct WebContentArea: View {
     @ObservedObject var tabManager: TabManager
     @State private var urlString: String = ""
+    @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
+    @State private var isEdgeToEdgeMode: Bool = false
     
     var body: some View {
         VStack(spacing: 0) {
-            // URL bar (always visible unless edge-to-edge)
-            HStack(spacing: 12) {
-                // Navigation controls
-                if let activeTab = tabManager.activeTab {
-                    NavigationControls(tab: activeTab)
+            // URL bar (hidden in edge-to-edge mode)
+            if !isEdgeToEdgeMode {
+                HStack(spacing: 12) {
+                    // Navigation controls
+                    if let activeTab = tabManager.activeTab {
+                        NavigationControls(tab: activeTab)
+                    }
+                    
+                    // URL bar with reduced height
+                    URLBar(urlString: $urlString, onSubmit: navigateToURL)
+                        .frame(maxWidth: .infinity)
+                    
+                    // Menu button
+                    Button(action: showMenu) {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 16))
+                    }
+                    .buttonStyle(GlassButtonStyle(size: .medium))
                 }
-                
-                // URL bar
-                URLBar(urlString: $urlString, onSubmit: navigateToURL)
-                    .frame(maxWidth: .infinity)
-                
-                // Menu button
-                Button(action: showMenu) {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 16))
-                }
-                .buttonStyle(GlassButtonStyle(size: .medium))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8) // Reduced from 12 to 8 for more minimal height
+                .background(
+                    ZStack {
+                        // Beautiful glass material
+                        Rectangle()
+                            .fill(.regularMaterial)
+                        
+                        // Soft glass overlay
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.06),
+                                        Color.white.opacity(0.02)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                )
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial)
             
             // Web content
             if let activeTab = tabManager.activeTab {
@@ -174,6 +197,9 @@ struct WebContentArea: View {
             } else {
                 NewTabView()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
+            isEdgeToEdgeMode.toggle()
         }
         .onAppear {
             // Initialize with a default URL if needed

@@ -28,8 +28,8 @@ struct URLBar: View {
                 BookmarkButton(urlString: urlString)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6) // Reduced from 10 to 6 for more minimal height
         .background(urlBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onHover { hovering in

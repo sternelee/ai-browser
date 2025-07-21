@@ -54,20 +54,38 @@ struct TopBarTabView: View {
     
     private var topBarBackground: some View {
         ZStack {
-            // Base material
+            // Beautiful glass material
             Rectangle()
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
             
-            // Dark glass surface overlay
+            // Soft glass overlay with gradient
             Rectangle()
-                .fill(Color.black.opacity(0.05))
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.white.opacity(0.02)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
             
-            // Bottom border
+            // Subtle bottom border
             VStack {
                 Spacer()
                 Rectangle()
-                    .fill(.gray.opacity(0.3))
-                    .frame(height: 1)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.15),
+                                Color.white.opacity(0.03)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 0.5)
             }
         }
     }
@@ -126,15 +144,13 @@ struct TopBarTabItem: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                // Simple favicon
+                // Favicon with proper view
                 if tab.isLoading {
                     ProgressView()
                         .scaleEffect(0.6)
                         .tint(.textSecondary)
                 } else {
-                    Image(systemName: "globe")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color.secondary)
+                    FaviconView(tab: tab, size: 16)
                 }
                 
                 // Title
@@ -162,11 +178,30 @@ struct TopBarTabItem: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isActive ? .thickMaterial : .ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isActive ? .regularMaterial : .ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(isActive ? .blue : Color.clear, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(
+                                isActive ? 
+                                LinearGradient(
+                                    colors: [Color.blue.opacity(0.6), Color.blue.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ) :
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.1), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: isActive ? 1 : 0.5
+                            )
+                    )
+                    .shadow(
+                        color: isActive ? .black.opacity(0.1) : .clear,
+                        radius: isActive ? 4 : 0,
+                        x: 0,
+                        y: 1
                     )
             )
         }

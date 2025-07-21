@@ -61,22 +61,40 @@ struct SidebarTabView: View {
         }
         .frame(width: 60)
         .background(
-            // Enhanced glass background with subtle tint
+            // Beautiful seamless glass background
             ZStack {
-                // Base material
-                Rectangle()
-                    .fill(.ultraThinMaterial)
+                // Primary glass material
+                RoundedRectangle(cornerRadius: 0)
+                    .fill(.regularMaterial)
                 
-                // Dark glass surface overlay
-                Rectangle()
-                    .fill(Color.black.opacity(0.05))
+                // Soft glass overlay with gradient
+                RoundedRectangle(cornerRadius: 0)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                Color.white.opacity(0.02)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                 
-                // Subtle border on right edge
+                // Subtle inner border
                 HStack {
                     Spacer()
                     Rectangle()
-                        .fill(.gray.opacity(0.3))
-                        .frame(width: 1)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.15),
+                                    Color.white.opacity(0.03)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 0.5)
                 }
             }
         )
@@ -177,29 +195,42 @@ struct SidebarTabItem: View {
     }
     
     private var backgroundView: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: 10)
             .fill(backgroundMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(borderColor, lineWidth: isActive ? 1.5 : 0)
-            )
-            .shadow(
-                color: isActive ? .black.opacity(0.15) : .clear,
-                radius: 3,
-                x: 0,
-                y: 1
-            )
-            .overlay(
-                // Subtle color accent from favicon
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
+                // Soft glass border
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(
                         LinearGradient(
                             colors: [
-                                extractedColor.opacity(isActive ? 0.08 : 0.03),
-                                extractedColor.opacity(0.01)
+                                borderColor.opacity(0.6),
+                                borderColor.opacity(0.2)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isActive ? 1 : 0.5
+                    )
+            )
+            .shadow(
+                color: isActive ? .black.opacity(0.1) : .clear,
+                radius: isActive ? 8 : 2,
+                x: 0,
+                y: isActive ? 2 : 1
+            )
+            .overlay(
+                // Subtle color accent from favicon with better blending
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                extractedColor.opacity(isActive ? 0.15 : 0.05),
+                                extractedColor.opacity(0.02),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 25
                         )
                     )
                     .animation(.easeInOut(duration: 0.3), value: extractedColor)
@@ -208,9 +239,9 @@ struct SidebarTabItem: View {
     
     private var backgroundMaterial: Material {
         if isActive {
-            return .thickMaterial
-        } else if isHovered {
             return .regularMaterial
+        } else if isHovered {
+            return .thinMaterial
         } else {
             return .ultraThinMaterial
         }

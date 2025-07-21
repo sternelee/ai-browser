@@ -30,6 +30,12 @@ extension NSColor {
     }
 }
 
+extension NSImage {
+    var isValid: Bool {
+        return self.size.width > 0 && self.size.height > 0 && self.representations.count > 0
+    }
+}
+
 struct WebView: NSViewRepresentable {
     @Binding var url: URL?
     @Binding var canGoBack: Bool
@@ -160,27 +166,54 @@ struct WebView: NSViewRepresentable {
         private func extractFavicon(from webView: WKWebView) {
             let script = """
             function getFaviconAndThemeColor() {
-                // Get theme color from meta tag
-                var themeColorMeta = document.querySelector('meta[name="theme-color"]');
-                var themeColor = themeColorMeta ? themeColorMeta.getAttribute('content') : null;
-                
-                // Get favicon with preference order
-                var favicon = document.querySelector('link[rel="shortcut icon"]') ||
-                             document.querySelector('link[rel="icon"]') ||
-                             document.querySelector('link[rel="apple-touch-icon"]') ||
-                             document.querySelector('link[rel="apple-touch-icon-precomposed"]');
-                
-                var faviconURL = favicon ? favicon.href : null;
-                
-                // If no favicon found, try default location
-                if (!faviconURL) {
-                    faviconURL = window.location.origin + '/favicon.ico';
+                try {
+                    // Get theme color from meta tag
+                    var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+                    var themeColor = themeColorMeta ? themeColorMeta.getAttribute('content') : null;
+                    
+                    // Get favicon with comprehensive preference order
+                    var faviconSelectors = [
+                        'link[rel*="icon"][sizes="32x32"]',
+                        'link[rel*="icon"][sizes="16x16"]', 
+                        'link[rel="shortcut icon"]',
+                        'link[rel="icon"]',
+                        'link[rel="apple-touch-icon"]',
+                        'link[rel="apple-touch-icon-precomposed"]',
+                        'link[rel="mask-icon"]'
+                    ];
+                    
+                    var faviconURL = null;
+                    for (var i = 0; i < faviconSelectors.length; i++) {
+                        var favicon = document.querySelector(faviconSelectors[i]);
+                        if (favicon && favicon.href) {
+                            faviconURL = favicon.href;
+                            break;
+                        }
+                    }
+                    
+                    // If no favicon found, try default locations
+                    if (!faviconURL) {
+                        var defaultLocations = [
+                            '/favicon.ico',
+                            '/favicon.png', 
+                            '/apple-touch-icon.png'
+                        ];
+                        faviconURL = window.location.origin + defaultLocations[0];
+                    }
+                    
+                    return {
+                        favicon: faviconURL,
+                        themeColor: themeColor,
+                        success: true
+                    };
+                } catch (e) {
+                    return {
+                        favicon: window.location.origin + '/favicon.ico',
+                        themeColor: null,
+                        success: false,
+                        error: e.toString()
+                    };
                 }
-                
-                return {
-                    favicon: faviconURL,
-                    themeColor: themeColor
-                };
             }
             getFaviconAndThemeColor();
             """
@@ -189,6 +222,14 @@ struct WebView: NSViewRepresentable {
                 if let data = result as? [String: Any] {
                     if let faviconURL = data["favicon"] as? String, let url = URL(string: faviconURL) {
                         self?.downloadFavicon(from: url)
+                    } else {
+                        // Fallback: try to get favicon from current URL's domain
+                        if let currentURL = webView.url {
+                            let fallbackURL = URL(string: "\(currentURL.scheme!)://\(currentURL.host!)/favicon.ico")
+                            if let fallback = fallbackURL {
+                                self?.downloadFavicon(from: fallback)
+                            }
+                        }
                     }
                     
                     if let themeColor = data["themeColor"] as? String {
@@ -199,11 +240,66 @@ struct WebView: NSViewRepresentable {
         }
         
         private func downloadFavicon(from url: URL) {
-            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-                if let data = data, let image = NSImage(data: data) {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
+            
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                guard let data = data, error == nil else {
+                    // If favicon download fails, try alternative fallbacks
+                    self?.tryFaviconFallbacks(originalURL: url)
+                    return
+                }
+                
+                // Validate that we got a proper image
+                if let image = NSImage(data: data), image.isValid {
                     DispatchQueue.main.async {
                         self?.parent.favicon = image
+                        // Also update the tab model
+                        if let tab = self?.parent.tab {
+                            tab.favicon = image
+                        }
                     }
+                } else {
+                    // Data was not a valid image, try fallbacks
+                    self?.tryFaviconFallbacks(originalURL: url)
+                }
+            }.resume()
+        }
+        
+        private func tryFaviconFallbacks(originalURL: URL) {
+            guard let host = originalURL.host else { return }
+            
+            let fallbackURLs = [
+                "https://\(host)/apple-touch-icon.png",
+                "https://\(host)/favicon.png",
+                "https://\(host)/favicon.gif",
+                "https://www.google.com/s2/favicons?domain=\(host)&sz=32" // Google favicon service as last resort
+            ]
+            
+            tryFaviconURL(from: fallbackURLs, index: 0)
+        }
+        
+        private func tryFaviconURL(from urls: [String], index: Int) {
+            guard index < urls.count, let url = URL(string: urls[index]) else { return }
+            
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
+            
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                if let data = data, 
+                   let image = NSImage(data: data),
+                   image.isValid {
+                    DispatchQueue.main.async {
+                        self?.parent.favicon = image
+                        if let tab = self?.parent.tab {
+                            tab.favicon = image
+                        }
+                    }
+                } else if index + 1 < urls.count {
+                    // Try next fallback
+                    self?.tryFaviconURL(from: urls, index: index + 1)
                 }
             }.resume()
         }
