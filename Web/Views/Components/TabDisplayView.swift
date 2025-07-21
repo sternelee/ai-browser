@@ -225,14 +225,16 @@ struct WebContentArea: View {
                         NavigationControls(tab: activeTab)
                     }
                     
-                    // URL bar with reduced height and theme color
-                    URLBar(
-                        urlString: $urlString, 
-                        themeColor: tabManager.activeTab?.themeColor,
-                        onSubmit: navigateToURL,
-                        pageTitle: tabManager.activeTab?.title
-                    )
-                    .frame(maxWidth: .infinity)
+                    // URL bar with autofill suggestions in ZStack for proper layering
+                    ZStack(alignment: .bottom) {
+                        URLBarWithAutofill(
+                            urlString: $urlString,
+                            themeColor: tabManager.activeTab?.themeColor,
+                            onSubmit: navigateToURL,
+                            pageTitle: tabManager.activeTab?.title
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
                     
                     // Menu button
                     Button(action: showMenu) {

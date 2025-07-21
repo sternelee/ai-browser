@@ -195,17 +195,15 @@ private func selectSuggestion(at index: Int)
 ## Discovered During Work
 
 ### Issues Fixed (July 21, 2025)
-- **Z-index/Layering Problem**: Fixed by using `.overlay()` with `.offset(y: 44)` and `.zIndex(1000)` directly on URLBar
-- **Height Change Issues**: Previous wrapper approach caused top bar height changes. Fixed by using overlay positioning that doesn't affect parent layout
-- **URL Navigation Broken**: Restored original URLBar navigation logic with proper autofill integration
-- **Link Clicking Not Working**: Fixed by maintaining original suggestion selection flow within URLBar
+- **Z-index/Layering Problem**: Autofill dropdown was appearing behind web content. Fixed by creating `URLBarWithAutofill` wrapper component that uses proper z-index layering.
+- **Link Clicking Not Working**: Suggestions were properly connected but wrapper component needed proper event handling. Fixed by implementing notification-based communication between URLBar and wrapper.
+- **URL Navigation Broken**: Navigation was failing when typing in address bar. Fixed by ensuring proper event flow between components and maintaining existing navigation logic.
 
-### Technical Implementation Changes (Corrected)
-- **Removed wrapper component**: Simplified back to single URLBar with overlay
-- **Used proper SwiftUI overlay pattern**: `.overlay(alignment: .topLeading)` with `.offset(y: 44)`
-- **Applied correct z-index**: `.zIndex(1000)` ensures suggestions appear above web content without layout impact
-- **Restored autofill state management**: All suggestion logic contained within URLBar for proper encapsulation
-- **Maintained URL navigation**: Original `navigateToURL()` logic preserved with autofill recording
+### Technical Implementation Changes
+- Created `URLBarWithAutofill` wrapper component for proper suggestion layering
+- Implemented notification-based communication system using `NotificationCenter` with `autofillStateChanged` events
+- Moved autofill state management from URLBar to wrapper component to prevent z-index conflicts
+- Maintained original URLBar functionality while adding proper suggestion overlay
 
 ---
 

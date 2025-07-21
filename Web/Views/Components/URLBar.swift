@@ -10,12 +10,7 @@ struct URLBar: View {
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
     
-    // Autofill state
-    @StateObject private var autofillService = AutofillService()
-    @State private var showingSuggestions = false
-    @State private var suggestions: [AutofillSuggestion] = []
-    @State private var selectedSuggestionIndex = 0
-    @State private var suggestionTask: Task<Void, Never>?
+    // URLBar no longer manages autofill state directly - handled by wrapper
     
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
@@ -95,6 +90,16 @@ struct URLBar: View {
                 .onChange(of: editingText) { _, newText in
                     handleTextChange(newText)
                 }
+                .onChange(of: isURLBarFocused) { _, focused in
+                    if !focused {
+                        // Send notification to hide suggestions when focus is lost
+                        NotificationCenter.default.post(
+                            name: .autofillStateChanged,
+                            object: nil,
+                            userInfo: ["state": "hide"]
+                        )
+                    }
+                }
                 .onKeyPress { keyPress in
                     handleKeyPress(keyPress)
                 }
@@ -102,7 +107,7 @@ struct URLBar: View {
             // Quick actions with improved spacing
             HStack(spacing: 6) {
                 ShareButton(urlString: urlString)
-                BookmarkButton(urlString: urlString, autofillService: autofillService)
+                BookmarkButton(urlString: urlString)
             }
         }
         .padding(.horizontal, 14)
@@ -114,27 +119,8 @@ struct URLBar: View {
                 self.hovering = hovering
             }
         }
-        .overlay(alignment: .topLeading) {
-            // Autofill suggestions positioned with proper offset to avoid affecting parent height
-            if showingSuggestions {
-                VStack(spacing: 4) {
-                    if !suggestions.isEmpty {
-                        AutofillSuggestionsView(
-                            suggestions: suggestions,
-                            selectedIndex: selectedSuggestionIndex,
-                            onSelect: selectSuggestion,
-                            onDismiss: dismissSuggestions
-                        )
-                    } else if autofillService.isLoading {
-                        AutofillLoadingView()
-                    }
-                }
-                .offset(y: 44) // Position below URLBar without affecting layout
-                .zIndex(1000) // Ensure it appears above other content
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingSuggestions)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: suggestions.isEmpty)
-            }
-        }
+        // Autofill suggestions positioned outside the URLBar container for proper z-index
+        // This will be handled by the parent view to ensure proper layering
     }
     
     private var urlBarBackground: some View {
@@ -224,15 +210,8 @@ struct URLBar: View {
     // MARK: - Navigation Methods
     
     private func handleSubmit() {
-        // Check if we should use a selected suggestion
-        if showingSuggestions && !suggestions.isEmpty && selectedSuggestionIndex >= 0 && selectedSuggestionIndex < suggestions.count {
-            let selectedSuggestion = suggestions[selectedSuggestionIndex]
-            selectSuggestion(selectedSuggestion)
-        } else {
-            // Normal navigation with current input
-            dismissSuggestions()
-            navigateToURL()
-        }
+        // Submit will be handled by wrapper if suggestions are active
+        navigateToURL()
     }
     
     private func handleFocusChange(_ focused: Bool) {
@@ -240,106 +219,80 @@ struct URLBar: View {
             editingText = urlString
             // Show suggestions immediately if there's text
             if !editingText.isEmpty {
-                loadSuggestions(for: editingText)
+                handleTextChange(editingText)
             }
-        } else {
-            // Hide suggestions when unfocused
-            dismissSuggestions()
         }
     }
     
     private func handleTextChange(_ newText: String) {
-        loadSuggestions(for: newText)
+        // Send notification to show/update suggestions
+        if isURLBarFocused && !newText.isEmpty {
+            NotificationCenter.default.post(
+                name: .autofillStateChanged,
+                object: nil,
+                userInfo: ["state": "show", "query": newText]
+            )
+        } else {
+            NotificationCenter.default.post(
+                name: .autofillStateChanged,
+                object: nil,
+                userInfo: ["state": "hide"]
+            )
+        }
     }
     
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
-        guard showingSuggestions else { return .ignored }
-        
+        // Send keyboard events to the wrapper for suggestion navigation
         switch keyPress.key {
         case .downArrow:
-            selectedSuggestionIndex = min(selectedSuggestionIndex + 1, suggestions.count - 1)
+            NotificationCenter.default.post(
+                name: .autofillStateChanged,
+                object: nil,
+                userInfo: ["state": "keyDown", "key": "down"]
+            )
             return .handled
         case .upArrow:
-            selectedSuggestionIndex = max(selectedSuggestionIndex - 1, 0)
+            NotificationCenter.default.post(
+                name: .autofillStateChanged,
+                object: nil,
+                userInfo: ["state": "keyDown", "key": "up"]
+            )
             return .handled
         case .escape:
-            dismissSuggestions()
+            NotificationCenter.default.post(
+                name: .autofillStateChanged,
+                object: nil,
+                userInfo: ["state": "keyDown", "key": "escape"]
+            )
             return .handled
         default:
             return .ignored
         }
     }
     
-    private func loadSuggestions(for query: String) {
-        // Cancel previous task
-        suggestionTask?.cancel()
-        
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Hide suggestions for very short queries
-        guard trimmedQuery.count >= 1 else {
-            dismissSuggestions()
-            return
-        }
-        
-        // Start new task
-        suggestionTask = Task {
-            let newSuggestions = await autofillService.getSuggestions(for: trimmedQuery)
-            
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                
-                suggestions = newSuggestions
-                selectedSuggestionIndex = 0
-                showingSuggestions = !suggestions.isEmpty || autofillService.isLoading
-            }
-        }
-    }
-    
-    private func selectSuggestion(_ suggestion: AutofillSuggestion) {
-        editingText = suggestion.url
-        
-        // Navigate to the selected URL
-        let finalURL = suggestion.url.hasPrefix("http") ? suggestion.url : "https://\(suggestion.url)"
-        
-        // Record the visit
-        autofillService.recordVisit(url: finalURL, title: suggestion.title)
-        
-        onSubmit(finalURL)
-        dismissSuggestions()
-        isURLBarFocused = false
-    }
-    
-    private func dismissSuggestions() {
-        suggestionTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showingSuggestions = false
-            suggestions.removeAll()
-        }
-    }
+    // Old autofill methods removed - now handled by URLBarWithAutofill wrapper
     
     private func navigateToURL() {
         let inputText = editingText.isEmpty ? urlString : editingText
         let finalURL: String
-        let title: String
         
         // Determine if input is URL or search query
         if isValidURL(inputText) {
             finalURL = inputText.hasPrefix("http") ? inputText : "https://\(inputText)"
-            title = cleanDisplayURL(finalURL)
         } else {
             // Search Google
             let searchQuery = inputText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             finalURL = "https://www.google.com/search?q=\(searchQuery)"
-            title = "Search for \"\(inputText)\""
         }
-        
-        // Record the visit for autofill suggestions
-        autofillService.recordVisit(url: finalURL, title: title)
         
         onSubmit(finalURL)
         isURLBarFocused = false
-        dismissSuggestions()
+        // Hide suggestions via notification
+        NotificationCenter.default.post(
+            name: .autofillStateChanged,
+            object: nil,
+            userInfo: ["state": "hide"]
+        )
     }
     
     private func isValidURL(_ string: String) -> Bool {
@@ -426,7 +379,7 @@ struct ShareButton: View {
 // Bookmark button component
 struct BookmarkButton: View {
     let urlString: String
-    let autofillService: AutofillService
+    @StateObject private var autofillService = AutofillService()
     @State private var isBookmarked = false
     @State private var hovering: Bool = false
     
@@ -507,10 +460,158 @@ struct URLBarActionButtonStyle: ButtonStyle {
     }
 }
 
+// URLBar wrapper that handles autofill suggestions with proper z-index
+struct URLBarWithAutofill: View {
+    @Binding var urlString: String
+    let themeColor: NSColor?
+    let onSubmit: (String) -> Void
+    let pageTitle: String?
+    
+    @StateObject private var autofillService = AutofillService()
+    @State private var showingSuggestions = false
+    @State private var suggestions: [AutofillSuggestion] = []
+    @State private var selectedSuggestionIndex = 0
+    @State private var suggestionTask: Task<Void, Never>?
+    @FocusState private var isURLBarFocused: Bool
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Main URL Bar
+            URLBar(
+                urlString: $urlString,
+                themeColor: themeColor,
+                onSubmit: handleSubmit,
+                pageTitle: pageTitle
+            )
+            
+            // Autofill suggestions overlay with proper z-index
+            if showingSuggestions {
+                VStack {
+                    Spacer(minLength: 44) // Push below URLBar (URLBar height + padding)
+                    
+                    VStack(spacing: 4) {
+                        if !suggestions.isEmpty {
+                            AutofillSuggestionsView(
+                                suggestions: suggestions,
+                                selectedIndex: selectedSuggestionIndex,
+                                onSelect: selectSuggestion,
+                                onDismiss: dismissSuggestions
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        } else if autofillService.isLoading {
+                            AutofillLoadingView()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .zIndex(1000) // Ensure it appears above web content
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showingSuggestions)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: suggestions.isEmpty)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .autofillStateChanged)) { notification in
+            if let state = notification.userInfo?["state"] as? String {
+                switch state {
+                case "show":
+                    if let query = notification.userInfo?["query"] as? String {
+                        loadSuggestions(for: query)
+                    }
+                case "hide":
+                    dismissSuggestions()
+                case "keyDown":
+                    if let key = notification.userInfo?["key"] as? String {
+                        handleKeyboardNavigation(key: key)
+                    }
+                default:
+                    break
+                }
+            }
+        }
+    }
+    
+    private func handleSubmit(_ url: String) {
+        // Check if we should use a selected suggestion
+        if showingSuggestions && !suggestions.isEmpty && selectedSuggestionIndex >= 0 && selectedSuggestionIndex < suggestions.count {
+            let selectedSuggestion = suggestions[selectedSuggestionIndex]
+            selectSuggestion(selectedSuggestion)
+        } else {
+            // Normal navigation with current input
+            dismissSuggestions()
+            onSubmit(url)
+        }
+    }
+    
+    private func selectSuggestion(_ suggestion: AutofillSuggestion) {
+        // Navigate to the selected URL
+        let finalURL = suggestion.url.hasPrefix("http") ? suggestion.url : "https://\(suggestion.url)"
+        
+        // Record the visit
+        autofillService.recordVisit(url: finalURL, title: suggestion.title)
+        
+        onSubmit(finalURL)
+        dismissSuggestions()
+    }
+    
+    private func dismissSuggestions() {
+        suggestionTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showingSuggestions = false
+            suggestions.removeAll()
+        }
+    }
+    
+    private func loadSuggestions(for query: String) {
+        // Cancel previous task
+        suggestionTask?.cancel()
+        
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Hide suggestions for very short queries
+        guard trimmedQuery.count >= 1 else {
+            dismissSuggestions()
+            return
+        }
+        
+        // Start new task
+        suggestionTask = Task {
+            let newSuggestions = await autofillService.getSuggestions(for: trimmedQuery)
+            
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                
+                suggestions = newSuggestions
+                selectedSuggestionIndex = 0
+                showingSuggestions = !suggestions.isEmpty || autofillService.isLoading
+            }
+        }
+    }
+    
+    private func handleKeyboardNavigation(key: String) {
+        guard showingSuggestions else { return }
+        
+        switch key {
+        case "down":
+            selectedSuggestionIndex = min(selectedSuggestionIndex + 1, suggestions.count - 1)
+        case "up":
+            selectedSuggestionIndex = max(selectedSuggestionIndex - 1, 0)
+        case "escape":
+            dismissSuggestions()
+        default:
+            break
+        }
+    }
+}
+
+// Notification extension for autofill communication
+extension Notification.Name {
+    static let autofillStateChanged = Notification.Name("autofillStateChanged")
+}
 
 #Preview {
     VStack {
-        URLBar(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
+        URLBarWithAutofill(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
         URLBar(urlString: .constant(""), themeColor: nil, onSubmit: { _ in }, pageTitle: nil)
     }
     .padding()
