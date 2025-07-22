@@ -19,6 +19,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         case checking        // Checking for existing model
         case downloading     // Currently downloading
         case validating      // Validating downloaded model
+        case converting    // Converting GGUF → MLX
         case ready          // Model available and ready
         case failed(String) // Download or validation failed (using String instead of Error for Equatable)
         
@@ -122,7 +123,21 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         }
         
         let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
-        
+
+        // Auto-convert GGUF → MLX if needed (blocking – runs once per install)
+        if model.filename.hasSuffix(".gguf") {
+            // First, see if we already have any converted MLX directory with config.json
+            if let preexisting = findExistingMLXModel() {
+                NSLog("✅ Found pre-existing converted MLX model: \(preexisting.lastPathComponent)")
+                return preexisting
+            }
+
+            // Otherwise attempt conversion now
+            if let converted = try? convertGGUFModelIfNeeded(ggufPath: modelPath) {
+                return converted
+            }
+        }
+
         // Double-check file still exists
         guard fileManager.fileExists(atPath: modelPath.path) else {
             Task {
@@ -354,6 +369,121 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         return formatter.string(fromByteCount: bytes)
     }
     
+    // MARK: - GGUF → MLX Conversion
+
+    /// Converts a downloaded GGUF model to MLX format if the converted directory is not present.
+    /// Returns the directory URL containing the MLX model on success.
+    private func convertGGUFModelIfNeeded(ggufPath: URL) throws -> URL {
+        let outputDir = ggufPath.deletingPathExtension().appendingPathExtension("mlx")
+        // Already converted?
+        if fileManager.fileExists(atPath: outputDir.path) {
+            try ensureMainSafetensors(in: outputDir)
+            return outputDir
+        }
+
+        // Update state for any UI bindings
+        DispatchQueue.main.async {
+            self.downloadState = .converting
+        }
+
+        NSLog("🔄 Converting GGUF model to MLX format: \(ggufPath.lastPathComponent) → \(outputDir.lastPathComponent)")
+
+        // Ensure output directory exists
+        try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true, attributes: nil)
+
+        // Build conversion process
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "python3", "-m", "mlx_lm.convert",
+            "--hf-path", ggufPath.path,
+            "--mlx-path", outputDir.path,
+            "--quantize", "--q-bits", "4"
+        ]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        if process.terminationStatus != 0 {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let msg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw ModelError.conversionFailed(msg)
+        }
+
+        // Determine the real output directory – some converters override the --mlx-path
+        let candidateDirs = try fileManager.contentsOfDirectory(at: modelsCacheDirectory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+            .filter { url in
+                url.hasDirectoryPath && url.appendingPathComponent("config.json").pathExtension == "json" && fileManager.fileExists(atPath: url.appendingPathComponent("config.json").path)
+            }
+
+        // Prefer outputDir if valid, otherwise fall back to most recently modified candidate
+        var finalDir: URL = outputDir
+        if fileManager.fileExists(atPath: outputDir.appendingPathComponent("config.json").path) == false, let recent = candidateDirs.sorted(by: { (a,b) -> Bool in
+            let aDate = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            let bDate = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            return aDate > bDate
+        }).first {
+            finalDir = recent
+            NSLog("ℹ️ Converter produced directory \(recent.lastPathComponent); using that instead of expected name")
+        }
+
+        // Final sanity check
+        guard fileManager.fileExists(atPath: finalDir.appendingPathComponent("config.json").path) else {
+            throw ModelError.conversionFailed("config.json missing in converted model directory")
+        }
+
+        NSLog("✅ Model conversion completed: \(finalDir.lastPathComponent)")
+
+        // Guarantee MLX runtime finds expected filename
+        try? ensureMainSafetensors(in: finalDir)
+
+        DispatchQueue.main.async {
+            if self.downloadState == .converting {
+                self.downloadState = .ready
+            }
+            self.isModelReady = true
+        }
+
+        return finalDir
+    }
+    
+    /// Ensure there is a main.safetensors file (or symlink) inside the MLX model directory – MLX expects that name.
+    private func ensureMainSafetensors(in dir: URL) throws {
+        let mainPath = dir.appendingPathComponent("main.safetensors")
+        if fileManager.fileExists(atPath: mainPath.path) {
+            return // already present
+        }
+
+        // Find any *.safetensors file (excluding potential index files)
+        let items = try fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        if let firstWeights = items.first(where: { $0.pathExtension == "safetensors" }) {
+            try fileManager.createSymbolicLink(at: mainPath, withDestinationURL: firstWeights)
+            NSLog("🔗 Created symlink main.safetensors → \(firstWeights.lastPathComponent)")
+        } else {
+            throw ModelError.conversionFailed("No .safetensors weight file found in converted directory")
+        }
+    }
+    
+    /// Scan the cache directory for an existing MLX model (directory containing config.json)
+    private func findExistingMLXModel() -> URL? {
+        guard let dirs = try? fileManager.contentsOfDirectory(at: modelsCacheDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return nil
+        }
+        for dir in dirs {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false else { continue }
+            let config = dir.appendingPathComponent("config.json")
+            if fileManager.fileExists(atPath: config.path) {
+                try? ensureMainSafetensors(in: dir)
+                return dir
+            }
+        }
+        return nil
+    }
+    
     // MARK: - URLSessionDownloadDelegate
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
@@ -449,6 +579,7 @@ struct DownloadInfo {
 enum ModelError: LocalizedError {
     case corruptedDownload
     case validationFailed(String)
+    case conversionFailed(String)
     case downloadFailed(String)
     
     var errorDescription: String? {
@@ -457,6 +588,8 @@ enum ModelError: LocalizedError {
             return "Downloaded AI model is corrupted"
         case .validationFailed(let message):
             return "Model validation failed: \(message)"
+        case .conversionFailed(let message):
+            return "Model conversion failed: \(message)"
         case .downloadFailed(let message):
             return "Download failed: \(message)"
         }

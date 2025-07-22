@@ -49,19 +49,28 @@ class GemmaService {
             }
             
             NSLog("📂 Loading Gemma model from \(modelPath.lastPathComponent)")
-            
-            // Load model weights
+
+            // If the path is a directory (converted MLX model) we rely entirely on MLXGemmaRunner and do NOT
+            // attempt to read it as a single file.
+            if (try? modelPath.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                tokenizer = SimpleTokenizer()
+                isModelLoaded = true
+                NSLog("✅ Detected MLX model directory – skipping manual weight load")
+                return
+            }
+
+            // Otherwise, load GGUF weights for CPU fallback or quantization.
             modelWeights = try await mlxWrapper.loadModelWeights(from: modelPath)
-            
+
             // Initialize simple tokenizer
             tokenizer = SimpleTokenizer()
             NSLog("✅ Simple tokenizer initialized")
-            
+
             // Apply quantization if configured
             if case .int4 = configuration.quantization {
                 modelWeights = mlxWrapper.quantizeModel(modelWeights!, bits: 4)
             }
-            
+
             isModelLoaded = true
             NSLog("✅ Gemma model loaded successfully")
             
@@ -110,11 +119,18 @@ class GemmaService {
             // Fast-path: If MLX is ready, generate real text via MLXGemmaRunner and avoid placeholder logic
             if mlxWrapper.isInitialized, let modelPath = onDemandModelService.getModelPath() {
                 responseBuilder.addProcessingStep(ProcessingStep(name: "mlx_inference", duration: 0, description: "Running MLX LLM"))
-                let generatedText = try await MLXGemmaRunner.shared.generate(prompt: prompt, modelPath: modelPath)
-                let encoded = try tokenizer.encode(generatedText)
-                let cleaned = postProcessResponse(generatedText)
-                mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
-                return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
+
+                do {
+                    let generatedText = try await MLXGemmaRunner.shared.generate(prompt: prompt, modelPath: modelPath)
+                    let encoded = try tokenizer.encode(generatedText)
+                    let cleaned = postProcessResponse(generatedText)
+                    mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
+                    return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
+                } catch {
+                    // If MLX inference fails (e.g., missing converted model directory), log and fall back to placeholder path
+                    NSLog("⚠️ MLX inference failed, falling back to placeholder: \(error)")
+                    // Note: We intentionally continue to standard inference path below
+                }
             }
 
             // Step 2: Tokenize input
@@ -305,9 +321,10 @@ class GemmaService {
     // Context processing will be added in Phase 11
     
     private func runInference(inputTokens: [Int]) async throws -> [Int] {
-        // Check if model is loaded
+        // If we skipped explicit weight loading (MLX directory) modelWeights may be nil.
         guard let model = modelWeights else {
-            throw GemmaError.modelNotLoaded
+            NSLog("ℹ️ No explicit model weights loaded – assuming MLX directory mode; using placeholder fallback if MLX fails")
+            return try await runCPUFallbackInference(inputTokens: inputTokens)
         }
         
         // For now, check if MLX is available
