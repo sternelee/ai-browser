@@ -91,55 +91,53 @@ struct BrowserCommands: Commands {
             
         }
         
-        CommandGroup(before: .windowArrangement) {
-            Menu("Bookmarks") {
-                Button("Bookmark This Page") {
-                    NotificationCenter.default.post(
-                        name: Notification.Name("BookmarkCurrentPageRequested"),
-                        object: nil
-                    )
-                }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-                
-                Button("Show All Bookmarks") {
-                    NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
-                }
-                .keyboardShortcut("d", modifiers: .command)
-                
-                Divider()
-                
-                BookmarksMenuContent()
+        CommandMenu("Bookmarks") {
+            Button("Bookmark This Page") {
+                NotificationCenter.default.post(
+                    name: Notification.Name("BookmarkCurrentPageRequested"),
+                    object: nil
+                )
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            
+            Button("Show All Bookmarks") {
+                NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            
+            Divider()
+            
+            BookmarksMenuContent()
+        }
+        
+        CommandMenu("History") {
+            Button("Show All History") {
+                NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
+            }
+            .keyboardShortcut("y", modifiers: .command)
+            
+            Button("Clear History...") {
+                // TODO: Implement clear history
             }
             
-            Menu("History") {
-                Button("Show All History") {
-                    NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
-                }
-                .keyboardShortcut("y", modifiers: .command)
-                
-                Button("Clear History...") {
-                    // TODO: Implement clear history
-                }
-                
-                Divider()
-                
-                HistoryMenuContent()
+            Divider()
+            
+            HistoryMenuContent()
+        }
+        
+        CommandMenu("Downloads") {
+            Button("Show Downloads") {
+                NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
+            }
+            .keyboardShortcut("j", modifiers: [.command, .shift])
+            
+            Button("Clear Downloads...") {
+                // TODO: Implement clear downloads
             }
             
-            Menu("Downloads") {
-                Button("Show Downloads") {
-                    NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
-                }
-                .keyboardShortcut("j", modifiers: [.command, .shift])
-                
-                Button("Clear Downloads...") {
-                    // TODO: Implement clear downloads
-                }
-                
-                Divider()
-                
-                DownloadsMenuContent()
-            }
+            Divider()
+            
+            DownloadsMenuContent()
         }
         
         CommandGroup(after: .windowArrangement) {
