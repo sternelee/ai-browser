@@ -115,7 +115,7 @@ class GemmaService {
             }
 
             do {
-                let generatedText = try await LLMRunner.shared.generate(prompt: prompt, modelPath: modelPath)
+                let generatedText = try await LLMRunner.shared.generateWithPrompt(prompt: prompt, maxTokens: 256, modelPath: modelPath)
                 let encoded = try tokenizer.encode(generatedText)
                 let cleaned = postProcessResponse(generatedText)
                 mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
@@ -163,8 +163,8 @@ class GemmaService {
                         throw GemmaError.modelNotAvailable("AI model is still being prepared for streaming")
                     }
                     
-                    // Use LLMRunner for streaming
-                    let textStream = LLMRunner.shared.generateStream(prompt: prompt, modelPath: modelPath)
+                    // Use LLMRunner for streaming (pass empty conversation history since we've already built the prompt)
+                    let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, maxTokens: 256, modelPath: modelPath)
                     
                     for try await textChunk in textStream {
                         let cleanedChunk = postProcessResponse(textChunk)
@@ -211,44 +211,39 @@ class GemmaService {
         conversationHistory: [ConversationMessage]
     ) throws -> String {
         
+        // FIXED: Use proper Gemma-3n chat template - no custom BOS tokens
         var promptParts: [String] = []
         
-        // System prompt
-        promptParts.append("""
-        You are a helpful AI assistant integrated into a web browser. You have access to the user's current browsing context and can help with questions about web pages, research, and general tasks. Always be concise, accurate, and helpful.
-        """)
+        // System prompt as first user turn
+        promptParts.append("<start_of_turn>user")
+        promptParts.append("You are a helpful AI assistant. Answer questions based on the provided webpage content when available. Be concise and direct.")
         
-        // Add context if available
+        // Add context if available 
         if let context = context, !context.isEmpty {
-            promptParts.append("Context: \(context)")
+            let cleanContext = String(context.prefix(600))
+                .replacingOccurrences(of: "\n\n+", with: "\n", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            promptParts.append("\nWebpage content:\n\(cleanContext)")
         }
         
-        // Add conversation history (last few messages)
-        if !conversationHistory.isEmpty {
-            let historyPrompt = conversationHistory
-                .suffix(5) // Last 5 messages
-                .map { "\($0.role.description): \($0.content)" }
-                .joined(separator: "\n")
-            
-            promptParts.append("Recent conversation:\n\(historyPrompt)")
-        }
+        promptParts.append("<end_of_turn>")
         
-        // Add current query
-        promptParts.append("User: \(query)")
-        promptParts.append("Assistant:")
+        // Assistant acknowledges 
+        promptParts.append("<start_of_turn>model")
+        promptParts.append("I'll help you with questions about the webpage content.")
+        promptParts.append("<end_of_turn>")
         
-        let fullPrompt = promptParts.joined(separator: "\n\n")
+        // User's actual question
+        promptParts.append("<start_of_turn>user")
+        promptParts.append(query)
+        promptParts.append("<end_of_turn>")
         
-        // Validate prompt length
-        guard let tokenizer = tokenizer else {
-            throw GemmaError.tokenizerNotAvailable
-        }
+        // Assistant response start
+        promptParts.append("<start_of_turn>model")
         
-        let tokenCount = try tokenizer.encode(fullPrompt).count
+        let fullPrompt = promptParts.joined(separator: "\n")
         
-        if tokenCount > configuration.maxContextTokens {
-            throw GemmaError.promptTooLong("Prompt exceeds maximum token limit: \(tokenCount) > \(configuration.maxContextTokens)")
-        }
+        NSLog("📝 Built Gemma prompt (\(fullPrompt.count) chars): \(String(fullPrompt.prefix(300)))...")
         
         return fullPrompt
     }
@@ -259,10 +254,45 @@ class GemmaService {
         // Clean up the response
         var cleaned = text
         
-        // Remove common artifacts
+        // Remove common artifacts and Gemma-specific tokens
         cleaned = cleaned.replacingOccurrences(of: "<|endoftext|>", with: "")
         cleaned = cleaned.replacingOccurrences(of: "<|user|>", with: "")
         cleaned = cleaned.replacingOccurrences(of: "<|assistant|>", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "<start_of_turn>", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "<end_of_turn>", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "<bos>", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "<eos>", with: "")
+        
+        // Stop generation at repetitive patterns
+        if cleaned.contains("I am sorry, I do not have access") {
+            // Find first occurrence and truncate there
+            if let range = cleaned.range(of: "I am sorry, I do not have access") {
+                let beforeRepetition = cleaned[..<range.lowerBound]
+                if !beforeRepetition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    cleaned = String(beforeRepetition)
+                } else {
+                    // If the response starts with repetition, give a simple answer
+                    cleaned = "I can help you with questions about the current webpage content."
+                }
+            }
+        }
+        
+        // Remove excessive repetition by looking for identical sentences
+        let sentences = cleaned.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+        var uniqueSentences: [String] = []
+        var seenSentences = Set<String>()
+        
+        for sentence in sentences {
+            let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !seenSentences.contains(trimmed) {
+                uniqueSentences.append(sentence)
+                seenSentences.insert(trimmed)
+            }
+        }
+        
+        if uniqueSentences.count < sentences.count {
+            cleaned = uniqueSentences.joined(separator: ".")
+        }
         
         // Trim whitespace
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)

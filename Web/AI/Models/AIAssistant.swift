@@ -88,23 +88,40 @@ class AIAssistant: ObservableObject {
                 try await onDemandModelService.initializeAI()
             }
             
-            // Wait for model to be ready with timeout
+            // CRITICAL FIX: Move model checking OFF main thread to prevent input locking
             updateStatus("Loading AI model...")
-            let timeout = 60.0 // 60 second timeout
-            let startTime = Date()
             
-            while !onDemandModelService.isAIReady() {
-                // Check for timeout
-                if Date().timeIntervalSince(startTime) > timeout {
-                    throw ModelError.downloadFailed("Model loading timed out after \(timeout) seconds")
+            // Move the blocking polling loop to background thread
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                Task.detached(priority: .background) { [weak self] in
+                    let timeout = 60.0 // 60 second timeout
+                    let startTime = Date()
+                    
+                    while !(self?.onDemandModelService.isAIReady() ?? false) {
+                        // Check for timeout
+                        if Date().timeIntervalSince(startTime) > timeout {
+                            continuation.resume(throwing: ModelError.downloadFailed("Model loading timed out after \(timeout) seconds"))
+                            return
+                        }
+                        
+                        // Check if download failed
+                        if case .failed(let error) = self?.onDemandModelService.downloadState {
+                            continuation.resume(throwing: ModelError.downloadFailed("Model download failed: \(error)"))
+                            return
+                        }
+                        
+                        // Sleep in background thread - won't block main thread
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second polling
+                        
+                        // Update UI periodically from background
+                        await MainActor.run {
+                            self?.updateStatus("Loading AI model... (\(Int(Date().timeIntervalSince(startTime)))s)")
+                        }
+                    }
+                    
+                    // Model is ready - resume continuation
+                    continuation.resume()
                 }
-                
-                // Check if download failed
-                if case .failed(let error) = onDemandModelService.downloadState {
-                    throw ModelError.downloadFailed("Model download failed: \(error)")
-                }
-                
-                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second (longer interval)
             }
             NSLog("✅ AI model is ready")
             

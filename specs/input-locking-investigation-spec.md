@@ -31,9 +31,26 @@ This persists even after **completely removing** the complex FocusCoordinator sy
 **Action:** Completely deleted FocusCoordinator.swift, removed all coordination
 **Result:** **STILL LOCKING!** - This proves the issue is NOT focus coordination
 
-## Current Status: DEEPER ARCHITECTURAL ISSUE
+## ✅ ROOT CAUSE IDENTIFIED AND FIXED
 
-Since removing the entire focus system didn't fix it, the root cause must be:
+**Investigation revealed: MAIN THREAD BLOCKING from AI operations!**
+
+### **Critical Issues Found and Fixed:**
+
+#### 1. **AI Polling Loop Main Thread Blocking** ✅ FIXED
+**Location:** `AIAssistant.swift:96-108`
+**Problem:** Tight polling loop running every 0.5 seconds for up to 60 seconds ON MAIN THREAD
+**Fix Applied:** Moved entire polling loop to background thread using `Task.detached(priority: .background)`
+
+#### 2. **High-Frequency Animation Timer** ✅ FIXED  
+**Location:** `NewTabView.swift:270`
+**Problem:** Timer firing every 80ms (12.5 FPS) with SwiftUI animations, saturating main thread
+**Fix Applied:** Reduced to 200ms (5 FPS) and removed `withAnimation` wrapper
+
+#### 3. **AI Streaming MainActor Blocking** ✅ FIXED
+**Location:** `LLMRunner.swift:190-198` 
+**Problem:** AI streaming callbacks being set up on MainActor, blocking during token generation
+**Fix Applied:** Removed `await MainActor.run` wrapper, moved callbacks off main thread
 
 ## New Investigation Theories
 

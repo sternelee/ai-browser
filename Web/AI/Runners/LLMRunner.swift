@@ -116,8 +116,43 @@ final class LLMRunner {
         NSLog("✅ GGUF model loaded and cached successfully: \(modelPath.lastPathComponent)")
     }
 
+    /// Generate a complete response with raw prompt (bypasses conversation preprocessing)
+    func generateWithPrompt(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) async throws -> String {
+        try await ensureLoaded(modelPath: modelPath)
+        
+        guard let bot = bot else { 
+            throw LLMError.modelNotLoaded("LLM not properly initialized")
+        }
+        
+        NSLog("🤖 Generating response with RAW prompt (no conversation preprocessing)...")
+        
+        let response = await withTaskGroup(of: String?.self) { group in
+            // Main generation task using raw prompt
+            group.addTask { [self] in
+                return await bot.getCompletion(from: prompt)
+            }
+            
+            // Timeout task (30 seconds for non-streaming)
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                return nil
+            }
+            
+            // Return the first completed result
+            if let result = await group.next() {
+                group.cancelAll()
+                return result ?? "Response generation timed out after 30 seconds. Please try again or use streaming mode."
+            }
+            
+            return "Unexpected error in response generation."
+        }
+        
+        NSLog("✅ RAW prompt response generated: \(response.count) characters")
+        return response
+    }
+
     /// Generate a complete response for the given prompt with conversation history
-    func generate(prompt: String, maxTokens: Int = 256, temperature: Float = 0.7, modelPath: URL) async throws -> String {
+    func generate(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) async throws -> String {
         try await ensureLoaded(modelPath: modelPath)
         
         guard let bot = bot else { 
@@ -175,8 +210,71 @@ final class LLMRunner {
         return response
     }
 
+    /// Generate a streaming response with raw prompt (bypasses conversation preprocessing)
+    nonisolated func generateStreamWithPrompt(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    try await ensureLoaded(modelPath: modelPath)
+                    
+                    guard await bot != nil else {
+                        continuation.finish(throwing: LLMError.modelNotLoaded("LLM not properly initialized"))
+                        return
+                    }
+                    
+                    NSLog("🌊 Starting streaming with RAW prompt (no conversation preprocessing)...")
+                    
+                    // Get bot instance for processing
+                    let botInstance = await bot!
+                    
+                    // Since LLM.swift callback-based streaming isn't working properly,
+                    // implement chunked streaming as fallback for better UX
+                    NSLog("🌊 Starting chunked streaming (LLM.swift callback fallback)...")
+                    
+                    // Generate response (this will be blocking)
+                    let finalResponse = await botInstance.getCompletion(from: prompt)
+                    NSLog("🔧 Generated response: \(finalResponse.count) chars, streaming in chunks...")
+                    
+                    // Stream the response in chunks for better UX
+                    if !finalResponse.isEmpty {
+                        let chunkSize = 15 // Stream in small chunks 
+                        let words = finalResponse.split(separator: " ", omittingEmptySubsequences: true)
+                        var currentChunk = ""
+                        var wordCount = 0
+                        
+                        for word in words {
+                            currentChunk += String(word) + " "
+                            wordCount += 1
+                            
+                            if wordCount >= chunkSize {
+                                continuation.yield(currentChunk)
+                                currentChunk = ""
+                                wordCount = 0
+                                
+                                // Small delay between chunks for streaming effect
+                                try? await Task.sleep(nanoseconds: 25_000_000) // 25ms
+                            }
+                        }
+                        
+                        // Send any remaining chunk
+                        if !currentChunk.isEmpty {
+                            continuation.yield(currentChunk)
+                        }
+                    }
+                    
+                    continuation.finish()
+                    NSLog("✅ RAW prompt streaming response completed: \(finalResponse.count) characters")
+                    
+                } catch {
+                    NSLog("❌ RAW prompt streaming failed: \(error)")
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Generate a streaming response - SIMPLIFIED to work with Swift 6
-    nonisolated func generateStream(prompt: String, maxTokens: Int = 256, temperature: Float = 0.7, modelPath: URL) -> AsyncThrowingStream<String, Error> {
+    nonisolated func generateStream(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -195,13 +293,12 @@ final class LLMRunner {
                     // FIXED: Use real token-by-token streaming with LLM.swift callback system
                     let fullResponse = Box("")  // Thread-safe wrapper
                     
-                    await MainActor.run {
-                        // Set up the streaming callback for real token-by-token streaming
-                        botInstance.update = { [fullResponse] outputDelta in
-                            if let delta = outputDelta {
-                                fullResponse.value += delta
-                                continuation.yield(delta)
-                            }
+                    // CRITICAL FIX: Don't set up streaming callbacks on MainActor to prevent blocking
+                    // Move callback setup off main thread to prevent input blocking
+                    botInstance.update = { [fullResponse] outputDelta in
+                        if let delta = outputDelta {
+                            fullResponse.value += delta
+                            continuation.yield(delta)
                         }
                     }
                     

@@ -18,7 +18,7 @@ class ContextManager: ObservableObject {
     
     // MARK: - Properties
     
-    private let maxContentLength = 8000 // Reasonable token limit for context
+    private let maxContentLength = 2000 // Reduced for better performance and to prevent prompt overflow
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction

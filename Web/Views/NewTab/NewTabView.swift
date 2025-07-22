@@ -267,18 +267,19 @@ struct FloatingParticlesView: View {
     }
     
     private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
-            withAnimation(.linear(duration: 0.08)) {
-                for i in particles.indices {
-                    particles[i].position.x += particles[i].velocity.dx
-                    particles[i].position.y += particles[i].velocity.dy
-                    
-                    // Wrap around edges
-                    if particles[i].position.x < 0 { particles[i].position.x = 800 }
-                    if particles[i].position.x > 800 { particles[i].position.x = 0 }
-                    if particles[i].position.y < 0 { particles[i].position.y = 600 }
-                    if particles[i].position.y > 600 { particles[i].position.y = 0 }
-                }
+        // CRITICAL FIX: Reduce animation frequency to prevent main thread saturation
+        // Changed from 80ms (12.5 FPS) to 200ms (5 FPS) to reduce main thread load
+        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+            // Remove withAnimation to reduce SwiftUI overhead during input handling
+            for i in particles.indices {
+                particles[i].position.x += particles[i].velocity.dx
+                particles[i].position.y += particles[i].velocity.dy
+                
+                // Wrap around edges
+                if particles[i].position.x < 0 { particles[i].position.x = 800 }
+                if particles[i].position.x > 800 { particles[i].position.x = 0 }
+                if particles[i].position.y < 0 { particles[i].position.y = 600 }
+                if particles[i].position.y > 600 { particles[i].position.y = 0 }
             }
         }
     }
