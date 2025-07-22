@@ -343,11 +343,15 @@ struct WebContentArea: View {
     @State private var isEdgeToEdgeMode: Bool = false
     @State private var urlString: String = ""
     
+    // Helper to determine if tab is in browsing mode (not new tab mode)
+    private func isTabInBrowsingMode(_ tab: Tab) -> Bool {
+        return tab.url != nil || tab.isLoading || (tab.title != "New Tab" && !tab.title.isEmpty)
+    }
+    
     // Computed property to determine if URL bar should be shown
     private var shouldShowURLBar: Bool {
-        // Always show URL bar if we have an active tab, regardless of whether it has a URL
-        // This ensures URL bar remains visible for new tabs and during navigation
-        return tabManager.activeTab != nil
+        guard let activeTab = tabManager.activeTab else { return false }
+        return isTabInBrowsingMode(activeTab)
     }
     
     // Simplified URL string binding to prevent synchronization loops that cause Google issues
