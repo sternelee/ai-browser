@@ -159,6 +159,11 @@ struct TabDisplayView: View {
         .onAppear {
             startTopTabAutoHideTimer()
         }
+        .onDisappear {
+            // Critical: Clean up all timers to prevent memory leaks and performance issues
+            hideTimer?.invalidate()
+            topTabAutoHideTimer?.invalidate()
+        }
     }
     
     // Computed property to determine if top tab should be shown

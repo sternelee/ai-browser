@@ -210,6 +210,7 @@ struct WebView: NSViewRepresentable {
         private static var faviconCache: [String: NSImage] = [:]
         private static var faviconDownloadTasks: Set<String> = []
         private static let cacheQueue = DispatchQueue(label: "favicon.cache", attributes: .concurrent)
+        private static let maxCacheSize = 100 // Limit cache to prevent memory issues
         
         init(_ parent: WebView) {
             self.parent = parent
@@ -445,6 +446,14 @@ struct WebView: NSViewRepresentable {
                 if let image = NSImage(data: data), image.isValid {
                     // Cache the favicon using website host as key (not favicon URL host)
                     Self.cacheQueue.async(flags: .barrier) {
+                        // Clean cache if it gets too large to prevent memory issues
+                        if Self.faviconCache.count >= Self.maxCacheSize {
+                            let removeCount = Self.faviconCache.count - Self.maxCacheSize + 10
+                            let keysToRemove = Array(Self.faviconCache.keys.prefix(removeCount))
+                            for key in keysToRemove {
+                                Self.faviconCache.removeValue(forKey: key)
+                            }
+                        }
                         Self.faviconCache[websiteHost] = image
                     }
                     
@@ -497,6 +506,14 @@ struct WebView: NSViewRepresentable {
                           image.isValid {
                     // Cache the favicon using website host as key
                     Self.cacheQueue.async(flags: .barrier) {
+                        // Clean cache if it gets too large to prevent memory issues
+                        if Self.faviconCache.count >= Self.maxCacheSize {
+                            let removeCount = Self.faviconCache.count - Self.maxCacheSize + 10
+                            let keysToRemove = Array(Self.faviconCache.keys.prefix(removeCount))
+                            for key in keysToRemove {
+                                Self.faviconCache.removeValue(forKey: key)
+                            }
+                        }
                         Self.faviconCache[websiteHost] = image
                     }
                     

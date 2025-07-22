@@ -99,16 +99,13 @@ struct URLBar: View {
                 }
                 .onChange(of: isURLBarFocused) { _, focused in
                     if focused {
-                        // Always attempt to acquire focus - if denied, force it after a short delay
+                        // Simplified focus acquisition - removed race condition causing asyncAfter + forceFocus
                         if focusCoordinator.canFocus(barID) {
                             focusCoordinator.setFocusedURLBar(barID, focused: true)
                             editingText = urlString
                         } else {
-                            // If focus is denied, try again with force after a brief delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                focusCoordinator.forceFocus(barID)
-                                editingText = urlString
-                            }
+                            // If focus denied, simply release the SwiftUI focus without competing timers
+                            isURLBarFocused = false
                         }
                     } else {
                         // Release global focus lock when focus is lost

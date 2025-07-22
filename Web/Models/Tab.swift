@@ -319,6 +319,10 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     }
     
     private func startHibernationTimer() {
+        // Don't restart timer if one is already running and hasn't expired
+        // This prevents timer accumulation that causes performance issues
+        guard hibernationTimer == nil || !hibernationTimer!.isValid else { return }
+        
         hibernationTimer?.invalidate()
         hibernationTimer = Timer.scheduledTimer(withTimeInterval: hibernationThreshold, repeats: false) { [weak self] _ in
             if !(self?.isActive ?? true) && !(self?.isLoading ?? false) {
