@@ -270,7 +270,8 @@ struct HistoryMenuContent: View {
             Text("No history")
                 .foregroundColor(.secondary)
         } else {
-            ForEach(recentHistory.prefix(15), id: \.id) { item in
+            // Show first 10 items directly
+            ForEach(recentHistory.prefix(10), id: \.id) { item in
                 Button(item.displayTitle) {
                     if let url = URL(string: item.url) {
                         NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
@@ -279,10 +280,43 @@ struct HistoryMenuContent: View {
                 .truncationMode(.tail)
             }
             
-            if recentHistory.count > 15 {
+            // If there are more than 10 items, show them in submenus
+            if recentHistory.count > 10 {
                 Divider()
-                Text("... and \(recentHistory.count - 15) more")
-                    .foregroundColor(.secondary)
+                
+                // Show next 25 items in "Earlier Today" submenu
+                if recentHistory.count > 10 {
+                    let earlierItems = Array(recentHistory.dropFirst(10).prefix(25))
+                    if !earlierItems.isEmpty {
+                        Menu("Earlier Today") {
+                            ForEach(earlierItems, id: \.id) { item in
+                                Button(item.displayTitle) {
+                                    if let url = URL(string: item.url) {
+                                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                                    }
+                                }
+                                .truncationMode(.tail)
+                            }
+                        }
+                    }
+                }
+                
+                // Show next 50 items in "Yesterday & Earlier" submenu
+                if recentHistory.count > 35 {
+                    let olderItems = Array(recentHistory.dropFirst(35).prefix(50))
+                    if !olderItems.isEmpty {
+                        Menu("Yesterday & Earlier") {
+                            ForEach(olderItems, id: \.id) { item in
+                                Button(item.displayTitle) {
+                                    if let url = URL(string: item.url) {
+                                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                                    }
+                                }
+                                .truncationMode(.tail)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

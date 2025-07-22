@@ -40,7 +40,7 @@ struct ContentView: View {
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(10)
+                .padding(6)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             
             // Floating panels overlay

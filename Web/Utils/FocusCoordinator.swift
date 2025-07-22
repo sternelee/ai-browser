@@ -8,6 +8,9 @@ class FocusCoordinator: ObservableObject {
     @Published private var _activeURLBarID: String?
     @Published private var _isAnyURLBarFocused: Bool = false
     
+    // Panel state tracking to prevent focus conflicts during panel operations
+    @Published private var isPanelOpen: Bool = false
+    
     // Reduced complexity - no debounce timer to prevent conflicts with Google search
     // Timeout after which a locked focus is considered stale (seconds)
     private let focusTimeout: TimeInterval = 1.0 // Reduced from 2s to 1s for faster recovery
@@ -61,13 +64,18 @@ class FocusCoordinator: ObservableObject {
     }
     
     func canFocus(_ id: String) -> Bool {
+        // If a panel is open, be more restrictive about focus changes to prevent conflicts
+        if isPanelOpen {
+            // Only allow focus if no URL bar is currently focused, or if this is the same bar
+            return _activeURLBarID == nil || _activeURLBarID == id
+        }
+        
         // If the current focus lock has been active for longer than the timeout, clear it automatically.
         if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > focusTimeout {
             clearAllFocus()
         }
 
         // Always allow focus if no URL bar is currently focused, or if this is the same bar
-        // Also add timeout-based recovery: if a bar has been focused for more than 2 seconds, allow new focus
         if _activeURLBarID == nil || _activeURLBarID == id {
             return true
         }
@@ -93,6 +101,18 @@ class FocusCoordinator: ObservableObject {
         if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > 2.0 {
             clearAllFocus()
             print("⚗️ Google navigation detected - cleared only stale focus locks")
+        }
+    }
+    
+    // Panel state management methods
+    func setPanelOpen(_ isOpen: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.isPanelOpen = isOpen
+            if isOpen {
+                // When a panel opens, clear any existing focus to prevent conflicts
+                self?.clearAllFocus()
+                print("⚗️ Panel opened - cleared URL bar focus to prevent conflicts")
+            }
         }
     }
     

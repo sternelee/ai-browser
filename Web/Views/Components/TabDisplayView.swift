@@ -386,13 +386,6 @@ struct WebContentArea: View {
                         }()
                     )
                     .frame(maxWidth: .infinity)
-                    
-                    // Menu button
-                    Button(action: showMenu) {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 16))
-                    }
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6) // Further reduced for even more minimal height
@@ -573,8 +566,5 @@ struct WebContentArea: View {
         return false
     }
     
-    private func showMenu() {
-        // TODO: Implement menu functionality
-    }
     
 }

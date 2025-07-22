@@ -125,12 +125,11 @@ struct HoverableURLBar: View {
                                         // Keep visible when focused
                                         cancelHideTimer()
                                     } else {
-                                        // If focus is denied, try again with force after a brief delay
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                            focusCoordinator.forceFocus(barID)
-                                            editingText = urlString
-                                            cancelHideTimer()
-                                        }
+                                        // If focus is denied, clear focus immediately instead of forcing it
+                                        // This prevents race conditions with panel operations
+                                        isURLBarFocused = false
+                                        editingText = urlString
+                                        scheduleHide()
                                     }
                                 } else {
                                     focusCoordinator.setFocusedURLBar(barID, focused: false)

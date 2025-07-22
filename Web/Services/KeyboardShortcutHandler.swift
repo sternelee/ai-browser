@@ -11,9 +11,24 @@ class KeyboardShortcutHandler: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     // Published properties for UI state
-    @Published var showHistoryPanel = false
-    @Published var showBookmarksPanel = false
-    @Published var showDownloadsPanel = false
+    @Published var showHistoryPanel = false {
+        didSet {
+            // Notify focus coordinator about panel state changes
+            FocusCoordinator.shared.setPanelOpen(showHistoryPanel || showBookmarksPanel || showDownloadsPanel)
+        }
+    }
+    @Published var showBookmarksPanel = false {
+        didSet {
+            // Notify focus coordinator about panel state changes
+            FocusCoordinator.shared.setPanelOpen(showHistoryPanel || showBookmarksPanel || showDownloadsPanel)
+        }
+    }
+    @Published var showDownloadsPanel = false {
+        didSet {
+            // Notify focus coordinator about panel state changes
+            FocusCoordinator.shared.setPanelOpen(showHistoryPanel || showBookmarksPanel || showDownloadsPanel)
+        }
+    }
     
     // UI positioning for panels - using center-based coordinates that will be made safe by PanelManager
     @Published var historyPanelPosition = CGPoint(x: 400, y: 300)
