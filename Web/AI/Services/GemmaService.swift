@@ -1,9 +1,9 @@
 import Foundation
-import MLXLLM
-// MLXGemmaRunner included via Web.AI.Runners
+import LLM
+// LLMRunner included via Web.AI.Runners
 
-/// Gemma AI service for local inference with Apple MLX optimization
-/// Handles model initialization, text generation, and response streaming
+/// Gemma AI service for local inference with LLM.swift
+/// Handles model initialization, text generation, and response streaming using GGUF models
 class GemmaService {
     
     // MARK: - Properties
@@ -17,10 +17,7 @@ class GemmaService {
     private var modelWeights: [String: Any]? = nil
     private var tokenizer: SimpleTokenizer?
     
-    /// Remote Hugging Face identifier for a pre-converted Gemma model in MLX format.
-    /// We use this as a fallback when a local model directory is not yet available –
-    /// `LLMModelFactory` will transparently download and cache the model on first use.
-    private static let remoteMLXModelID = "hf://mlx-community/gemma-3n-E2B-it-4bit"
+    // No remote fallbacks - we use local GGUF models only
     
     // MARK: - Initialization
     
@@ -48,30 +45,16 @@ class GemmaService {
         }
         
         do {
-            // Ask OnDemandModelService for a local MLX model (directory). If it returns nil we will
-            // operate in "remote-only" mode and let MLX download the weights on first inference.
-            if let modelPath = onDemandModelService.getModelPath() {
-                NSLog("📂 Loading Gemma model from \(modelPath.lastPathComponent)")
-
-                // If the path is a directory (converted MLX model) we rely entirely on MLXGemmaRunner and do NOT
-                // attempt to read it as a single file.
-                if (try? modelPath.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                    tokenizer = SimpleTokenizer()
-                    isModelLoaded = true
-                    NSLog("✅ Detected MLX model directory – skipping manual weight load")
-                    return
-                }
-
-                // Otherwise, load GGUF weights for CPU fallback or quantization.
-                modelWeights = try await mlxWrapper.loadModelWeights(from: modelPath)
-
-                // Apply quantisation if required
-                if case .int4 = configuration.quantization {
-                    modelWeights = mlxWrapper.quantizeModel(modelWeights!, bits: 4)
-                }
-                NSLog("✅ Local model weights loaded")
-            } else {
-                NSLog("ℹ️ No local MLX model – will use remote repository \(Self.remoteMLXModelID)")
+            // Check for local GGUF model
+            guard let modelPath = onDemandModelService.getModelPath() else {
+                throw GemmaError.modelNotAvailable("No local GGUF model found. Please download the model first.")
+            }
+            
+            NSLog("📂 Found GGUF model: \(modelPath.lastPathComponent)")
+            
+            // Validate model file exists
+            guard FileManager.default.fileExists(atPath: modelPath.path) else {
+                throw GemmaError.modelNotAvailable("GGUF model file not found at path: \(modelPath.path)")
             }
 
             // Initialize simple tokenizer
@@ -116,73 +99,33 @@ class GemmaService {
             )
             
             if context != nil {
-                responseBuilder.setContextUsed(true)
+                let _ = responseBuilder.setContextUsed(true)
             }
             
             guard let tokenizer = tokenizer else {
                 throw GemmaError.tokenizerNotAvailable
             }
 
-            // Fast-path: If MLX is ready, generate real text via MLXGemmaRunner and avoid placeholder logic
-            if mlxWrapper.isInitialized {
-                responseBuilder.addProcessingStep(ProcessingStep(name: "mlx_inference", duration: 0, description: "Running MLX LLM"))
+            // Use LLM.swift for local GGUF inference
+            let _ = responseBuilder.addProcessingStep(ProcessingStep(name: "llm_inference", duration: 0, description: "Running LLM.swift GGUF inference"))
 
-                // Prefer locally converted model; otherwise fall back to remote MLX id.
-                let modelURL = onDemandModelService.getModelPath() ?? URL(string: Self.remoteMLXModelID)!
-
-                do {
-                    let generatedText = try await MLXGemmaRunner.shared.generate(prompt: prompt, modelPath: modelURL)
-                    let encoded = try tokenizer.encode(generatedText)
-                    let cleaned = postProcessResponse(generatedText)
-                    mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
-                    return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
-                } catch {
-                    NSLog("❌ MLX inference failed: \(error)")
-                    throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
-                }
+            // Get local GGUF model path
+            guard let modelPath = onDemandModelService.getModelPath() else {
+                throw GemmaError.modelNotAvailable("No local GGUF model available for inference")
             }
 
-            // Step 2: Tokenize input
-            responseBuilder.addProcessingStep(ProcessingStep(
-                name: "tokenization",
-                duration: 0.05,
-                description: "Tokenizing input text"
-            ))
-            
-            let inputTokens = try tokenizer.encode(prompt)
-            
-            // Step 3: Run inference
-            mlxWrapper.startInferenceTimer()
-            
-            responseBuilder.addProcessingStep(ProcessingStep(
-                name: "inference_start",
-                duration: 0,
-                description: "Starting model inference"
-            ))
-            
-            let outputTokens = try await runInference(inputTokens: inputTokens)
-            
-            // Step 4: Decode output
-            responseBuilder.addProcessingStep(ProcessingStep(
-                name: "decoding",
-                duration: 0.05,
-                description: "Decoding output tokens"
-            ))
-            
-            let responseText = try tokenizer.decode(outputTokens)
-            
-            // Step 5: Post-process response
-            let cleanedResponse = postProcessResponse(responseText)
-            
-            // Update metrics
-            mlxWrapper.updateInferenceMetrics(tokensGenerated: outputTokens.count)
-            
-            // Context references will be added in Phase 11
-            
-            return responseBuilder
-                .setText(cleanedResponse)
-                .setMemoryUsage(Int(mlxWrapper.memoryUsage))
-                .build()
+            do {
+                let generatedText = try await LLMRunner.shared.generate(prompt: prompt, modelPath: modelPath)
+                let encoded = try tokenizer.encode(generatedText)
+                let cleaned = postProcessResponse(generatedText)
+                mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
+                return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
+            } catch {
+                NSLog("❌ LLM inference failed: \(error)")
+                throw GemmaError.inferenceError("LLM inference failed: \(error.localizedDescription)")
+            }
+
+            // All inference handled above by LLMRunner
             
         } catch {
             NSLog("❌ Response generation failed: \(error)")
@@ -211,39 +154,22 @@ class GemmaService {
                         conversationHistory: conversationHistory
                     )
                     
-                    guard let tokenizer = tokenizer else {
+                    guard tokenizer != nil else {
                         throw GemmaError.tokenizerNotAvailable
                     }
                     
-                    let inputTokens = try tokenizer.encode(prompt)
-                    mlxWrapper.startInferenceTimer()
-                    
-                    // Stream inference results
-                    let tokenStream = try await runStreamingInference(inputTokens: inputTokens)
-                    
-                    var generatedTokens: [Int] = []
-                    
-                    for try await token in tokenStream {
-                        generatedTokens.append(token)
-                        
-                        // Decode incrementally for streaming
-                        if generatedTokens.count % 5 == 0 { // Decode every 5 tokens
-                            let partialText = try tokenizer.decode(generatedTokens)
-                            let cleanedText = postProcessResponse(partialText)
-                            
-                            if !cleanedText.isEmpty {
-                                continuation.yield(cleanedText)
-                                generatedTokens.removeAll() // Reset for next batch
-                            }
-                        }
+                    // Get local GGUF model path
+                    guard let modelPath = onDemandModelService.getModelPath() else {
+                        throw GemmaError.modelNotAvailable("No local GGUF model available for streaming")
                     }
                     
-                    // Final decode for remaining tokens
-                    if !generatedTokens.isEmpty {
-                        let finalText = try tokenizer.decode(generatedTokens)
-                        let cleanedText = postProcessResponse(finalText)
-                        if !cleanedText.isEmpty {
-                            continuation.yield(cleanedText)
+                    // Use LLMRunner for streaming
+                    let textStream = LLMRunner.shared.generateStream(prompt: prompt, modelPath: modelPath)
+                    
+                    for try await textChunk in textStream {
+                        let cleanedChunk = postProcessResponse(textChunk)
+                        if !cleanedChunk.isEmpty {
+                            continuation.yield(cleanedChunk)
                         }
                     }
                     
@@ -327,111 +253,7 @@ class GemmaService {
         return fullPrompt
     }
     
-    // Context processing will be added in Phase 11
-    
-    private func runInference(inputTokens: [Int]) async throws -> [Int] {
-        // Prefer MLX inference whenever the MLX wrapper is initialized, regardless of whether we loaded explicit weights.
-        if mlxWrapper.isInitialized {
-            return try await runMLXInference(inputTokens: inputTokens, model: modelWeights ?? [:])
-        }
-
-        // If MLX is not available we abort – CPU fallback has been disabled.
-        throw GemmaError.inferenceError("MLX not available and CPU fallback disabled")
-    }
-    
-    private func runStreamingInference(inputTokens: [Int]) async throws -> AsyncThrowingStream<Int, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    if mlxWrapper.isInitialized {
-                        try await streamMLXInference(inputTokens: inputTokens, model: modelWeights ?? [:], continuation: continuation)
-                    } else {
-                        continuation.finish(throwing: GemmaError.inferenceError("MLX not available and CPU streaming fallback disabled"))
-                    }
-                    
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-    
-    // MARK: - MLX Inference Implementation
-    
-    private func runMLXInference(inputTokens: [Int], model: [String: Any]) async throws -> [Int] {
-        // Start performance timing
-        mlxWrapper.startInferenceTimer()
-
-        let modelPath = onDemandModelService.getModelPath() ?? URL(string: Self.remoteMLXModelID)!
-
-        // Decode input tokens back to prompt text for MLX
-        guard let tokenizer = self.tokenizer else {
-            throw GemmaError.tokenizerNotAvailable
-        }
-        let promptText = try tokenizer.decode(inputTokens)
-
-        // Run real MLX inference
-        do {
-            let generatedText = try await MLXGemmaRunner.shared.generate(
-                prompt: promptText,
-                maxTokens: 256,
-                temperature: 0.7,
-                modelPath: modelPath
-            )
-
-            // Encode response back to tokens
-            let outputTokens = try tokenizer.encode(generatedText)
-            mlxWrapper.updateInferenceMetrics(tokensGenerated: outputTokens.count)
-            NSLog("🚀 Real MLX inference completed: \(generatedText.count) chars generated")
-            return outputTokens
-        } catch {
-            throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func streamMLXInference(inputTokens: [Int], model: [String: Any], continuation: AsyncThrowingStream<Int, Error>.Continuation) async throws {
-        guard let tokenizer = self.tokenizer else {
-            continuation.finish(throwing: GemmaError.tokenizerNotAvailable)
-            return
-        }
-
-        let modelPath = onDemandModelService.getModelPath() ?? URL(string: Self.remoteMLXModelID)!
-
-        // Decode input tokens back to prompt text for MLX
-        let promptText = try tokenizer.decode(inputTokens)
-
-        // Use MLXGemmaRunner streaming
-        do {
-            let stream = await MLXGemmaRunner.shared.generateStream(
-                prompt: promptText,
-                maxTokens: 256,
-                temperature: 0.7,
-                modelPath: modelPath
-            )
-
-            for try await textChunk in stream {
-                // Encode text chunk to tokens for streaming
-                let tokens = try tokenizer.encode(textChunk)
-                for token in tokens {
-                    continuation.yield(token)
-                    mlxWrapper.updateInferenceMetrics(tokensGenerated: 1)
-                }
-            }
-            continuation.finish()
-        } catch {
-            continuation.finish(throwing: GemmaError.inferenceError("MLX streaming failed: \(error.localizedDescription)"))
-        }
-    }
-
-    // MARK: - CPU Fallback Implementation
-
-    private func runCPUFallbackInference(inputTokens: [Int]) async throws -> [Int] {
-        throw GemmaError.inferenceError("CPU fallback disabled – MLX model required")
-    }
-
-    private func streamCPUFallbackInference(inputTokens: [Int], continuation: AsyncThrowingStream<Int, Error>.Continuation) async throws {
-        continuation.finish(throwing: GemmaError.inferenceError("CPU streaming fallback disabled"))
-    }
+    // All inference now handled by LLMRunner using local GGUF models
     
     private func postProcessResponse(_ text: String) -> String {
         // Clean up the response
