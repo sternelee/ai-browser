@@ -16,6 +16,7 @@ struct WebApp: App {
         WindowGroup {
             ContentView()
                 .background(WindowConfigurator())
+                .background(WindowClipGuard()) // Guardrail: forces clipsToBounds=true to avoid TUINS crash
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
         }
         .windowStyle(.automatic)
@@ -83,11 +84,7 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut("f", modifiers: .command)
             
-            Button("Clear URL Bar Focus") {
-                // Emergency command to clear stuck URL bar focus
-                FocusCoordinator.shared.clearAllFocus()
-            }
-            .keyboardShortcut(.escape, modifiers: [.command, .option])
+            // Removed emergency focus reset - no longer needed with simplified focus
             
         }
         
@@ -138,6 +135,18 @@ struct BrowserCommands: Commands {
             Divider()
             
             DownloadsMenuContent()
+        }
+        
+        CommandMenu("AI Assistant") {
+            Button("Toggle AI Sidebar") {
+                NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            
+            Button("Focus AI Input") {
+                NotificationCenter.default.post(name: .focusAIInput, object: nil)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .option])
         }
         
         CommandGroup(after: .windowArrangement) {
@@ -207,6 +216,7 @@ extension Notification.Name {
     static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
+    // Removed clearFocusForID - no longer needed with simplified focus
     
     // Phase 2: Next-Gen UI shortcuts
     static let toggleTabDisplay = Notification.Name("toggleTabDisplay")
@@ -223,6 +233,9 @@ extension Notification.Name {
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
     static let focusURLBarRequested = Notification.Name("focusURLBarRequested")
     
+    // AI Assistant shortcuts
+    static let toggleAISidebar = Notification.Name("toggleAISidebar")
+    static let focusAIInput = Notification.Name("focusAIInput")
     
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
