@@ -380,6 +380,15 @@ struct AISidebar: View {
                     sendMessage()
                 }
                 .disabled(!aiAssistant.isInitialized)
+                .onChange(of: isChatInputFocused) { _, newValue in
+                    NSLog("🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)")
+                }
+                .onChange(of: aiAssistant.isInitialized) { _, newValue in
+                    NSLog("🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)")
+                    if !newValue && isChatInputFocused {
+                        NSLog("🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!")
+                    }
+                }
             
             // Send button
             Button(action: {
@@ -468,14 +477,18 @@ struct AISidebar: View {
         }
         
         if isExpanded {
+            NSLog("🎯 SIDEBAR DEBUG: Expanding AI sidebar - about to notify focus coordinator")
             // Notify focus coordinator that AI sidebar is opening
             FocusCoordinator.shared.setAISidebarOpen(true)
             startAutoCollapseTimer()
             // Focus input after animation and focus coordinator has cleared conflicts
+            NSLog("🎯 SIDEBAR DEBUG: Scheduling delayed focus for AI input in 0.4s")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                NSLog("🎯 SIDEBAR DEBUG: Attempting to focus AI input - isChatInputFocused will be set to true")
                 isChatInputFocused = true
             }
         } else {
+            NSLog("🎯 SIDEBAR DEBUG: Collapsing AI sidebar")
             stopAutoCollapseTimer()
             isChatInputFocused = false
             // Notify focus coordinator that AI sidebar is closed
@@ -550,10 +563,15 @@ struct AISidebar: View {
     // MARK: - Auto-collapse Timer Management
     
     private func startAutoCollapseTimer() {
+        NSLog("🎯 TIMER DEBUG: Starting auto-collapse timer (\(autoCollapseDelay)s)")
         stopAutoCollapseTimer()
         autoCollapseTimer = Timer.scheduledTimer(withTimeInterval: autoCollapseDelay, repeats: false) { _ in
-            if isExpanded && !isHovering && !isChatInputFocused {
-                collapseSidebar()
+            NSLog("🎯 TIMER DEBUG: Auto-collapse timer fired - expanded: \(self.isExpanded), hovering: \(self.isHovering), focused: \(self.isChatInputFocused)")
+            if self.isExpanded && !self.isHovering && !self.isChatInputFocused {
+                NSLog("🎯 TIMER DEBUG: Auto-collapsing sidebar due to timer")
+                self.collapseSidebar()
+            } else {
+                NSLog("🎯 TIMER DEBUG: Not auto-collapsing - conditions not met")
             }
         }
     }

@@ -83,9 +83,9 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut("f", modifiers: .command)
             
-            Button("Clear URL Bar Focus") {
-                // Emergency command to clear stuck URL bar focus
-                FocusCoordinator.shared.clearAllFocus()
+            Button("Emergency Focus Reset") {
+                // Emergency command to clear stuck URL bar focus and reset all state
+                FocusCoordinator.shared.emergencyResetAllFocusState()
             }
             .keyboardShortcut(.escape, modifiers: [.command, .option])
             

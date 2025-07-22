@@ -344,6 +344,7 @@ class AIAssistant: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] progress in
                 if progress > 0 && progress < 1.0 {
+                    NSLog("🎯 DOWNLOAD DEBUG: Model download progress: \(progress * 100)% - updating status")
                     self?.updateStatus("Downloading AI model: \(Int(progress * 100))%")
                 }
             }

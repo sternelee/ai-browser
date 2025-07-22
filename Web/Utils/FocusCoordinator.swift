@@ -22,7 +22,10 @@ class FocusCoordinator: ObservableObject {
     // Tracks the last time focus was updated – used for stale lock detection
     private var lastFocusUpdate: Date?
     
-    private init() {}
+    private init() {
+        // Start auto-recovery mechanism
+        setupAutoRecovery()
+    }
     
     var activeURLBarID: String? {
         return _activeURLBarID
@@ -33,6 +36,9 @@ class FocusCoordinator: ObservableObject {
     }
     
     func setFocusedURLBar(_ id: String, focused: Bool) {
+        // DEBUG: Track all focus requests
+        NSLog("🎯 FOCUS DEBUG: setFocusedURLBar called - ID: \(id), focused: \(focused), currentActive: \(String(describing: _activeURLBarID)), panelOpen: \(isPanelOpen)")
+        
         // Direct update without debouncing to prevent conflicts with Google's focus handling
         DispatchQueue.main.async {
             self.updateFocusState(id: id, focused: focused)
@@ -41,11 +47,44 @@ class FocusCoordinator: ObservableObject {
     
     // Emergency function to clear all focus locks - can be called when URL bars become unresponsive
     func clearAllFocus() {
+        NSLog("🎯 FOCUS DEBUG: clearAllFocus called - clearing all locks")
+        DispatchQueue.main.async { [weak self] in
+            let hadActiveFocus = self?._activeURLBarID != nil
+            self?._activeURLBarID = nil
+            self?._isAnyURLBarFocused = false
+            self?.lastFocusUpdate = nil
+            if hadActiveFocus {
+                NSLog("🎯 FOCUS DEBUG: Cleared active focus lock - was: \(self?._activeURLBarID ?? "nil")")
+            }
+            print("⚗️ Focus coordinator cleared all focus locks")
+        }
+    }
+    
+    // EMERGENCY: Force clear all locks and reset state - can be called externally
+    func emergencyResetAllFocusState() {
+        NSLog("🚨 FOCUS EMERGENCY: Force resetting ALL focus state")
         DispatchQueue.main.async { [weak self] in
             self?._activeURLBarID = nil
             self?._isAnyURLBarFocused = false
             self?.lastFocusUpdate = nil
-            print("⚗️ Focus coordinator cleared all focus locks")
+            self?.isPanelOpen = false
+            self?.isAISidebarOpen = false
+            self?.isOtherPanelOpen = false
+            NSLog("🚨 FOCUS EMERGENCY: All focus state reset")
+            print("🚨 Emergency focus reset completed - all inputs should work now")
+        }
+    }
+    
+    // Auto-recovery mechanism - runs periodically
+    private func setupAutoRecovery() {
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // If focus has been locked for more than 3 times the normal timeout, force clear
+            if let timestamp = self.lastFocusUpdate, Date().timeIntervalSince(timestamp) > (self.focusTimeout * 3) {
+                NSLog("🚨 FOCUS AUTO-RECOVERY: Detected stuck focus for \(Date().timeIntervalSince(timestamp))s - force clearing")
+                self.emergencyResetAllFocusState()
+            }
         }
     }
     
@@ -68,24 +107,33 @@ class FocusCoordinator: ObservableObject {
     }
     
     func canFocus(_ id: String) -> Bool {
+        let currentTime = Date()
+        let timeSinceLastUpdate = lastFocusUpdate != nil ? currentTime.timeIntervalSince(lastFocusUpdate!) : 0
+        
+        // DEBUG: Track all focus permission requests
+        NSLog("🎯 FOCUS DEBUG: canFocus called - ID: \(id), currentActive: \(String(describing: _activeURLBarID)), panelOpen: \(isPanelOpen), aiSidebar: \(isAISidebarOpen), otherPanel: \(isOtherPanelOpen), timeSinceUpdate: \(timeSinceLastUpdate)")
+        
         // If a panel is open, be more restrictive about focus changes to prevent conflicts
         if isPanelOpen {
-            // Only allow focus if no URL bar is currently focused, or if this is the same bar
-            return _activeURLBarID == nil || _activeURLBarID == id
+            let canFocusResult = _activeURLBarID == nil || _activeURLBarID == id
+            NSLog("🎯 FOCUS DEBUG: Panel open restriction - canFocus: \(canFocusResult)")
+            return canFocusResult
         }
         
         // If the current focus lock has been active for longer than the timeout, clear it automatically.
         if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > focusTimeout {
+            NSLog("🎯 FOCUS DEBUG: Timeout detected (\(Date().timeIntervalSince(timestamp))s) - clearing focus")
             clearAllFocus()
         }
 
         // Always allow focus if no URL bar is currently focused, or if this is the same bar
         if _activeURLBarID == nil || _activeURLBarID == id {
+            NSLog("🎯 FOCUS DEBUG: Focus allowed - no conflicts")
             return true
         }
         
         // Emergency recovery: if focus has been stuck for too long, clear it
-        // This prevents permanent lock-outs
+        NSLog("🎯 FOCUS DEBUG: Focus DENIED - conflict with active: \(_activeURLBarID ?? "nil")")
         return false
     }
     
@@ -110,13 +158,17 @@ class FocusCoordinator: ObservableObject {
     
     // Panel state management methods
     func setAISidebarOpen(_ isOpen: Bool) {
+        NSLog("🎯 FOCUS DEBUG: setAISidebarOpen called - isOpen: \(isOpen)")
         DispatchQueue.main.async { [weak self] in
             self?.isAISidebarOpen = isOpen
             self?.updateOverallPanelState()
             if isOpen {
                 // When AI sidebar opens, clear any existing focus to prevent conflicts
+                NSLog("🎯 FOCUS DEBUG: AI Sidebar opening - clearing all focus")
                 self?.clearAllFocus()
                 print("⚗️ AI Sidebar opened - cleared URL bar focus to prevent conflicts")
+            } else {
+                NSLog("🎯 FOCUS DEBUG: AI Sidebar closing")
             }
         }
     }
