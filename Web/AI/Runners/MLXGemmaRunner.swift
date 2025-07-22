@@ -44,7 +44,7 @@ final class MLXGemmaRunner {
         try await ensureLoaded(modelPath: modelPath)
         guard let container else { throw NSError(domain: "MLXGemmaRunner", code: 1, userInfo: [NSLocalizedDescriptionKey: "Model not loaded"]) }
         
-        let generateParameters = GenerateParameters(temperature: temperature, maxTokens: maxTokens)
+        let generateParameters = GenerateParameters(maxTokens: maxTokens, temperature: temperature)
         var output = ""
         
         try await container.perform { context in
@@ -74,7 +74,7 @@ final class MLXGemmaRunner {
                         return
                     }
                     
-                    let generateParameters = GenerateParameters(temperature: temperature, maxTokens: maxTokens)
+                    let generateParameters = GenerateParameters(maxTokens: maxTokens, temperature: temperature)
                     
                     try await container.perform { context in
                         let userInput = UserInput(prompt: prompt)

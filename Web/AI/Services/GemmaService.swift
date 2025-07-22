@@ -83,7 +83,7 @@ class GemmaService {
         }
         
         let responseBuilder = AIResponseBuilder()
-        let startTime = Date()
+        let _ = Date() // Track timing but not used in current implementation
         
         do {
             // Step 1: Prepare the prompt
@@ -353,10 +353,35 @@ class GemmaService {
         // Start performance timing
         mlxWrapper.startInferenceTimer()
 
-        // If we have a tokenizer, generate a friendly placeholder response so the
-        // user sees meaningful text instead of raw token identifiers. This will
-        // be replaced with real MLX inference output once the Gemma model is
-        // wired up.
+        // Use real MLX inference via MLXGemmaRunner if available
+        if let modelPath = onDemandModelService.getModelPath() {
+            do {
+                // Decode input tokens back to prompt text for MLX
+                guard let tokenizer = self.tokenizer else {
+                    throw GemmaError.tokenizerNotAvailable
+                }
+                let promptText = try tokenizer.decode(inputTokens)
+                
+                // Run real MLX inference
+                let generatedText = try await MLXGemmaRunner.shared.generate(
+                    prompt: promptText, 
+                    maxTokens: 256, 
+                    temperature: 0.7, 
+                    modelPath: modelPath
+                )
+                
+                // Encode response back to tokens
+                let outputTokens = try tokenizer.encode(generatedText)
+                mlxWrapper.updateInferenceMetrics(tokensGenerated: outputTokens.count)
+                NSLog("🚀 Real MLX inference completed: \(generatedText.count) chars generated")
+                return outputTokens
+                
+            } catch {
+                NSLog("⚠️ MLX inference failed, falling back to placeholder: \(error)")
+            }
+        }
+
+        // Fallback to placeholder response if MLX fails
         if let tokenizer = self.tokenizer {
             let responseText = "Hello! I'm your local AI assistant running fully on-device. How can I help you today?"
             let encoded = try tokenizer.encode(responseText)
@@ -365,7 +390,7 @@ class GemmaService {
             return encoded
         }
 
-        // Fallback to the old numeric token stub
+        // Final fallback to numeric tokens
         let outputLength = min(max(inputTokens.count, 10), 100)
         let inferenceTimeMs = outputLength * 50
         try await Task.sleep(nanoseconds: UInt64(inferenceTimeMs * 1_000_000))
@@ -391,6 +416,37 @@ class GemmaService {
             return
         }
 
+        // Use real MLX streaming if available
+        if let modelPath = onDemandModelService.getModelPath() {
+            do {
+                // Decode input tokens back to prompt text for MLX
+                let promptText = try tokenizer.decode(inputTokens)
+                
+                // Use MLXGemmaRunner streaming
+                let stream = await MLXGemmaRunner.shared.generateStream(
+                    prompt: promptText, 
+                    maxTokens: 256, 
+                    temperature: 0.7, 
+                    modelPath: modelPath
+                )
+                
+                for try await textChunk in stream {
+                    // Encode text chunk to tokens for streaming
+                    let tokens = try tokenizer.encode(textChunk)
+                    for token in tokens {
+                        continuation.yield(token)
+                        mlxWrapper.updateInferenceMetrics(tokensGenerated: 1)
+                    }
+                }
+                continuation.finish()
+                return
+                
+            } catch {
+                NSLog("⚠️ MLX streaming failed, falling back to placeholder: \(error)")
+            }
+        }
+
+        // Fallback to placeholder streaming
         let responseText = "Sure thing! Let me know what you need and I'll do my best – all without leaving your Mac."
         let tokens = try tokenizer.encode(responseText)
         for token in tokens {
