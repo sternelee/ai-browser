@@ -124,21 +124,20 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         
         let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
 
-        // Auto-convert GGUF → MLX if needed (blocking – runs once per install)
-        if model.filename.hasSuffix(".gguf") {
-            // First, see if we already have any converted MLX directory with config.json
-            if let preexisting = findExistingMLXModel() {
-                NSLog("✅ Found pre-existing converted MLX model: \(preexisting.lastPathComponent)")
-                return preexisting
-            }
-
-            // Otherwise attempt conversion now
-            if let converted = try? convertGGUFModelIfNeeded(ggufPath: modelPath) {
-                return converted
-            }
+        // If we already have a converted MLX directory return it immediately
+        if let preexisting = findExistingMLXModel() {
+            return preexisting
         }
 
-        // Double-check file still exists
+        // We no longer perform on-device GGUF→MLX conversion – the runtime will download a ready-made
+        // MLX build instead.  Therefore, if the cached file is still the raw .gguf simply ignore it so
+        // the caller can fall back to the remote model.
+        if model.filename.hasSuffix(".gguf") {
+            NSLog("ℹ️ Ignoring cached GGUF model – using remote MLX repository instead")
+            return nil
+        }
+
+        // For non-GGUF assets (e.g. already-converted .mlx bundles) return the path if it exists.
         guard fileManager.fileExists(atPath: modelPath.path) else {
             Task {
                 await MainActor.run {
@@ -148,7 +147,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             }
             return nil
         }
-        
+
         return modelPath
     }
     

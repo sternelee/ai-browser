@@ -32,7 +32,16 @@ final class MLXGemmaRunner {
         isLoading = true
         defer { isLoading = false }
 
-        let config = ModelConfiguration(id: modelPath.path) // local path supported
+        // Support both local directories and remote Hugging Face identifiers using the "hf://" pseudo-scheme.
+        let modelID: String
+        if modelPath.scheme == "hf" {
+            // Strip the custom scheme prefix to get the HF repository id
+            modelID = modelPath.absoluteString.replacingOccurrences(of: "hf://", with: "")
+        } else {
+            modelID = modelPath.path
+        }
+
+        let config = ModelConfiguration(id: modelID)
         container = try await LLMModelFactory.shared.loadContainer(configuration: config)
 
         for cont in loadContinuation { cont.resume() }
