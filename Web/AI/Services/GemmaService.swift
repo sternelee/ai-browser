@@ -211,7 +211,7 @@ class GemmaService {
         conversationHistory: [ConversationMessage]
     ) throws -> String {
         
-        // FIXED: Use proper Gemma-3n chat template - no custom BOS tokens
+        // ENHANCED: Build proper multi-turn conversation prompt with conversation history
         var promptParts: [String] = []
         
         // System prompt as first user turn
@@ -220,7 +220,7 @@ class GemmaService {
         
         // Add context if available 
         if let context = context, !context.isEmpty {
-            let cleanContext = String(context.prefix(600))
+            let cleanContext = String(context.prefix(2000))  // Increased from 600 to 2000 for better content
                 .replacingOccurrences(of: "\n\n+", with: "\n", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             promptParts.append("\nWebpage content:\n\(cleanContext)")
@@ -230,10 +230,24 @@ class GemmaService {
         
         // Assistant acknowledges 
         promptParts.append("<start_of_turn>model")
-        promptParts.append("I'll help you with questions about the webpage content.")
+        promptParts.append("I understand. I'll help you with questions about the webpage content.")
         promptParts.append("<end_of_turn>")
         
-        // User's actual question
+        // ENHANCED: Add recent conversation history for continuity
+        let recentHistory = Array(conversationHistory.suffix(6))  // Last 3 exchanges (6 messages)
+        for message in recentHistory {
+            if message.role == .user {
+                promptParts.append("<start_of_turn>user")
+                promptParts.append(message.content)
+                promptParts.append("<end_of_turn>")
+            } else if message.role == .assistant {
+                promptParts.append("<start_of_turn>model")
+                promptParts.append(message.content)
+                promptParts.append("<end_of_turn>")
+            }
+        }
+        
+        // Current user question
         promptParts.append("<start_of_turn>user")
         promptParts.append(query)
         promptParts.append("<end_of_turn>")
@@ -246,6 +260,13 @@ class GemmaService {
         NSLog("📝 Built Gemma prompt (\(fullPrompt.count) chars): \(String(fullPrompt.prefix(300)))...")
         
         return fullPrompt
+    }
+    
+    /// Reset conversation state to prevent KV cache issues
+    func resetConversation() async {
+        // Reset the LLM runner's conversation state
+        await LLMRunner.shared.resetConversation()
+        NSLog("🔄 GemmaService conversation reset completed")
     }
     
     // All inference now handled by LLMRunner using local GGUF models

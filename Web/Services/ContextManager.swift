@@ -18,7 +18,7 @@ class ContextManager: ObservableObject {
     
     // MARK: - Properties
     
-    private let maxContentLength = 2000 // Reduced for better performance and to prevent prompt overflow
+    private let maxContentLength = 8000 // Increased for comprehensive content extraction
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
@@ -208,7 +208,7 @@ class ContextManager: ObservableObject {
         """
         (function() {
             try {
-                // Extract main text content
+                // ENHANCED: Comprehensive content extraction for full article reading
                 var bodyText = document.body.innerText || document.body.textContent || "";
                 
                 // Get page metadata
@@ -225,55 +225,132 @@ class ContextManager: ObservableObject {
                     }
                 }
                 
-                // Extract key links for context
-                var links = [];
-                var linkElements = document.querySelectorAll('a[href]');
-                for (var i = 0; i < Math.min(linkElements.length, 10); i++) {
-                    var link = linkElements[i];
-                    if (link.textContent && link.textContent.trim() && link.href) {
-                        links.push(link.textContent.trim() + ' (' + link.href + ')');
-                    }
-                }
-                
-                // Get word count approximation
-                var wordCount = bodyText.trim().split(/\\s+/).filter(function(word) {
-                    return word.length > 0;
-                }).length;
-                
-                // Remove navigation and sidebar elements for cleaner content
+                // ENHANCED: Extract comprehensive article content with priority
                 var contentSelectors = [
-                    'main', 'article', '[role="main"]', '.main-content', 
-                    '#main', '#content', '.content', '.post-content',
-                    '.article-content', '.entry-content'
+                    // Primary content selectors (highest priority)
+                    'article', 'main', '[role="main"]', '.main-content', '#main-content',
+                    '.article-content', '.post-content', '.entry-content', '.content-area',
+                    
+                    // Reddit-specific selectors
+                    '[data-testid="post-content"]', '.usertext-body', '.md', '.Post',
+                    '.thing .usertext .md', '[data-click-id="text"]', '.RichTextJSON-root',
+                    
+                    // News site selectors  
+                    '.article-body', '.story-body', '.entry-body', '.post-body',
+                    '.article-text', '.story-content', '.article-wrap',
+                    
+                    // Blog selectors
+                    '.post', '.entry', '#content', '.content', '#main',
+                    
+                    // Documentation selectors
+                    '.documentation', '.docs', '.doc-content', '.readme',
+                    
+                    // Forum selectors
+                    '.message-body', '.post-message', '.forum-post'
                 ];
                 
-                var mainContent = "";
-                for (var i = 0; i < contentSelectors.length; i++) {
-                    var element = document.querySelector(contentSelectors[i]);
-                    if (element && element.textContent) {
-                        mainContent = element.textContent;
-                        break;
+                var extractedContent = "";
+                var contentFound = false;
+                
+                // Try each selector in priority order
+                for (var i = 0; i < contentSelectors.length && !contentFound; i++) {
+                    var elements = document.querySelectorAll(contentSelectors[i]);
+                    for (var j = 0; j < elements.length; j++) {
+                        var element = elements[j];
+                        if (element && element.textContent && element.textContent.trim().length > 200) {
+                            extractedContent += element.textContent.trim() + "\\n\\n";
+                            contentFound = true;
+                            break; // Found substantial content, break inner loop
+                        }
                     }
                 }
                 
-                // Use main content if found, otherwise fall back to body
-                var finalText = mainContent || bodyText;
+                // FALLBACK: If no main content found, extract paragraph content
+                if (!contentFound) {
+                    var paragraphs = document.querySelectorAll('p');
+                    for (var i = 0; i < paragraphs.length; i++) {
+                        var p = paragraphs[i];
+                        if (p.textContent && p.textContent.trim().length > 50) {
+                            extractedContent += p.textContent.trim() + "\\n\\n";
+                        }
+                    }
+                }
                 
-                // Clean up the text
+                // FINAL FALLBACK: Use body text if nothing else worked
+                var finalText = extractedContent.trim() || bodyText;
+                
+                // ENHANCED: Smart content cleaning and structuring
                 finalText = finalText
-                    .replace(/\\s+/g, ' ')
-                    .replace(/\\n+/g, '\\n')
+                    // Normalize whitespace but preserve paragraph breaks
+                    .replace(/[ \\t]+/g, ' ')
+                    .replace(/\\n\\s*\\n/g, '\\n\\n')
+                    // Remove excessive line breaks (more than 2)
+                    .replace(/\\n{3,}/g, '\\n\\n')
+                    // Clean up common web artifacts
+                    .replace(/Share\\s*Copy link\\s*/gi, '')
+                    .replace(/Advertisement\\s*/gi, '')
+                    .replace(/Skip to content\\s*/gi, '')
+                    .replace(/Continue reading\\s*/gi, '')
+                    .replace(/Read more\\s*/gi, '')
                     .trim();
+                
+                // Extract structured links for context
+                var links = [];
+                var linkElements = document.querySelectorAll('article a[href], main a[href], .content a[href], .post-content a[href]');
+                for (var i = 0; i < Math.min(linkElements.length, 15); i++) {
+                    var link = linkElements[i];
+                    if (link.textContent && link.textContent.trim() && link.href && 
+                        !link.href.startsWith('javascript:') && !link.href.startsWith('#')) {
+                        var linkText = link.textContent.trim();
+                        if (linkText.length > 5 && linkText.length < 100) {
+                            links.push(linkText + ' (' + link.href + ')');
+                        }
+                    }
+                }
+                
+                // ENHANCED: Better word count calculation
+                var wordCount = finalText.trim().split(/\\s+/).filter(function(word) {
+                    return word.length > 0 && word.match(/[a-zA-Z0-9]/);
+                }).length;
+                
+                // QUALITY CHECK: Ensure we have substantial content
+                if (finalText.length < 100) {
+                    // Emergency extraction - get all visible text
+                    var walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_TEXT,
+                        function(node) {
+                            var parent = node.parentElement;
+                            if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE' || 
+                                          parent.style.display === 'none' || parent.hidden)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return node.textContent.trim().length > 10 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                        }
+                    );
+                    
+                    var textNodes = [];
+                    var node;
+                    while (node = walker.nextNode()) {
+                        textNodes.push(node.textContent.trim());
+                    }
+                    
+                    if (textNodes.length > 0) {
+                        finalText = textNodes.join(' ').replace(/\\s+/g, ' ').trim();
+                    }
+                }
                 
                 return {
                     success: true,
                     text: finalText,
                     title: title,
                     url: url,
-                    headings: headings.slice(0, 20), // Limit headings
-                    links: links.slice(0, 10), // Limit links
+                    headings: headings.slice(0, 25), // More headings for better structure
+                    links: links.slice(0, 15), // More links for context
                     wordCount: wordCount,
-                    extractionTime: new Date().toISOString()
+                    extractionTime: new Date().toISOString(),
+                    contentLength: finalText.length,
+                    extractionMethod: contentFound ? 'structured' : 'fallback'
                 };
                 
             } catch (error) {
@@ -285,7 +362,9 @@ class ContextManager: ObservableObject {
                     url: window.location.href,
                     headings: [],
                     links: [],
-                    wordCount: 0
+                    wordCount: 0,
+                    contentLength: 0,
+                    extractionMethod: 'error'
                 };
             }
         })();
