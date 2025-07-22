@@ -11,6 +11,11 @@ class FocusCoordinator: ObservableObject {
     // Debounce timer to prevent rapid focus changes
     private var debounceTimer: Timer?
     private let debounceDelay: TimeInterval = 0.1
+    // Timeout after which a locked focus is considered stale (seconds)
+    private let focusTimeout: TimeInterval = 2.0
+
+    // Tracks the last time focus was updated – used for stale lock detection
+    private var lastFocusUpdate: Date?
     
     private init() {}
     
@@ -38,10 +43,13 @@ class FocusCoordinator: ObservableObject {
             self?._activeURLBarID = nil
             self?._isAnyURLBarFocused = false
             self?.debounceTimer?.invalidate()
+            self?.lastFocusUpdate = nil
         }
     }
     
     private func updateFocusState(id: String, focused: Bool) {
+        // Record timestamp for every focus state mutation
+        lastFocusUpdate = Date()
         if focused {
             // Only one URL bar can be focused at a time
             if _activeURLBarID != id {
@@ -58,8 +66,13 @@ class FocusCoordinator: ObservableObject {
     }
     
     func canFocus(_ id: String) -> Bool {
+        // If the current focus lock has been active for longer than the timeout, clear it automatically.
+        if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > focusTimeout {
+            clearAllFocus()
+        }
+
         // Always allow focus if no URL bar is currently focused, or if this is the same bar
-        // Also add timeout-based recovery: if a bar has been focused for more than 30 seconds, allow new focus
+        // Also add timeout-based recovery: if a bar has been focused for more than 2 seconds, allow new focus
         if _activeURLBarID == nil || _activeURLBarID == id {
             return true
         }
@@ -75,6 +88,7 @@ class FocusCoordinator: ObservableObject {
             self?.debounceTimer?.invalidate()
             self?._activeURLBarID = id
             self?._isAnyURLBarFocused = true
+            self?.lastFocusUpdate = Date()
         }
     }
     
