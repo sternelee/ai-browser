@@ -12,7 +12,7 @@ This phase implements advanced user experience features including the minimal ne
 
 ## 1. New Tab Experience
 
-### Minimal New Tab with Quick Notes
+### Minimal New Tab Experience
 ```swift
 // NewTabView.swift - Beautiful minimal new tab experience
 import SwiftUI
@@ -20,8 +20,6 @@ import MarkdownUI
 
 struct NewTabView: View {
     @State private var searchText: String = ""
-    @State private var quickNotes: String = ""
-    @State private var showQuickNotes: Bool = false
     @State private var recentlyVisited: [HistoryItem] = []
     @State private var recentlyClosed: [Tab] = []
     @FocusState private var isSearchFocused: Bool
@@ -45,9 +43,6 @@ struct NewTabView: View {
                     quickAccessGrid
                         .frame(maxWidth: 800)
                     
-                    // Quick notes section
-                    quickNotesSection
-                        .frame(maxWidth: 600)
                     
                     Spacer()
                         .frame(height: 100)
@@ -58,9 +53,6 @@ struct NewTabView: View {
         .background(adaptiveBackground)
         .onAppear {
             loadData()
-        }
-        .onChange(of: quickNotes) { _ in
-            saveQuickNotes()
         }
     }
     
@@ -113,40 +105,6 @@ struct NewTabView: View {
         }
     }
     
-    private var quickNotesSection: some View {
-        VStack(spacing: 16) {
-            // Quick notes toggle
-            Button(action: { 
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    showQuickNotes.toggle()
-                }
-            }) {
-                HStack {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 16, weight: .medium))
-                    Text("Quick Notes")
-                        .font(.system(.subheadline, weight: .medium))
-                    Spacer()
-                    Image(systemName: showQuickNotes ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                )
-            }
-            .buttonStyle(.plain)
-            
-            // Quick notes editor
-            if showQuickNotes {
-                QuickNotesEditor(notes: $quickNotes)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-    }
     
     private func loadData() {
         // Load recently visited sites
@@ -155,20 +113,8 @@ struct NewTabView: View {
         // Load recently closed tabs
         recentlyClosed = Array(TabManager.shared.recentlyClosedTabs.prefix(8))
         
-        // Load quick notes
-        loadQuickNotes()
     }
     
-    private func loadQuickNotes() {
-        if let data = UserDefaults.standard.data(forKey: "quickNotes"),
-           let notes = String(data: data, encoding: .utf8) {
-            quickNotes = notes
-        }
-    }
-    
-    private func saveQuickNotes() {
-        UserDefaults.standard.set(quickNotes.data(using: .utf8), forKey: "quickNotes")
-    }
 }
 
 struct NewTabSearchBar: View {
@@ -260,79 +206,6 @@ struct NewTabSearchBar: View {
     }
 }
 
-struct QuickNotesEditor: View {
-    @Binding var notes: String
-    @State private var isEditing: Bool = false
-    @State private var isPreviewMode: Bool = true
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header with mode toggle
-            HStack {
-                Text("Quick Notes")
-                    .font(.system(.headline, weight: .semibold))
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    Button(action: { 
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isPreviewMode = true
-                        }
-                    }) {
-                        Text("Preview")
-                            .font(.system(.caption, weight: .medium))
-                            .foregroundColor(isPreviewMode ? .blue : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button(action: { 
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isPreviewMode = false
-                        }
-                    }) {
-                        Text("Edit")
-                            .font(.system(.caption, weight: .medium))
-                            .foregroundColor(!isPreviewMode ? .blue : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            
-            // Content area
-            Group {
-                if isPreviewMode {
-                    if notes.isEmpty {
-                        Text("*No notes yet. Click edit to start writing.*")
-                            .font(.system(.body))
-                            .foregroundColor(.secondary)
-                            .italic()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    } else {
-                        Markdown(notes)
-                            .markdownTheme(.gitHub)
-                            .textSelection(.enabled)
-                    }
-                } else {
-                    TextEditor(text: $notes)
-                        .font(.system(.body, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .background(.clear)
-                        .frame(minHeight: 120)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .strokeBorder(.primary.opacity(0.1), lineWidth: 1)
-        )
-        .animation(.easeInOut(duration: 0.2), value: isPreviewMode)
-    }
-}
 
 struct QuickAccessCard: View {
     let title: String

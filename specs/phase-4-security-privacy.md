@@ -589,7 +589,6 @@ class PasswordManager: ObservableObject {
         let lastUsed: Date
         let lastModified: Date
         let strength: PasswordStrength
-        let notes: String?
         
         enum PasswordStrength: String, Codable {
             case weak, medium, strong, veryStrong
@@ -646,7 +645,7 @@ class PasswordManager: ObservableObject {
     }
     
     // MARK: - Password Storage and Retrieval
-    func savePassword(website: String, username: String, password: String, notes: String? = nil) async -> Bool {
+    func savePassword(website: String, username: String, password: String) async -> Bool {
         guard await authenticateUser() else { return false }
         
         do {
@@ -661,7 +660,6 @@ class PasswordManager: ObservableObject {
                 lastUsed: Date(),
                 lastModified: Date(),
                 strength: strength,
-                notes: notes
             )
             
             // Save to Keychain
@@ -1078,7 +1076,6 @@ class PasswordManager: ObservableObject {
                     lastUsed: Date(),
                     lastModified: password.lastModified,
                     strength: password.strength,
-                    notes: password.notes
                 )
                 
                 // Re-sort by last used

@@ -52,6 +52,11 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .reopenTabRequested, object: nil)
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
+            
+            Button("New Incognito Tab") {
+                NotificationCenter.default.post(name: .newIncognitoTabRequested, object: nil)
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
         }
         
         CommandGroup(after: .toolbar) {
@@ -78,22 +83,6 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut(.escape, modifiers: [.command, .option])
             
-            Divider()
-            
-            Button("New Note") {
-                NotificationCenter.default.post(name: .newNoteRequested, object: nil)
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
-            
-            Button("Delete Note") {
-                NotificationCenter.default.post(name: .deleteNoteRequested, object: nil)
-            }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
-            
-            Button("Search Notes") {
-                NotificationCenter.default.post(name: .searchNotesRequested, object: nil)
-            }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
         }
         
         CommandGroup(after: .windowArrangement) {
@@ -181,8 +170,7 @@ extension Notification.Name {
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
     static let focusURLBarRequested = Notification.Name("focusURLBarRequested")
     
-    // Quick Notes shortcuts
-    static let newNoteRequested = Notification.Name("newNoteRequested")
-    static let deleteNoteRequested = Notification.Name("deleteNoteRequested")
-    static let searchNotesRequested = Notification.Name("searchNotesRequested")
+    
+    // Security and Privacy shortcuts
+    // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
 }

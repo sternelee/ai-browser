@@ -3,7 +3,6 @@ import SwiftUI
 // Enhanced new tab view with Web logo and next-gen design
 struct NewTabView: View {
     @State private var searchText: String = ""
-    @State private var showQuickNotes: Bool = false
     @State private var recentlyVisited: [String] = []
     @State private var recentlyClosed: [String] = []
     @FocusState private var isSearchFocused: Bool
@@ -25,10 +24,6 @@ struct NewTabView: View {
                     
                     // Quick access grid
                     quickAccessGrid
-                        .frame(maxWidth: 800)
-                    
-                    // Quick notes section
-                    quickNotesSection
                         .frame(maxWidth: 800)
                 }
                 .frame(maxWidth: .infinity)
@@ -160,40 +155,6 @@ struct NewTabView: View {
         }
     }
     
-    private var quickNotesSection: some View {
-        VStack(spacing: 16) {
-            // Quick notes toggle
-            Button(action: { 
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    showQuickNotes.toggle()
-                }
-            }) {
-                HStack {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 16, weight: .medium))
-                    Text("Quick Notes")
-                        .font(.system(.subheadline, weight: .medium))
-                    Spacer()
-                    Image(systemName: showQuickNotes ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                )
-            }
-            .buttonStyle(.plain)
-            
-            // Quick notes with new multiple notes support
-            if showQuickNotes {
-                QuickNotesView()
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-    }
     
     // MARK: - Methods
     private func loadData() {

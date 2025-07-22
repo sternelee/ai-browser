@@ -17,7 +17,15 @@ class TabManager: ObservableObject {
     // MARK: - Tab Operations
     @discardableResult
     func createNewTab(url: URL? = nil, isIncognito: Bool = false) -> Tab {
-        let tab = Tab(url: url, isIncognito: isIncognito)
+        let tab: Tab
+        
+        if isIncognito {
+            // Create incognito tab through IncognitoSession
+            tab = IncognitoSession.shared.createIncognitoTab(url: url)
+        } else {
+            tab = Tab(url: url, isIncognito: isIncognito)
+        }
+        
         tabs.append(tab)
         setActiveTab(tab)
         
@@ -27,11 +35,19 @@ class TabManager: ObservableObject {
         return tab
     }
     
+    @discardableResult
+    func createIncognitoTab(url: URL? = nil) -> Tab {
+        return createNewTab(url: url, isIncognito: true)
+    }
+    
     func closeTab(_ tab: Tab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         
-        // Add to recently closed (unless incognito)
-        if !tab.isIncognito {
+        // Handle incognito tab closure
+        if tab.isIncognito {
+            IncognitoSession.shared.closeIncognitoTab(tab)
+        } else {
+            // Add to recently closed (only for regular tabs)
             recentlyClosedTabs.insert(tab, at: 0)
             if recentlyClosedTabs.count > maxRecentlyClosedTabs {
                 recentlyClosedTabs.removeLast()

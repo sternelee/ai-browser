@@ -53,27 +53,39 @@ struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         
-        // Enable advanced WebKit features with safety checks
+        // Enhanced security and privacy settings
         config.allowsAirPlayForMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
         config.preferences.isSiteSpecificQuirksModeEnabled = true
         
-        // Network and security settings
-        config.websiteDataStore = WKWebsiteDataStore.default()
+        // Configure data store based on incognito mode
+        if let tab = tab, tab.isIncognito {
+            config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        } else {
+            config.websiteDataStore = WKWebsiteDataStore.default()
+        }
+        
+        // Enhanced privacy settings
+        config.preferences.isFraudulentWebsiteWarningEnabled = true
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
         
         // Safely set developer extras
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
-        // Suppress verbose WebKit logging
+        // Enhanced WebKit privacy settings
         config.preferences.setValue(false, forKey: "logsPageMessagesToSystemConsoleEnabled")
         config.preferences.setValue(false, forKey: "diagnosticLoggingEnabled")
+        config.preferences.setValue(true, forKey: "storageBlockingPolicy")
+        
+        // Configure enhanced tracking prevention
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
         
         // User agent customization - Use modern Safari user agent to ensure proper Google homepage rendering
         config.applicationNameForUserAgent = "Web/1.0 Safari/605.1.15"
         
-        // Content blocking for ad blocker preparation
+        // Content blocking and security setup
         let contentController = WKUserContentController()
         
         // Add link hover detection script
@@ -92,6 +104,15 @@ struct WebView: NSViewRepresentable {
         let webView = WKWebView(frame: safeFrame, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
+        
+        // Configure security services after webview creation
+        AdBlockService.shared.configureWebView(webView)
+        PasswordManager.shared.configureAutofill(for: webView)
+        
+        // Configure incognito-specific settings if needed
+        if let tab = tab, tab.isIncognito {
+            IncognitoSession.shared.configureWebViewForIncognito(webView)
+        }
         
         // Configure for optimal web content including WebGL
         // Note: WebGL is enabled by default in WKWebView on macOS

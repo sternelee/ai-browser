@@ -39,7 +39,7 @@ struct ContentView: View {
             BrowserView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.clear)
-                .padding(6)
+                .padding(10)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .onTapGesture(count: 2) {

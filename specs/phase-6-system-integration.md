@@ -816,7 +816,6 @@ class UpdateManager: ObservableObject {
     struct UpdateInfo {
         let version: String
         let buildNumber: String
-        let releaseNotes: String
         let downloadSize: Int64
         let isSecurityUpdate: Bool
         let releaseDate: Date
@@ -1003,7 +1002,6 @@ class UpdateManager: ObservableObject {
         let info = UpdateInfo(
             version: updateItem.versionString,
             buildNumber: updateItem.buildVersionString ?? "",
-            releaseNotes: updateItem.releaseNotesString ?? "",
             downloadSize: updateItem.contentLength,
             isSecurityUpdate: updateItem.isSecurityUpdate,
             releaseDate: updateItem.date ?? Date()
@@ -1190,12 +1188,6 @@ struct UpdateNotificationView: View {
                 }
             }
             
-            if !updateInfo.releaseNotes.isEmpty {
-                ScrollView {
-                    Text(updateInfo.releaseNotes)
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
                 .frame(maxHeight: 100)
             }
             

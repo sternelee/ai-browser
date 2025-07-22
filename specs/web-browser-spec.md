@@ -4,7 +4,7 @@
 
 Web is a next-generation macOS browser built with SwiftUI that delivers an unparalleled minimal, progressive UX experience rivaling Arc Browser. This native application emphasizes subtle design, smooth animations, and innovative interface paradigms that make browsing feel effortless and delightful.
 
-OG prompt for reference of the ethos of this app: ("This new macOS app. Ensure you put in the intro that it is a next-gen UX macOS swiftUI native app, that grea design is minimal, small, subtle and progressive, that rivals Arc Browser. Should use native webkit integration, swiftui, should be forversion 14+ of macos so it uses the almost latest stuff. For features it needs to have: 1. All the basics of a browser like the inspect, history, cmd + t for new tab, download manager and all the shit necessary, and al the basics, dont forget any please. Please list them all in the spec t implement. 2. Custom title bar that dissapears like the arc browser, i should have a custom glass main window with a super slightly padding,then with cmd + s you toggle between sidebar or top bar for the tabs, in sidebar mode we should only show the favicons not the tabs names so it would be a super mega minimal sidebar, this would disrupt the industry people would love it, also since that sidebar would be so small the window controls like close, minimize, expand should like appear only o hover or something next-gen. 3. We need a cmd to toggle the tabs (sidebar or top bar) on/off into a windowless/borderless edge-to-edge mode, so only the website is visible. 4. Let's have a nic performant UI, minimal but nice looking, glass, it should have but smoot animations, the name of the app is "Web", lets add to create an svgsquared logo and use that one everywhere, for now could just be a "W". 5 Lets create a minimal "new tab" experience, a custom input bar thatsearches google but looks super nice. 6. Lets have a settings with all the basics. 7. I don't know if its easy to implement but would be nice t have an integrated native ad blocker like safari does, to have autofil like safari does and save passwords and stuff, automatic updates, also that stuff where you connect your google profile and it auto logins on all google places idk if thats possible locally and natively in the app, and restore all previously closed tabs/windows. 8. We also need incognit mode ofc, its a basic, clear all cookies and cache after closing., cmd + shift + t to reopen last closed tab too. 9. Customize toolbar. 10. hovering links a status bar should appear from the bot to show where the link shows, think of other next-gen ways we ca use this dynamic status bar for, super contextual ideas that would mak users go whoa. 11. Find in page, inspect, developer tools. 12. Background tab previews. 13. Adaptive Glass UI – Window background subtly adapts its glass tint based on website color scheme or favicon color. Favicon-based tab coloring – Sidebar favicon background gets a minimal color splash for faster recognition. 14. Floating micro-controls – Contextual floating buttons (e.g., back/forward) that appear on slight mouse movement.. 15. Background tab previews – Hovering over a favicon in sidebar shows a live preview thumbnail. 16. Subtle animated underline for loading states instead of spinners, next gen and super minimal gradienty and glowy. 17. GPU-accelerated smooth scrolling – Feel like iOS Safari, ultra-smooth with physics-based gestures. 18. Live content preview – Hovering over a link briefly shows a card preview of the page (cached snapshot). 19. Smart integration with Apple Universal Clipboard for seamless cross-device pasting. 20. Lets add some quick notes, in the new tab we have a quick notes section where users can write text or md like notion and we store it as a file in the hidden files where we store shit locally. 21. If easy have translation like safari does.... You can research Zen Browser, which is opensource, its c++ and javascript but maybe there is stuff to learn from it.
+OG prompt for reference of the ethos of this app: ("This new macOS app. Ensure you put in the intro that it is a next-gen UX macOS swiftUI native app, that grea design is minimal, small, subtle and progressive, that rivals Arc Browser. Should use native webkit integration, swiftui, should be forversion 14+ of macos so it uses the almost latest stuff. For features it needs to have: 1. All the basics of a browser like the inspect, history, cmd + t for new tab, download manager and all the shit necessary, and al the basics, dont forget any please. Please list them all in the spec t implement. 2. Custom title bar that dissapears like the arc browser, i should have a custom glass main window with a super slightly padding,then with cmd + s you toggle between sidebar or top bar for the tabs, in sidebar mode we should only show the favicons not the tabs names so it would be a super mega minimal sidebar, this would disrupt the industry people would love it, also since that sidebar would be so small the window controls like close, minimize, expand should like appear only o hover or something next-gen. 3. We need a cmd to toggle the tabs (sidebar or top bar) on/off into a windowless/borderless edge-to-edge mode, so only the website is visible. 4. Let's have a nic performant UI, minimal but nice looking, glass, it should have but smoot animations, the name of the app is "Web", lets add to create an svgsquared logo and use that one everywhere, for now could just be a "W". 5 Lets create a minimal "new tab" experience, a custom input bar thatsearches google but looks super nice. 6. Lets have a settings with all the basics. 7. I don't know if its easy to implement but would be nice t have an integrated native ad blocker like safari does, to have autofil like safari does and save passwords and stuff, automatic updates, also that stuff where you connect your google profile and it auto logins on all google places idk if thats possible locally and natively in the app, and restore all previously closed tabs/windows. 8. We also need incognit mode ofc, its a basic, clear all cookies and cache after closing., cmd + shift + t to reopen last closed tab too. 9. Customize toolbar. 10. hovering links a status bar should appear from the bot to show where the link shows, think of other next-gen ways we ca use this dynamic status bar for, super contextual ideas that would mak users go whoa. 11. Find in page, inspect, developer tools. 12. Background tab previews. 13. Adaptive Glass UI – Window background subtly adapts its glass tint based on website color scheme or favicon color. Favicon-based tab coloring – Sidebar favicon background gets a minimal color splash for faster recognition. 14. Floating micro-controls – Contextual floating buttons (e.g., back/forward) that appear on slight mouse movement.. 15. Background tab previews – Hovering over a favicon in sidebar shows a live preview thumbnail. 16. Subtle animated underline for loading states instead of spinners, next gen and super minimal gradienty and glowy. 17. GPU-accelerated smooth scrolling – Feel like iOS Safari, ultra-smooth with physics-based gestures. 18. Live content preview – Hovering over a link briefly shows a card preview of the page (cached snapshot). 19. Smart integration with Apple Universal Clipboard for seamless cross-device pasting. 20. If easy have translation like safari does.... You can research Zen Browser, which is opensource, its c++ and javascript but maybe there is stuff to learn from it.
 )
 
 **Key Principles:**
@@ -43,8 +43,7 @@ Web/
 │   │   ├── SidebarView.swift
 │   │   └── TabBarView.swift
 │   ├── NewTab/
-│   │   ├── NewTabView.swift
-│   │   └── QuickNotesView.swift
+│   │   └── NewTabView.swift
 │   ├── Settings/
 │   │   └── SettingsView.swift
 │   └── Components/
@@ -169,7 +168,6 @@ Web/
 1. **New Tab Experience**
    - Beautiful search input with glass morphism
    - Google search integration
-   - Quick notes section (Markdown support)
    - Recently closed tabs
    - Frequently visited sites
 
@@ -277,19 +275,6 @@ Web/
 ### Session 4: New Tab Experience (Week 4) ✅ COMPLETED
 - [x] Minimal new tab with glass morphism
 - [x] Google search integration
-- [x] **Advanced Quick Notes System** ✅ FULLY COMPLETED
-  - [x] Multiple notes support with UUID-based identification
-  - [x] Next-gen UI with responsive grid layout and glass morphism
-  - [x] Full CRUD operations (Create, Read, Update, Delete)
-  - [x] Real-time search and filtering
-  - [x] Smart note titles and preview generation
-  - [x] Favorite notes marking system
-  - [x] Drag & drop reordering functionality
-  - [x] Export/Import functionality with Markdown format
-  - [x] Keyboard shortcuts (⇧⌘N: New Note, ⇧⌘D: Delete Note, ⇧⌘F: Search Notes)
-  - [x] Auto-migration from legacy single-note system
-  - [x] Enhanced note metadata (creation date, updated date, favorites)
-  - [x] Professional note management with sample notes
 - [x] Recently closed tabs section (framework ready, needs data integration)
 - [x] Frequently visited sites (framework ready, needs data integration) 
 - [x] Floating particles background effect (8 subtle particles with animations)
@@ -305,11 +290,40 @@ Web/
 
 ### Session 6: Performance & Adaptive Effects (Week 6) 🔄 PARTIAL
 - [ ] GPU-accelerated smooth scrolling (iOS Safari-like) - **NOT IMPLEMENTED**
-- [x] Tab hibernation with memory monitoring (basic implementation with 300s timeout)
+- [x] Tab hibernation with memory monitoring (basic implementation with 300s timeout) - **NEEDS ENHANCEMENT**
 - [x] Adaptive glass effects based on favicon colors (implemented in BrowserView)
 - [x] Dynamic color extraction with k-means clustering (implemented in WebView)
 - [ ] Performance monitoring and alerts - **NEEDS ADVANCED TabHibernationManager**
 - [ ] Memory optimization strategies - **NEEDS SYSTEM MEMORY PRESSURE MONITORING**
+
+#### 🚨 CRITICAL: Tab Hibernation Enhancement Required (July 22, 2025)
+
+**Current Implementation Issues:**
+- **Incomplete Resource Freezing**: Our hibernation only sets UI state but doesn't actually free WebView resources
+- **Memory Waste**: WKWebView instances remain in memory during hibernation, consuming ~100MB+ per tab
+- **Missing Process Pool**: No shared WKProcessPool optimization for memory efficiency
+- **No Real Resource Monitoring**: memoryUsage property exists but doesn't track actual WebView memory
+
+**Required Enhancements Based on 2025 WebKit Best Practices:**
+1. **True Resource Destruction**: Destroy WKWebView instance during hibernation, keep only essential state
+2. **Shared Process Pool**: Implement WKProcessPool sharing across tabs for memory optimization
+3. **System Memory Pressure**: React to macOS memory pressure notifications for adaptive hibernation
+4. **Page Lifecycle Integration**: Use WebKit's page lifecycle APIs for proper resource freezing
+5. **Memory Monitoring**: Implement actual WebView memory tracking and automated cleanup
+6. **Network Resource Blocking**: Stop all network requests in hibernated tabs
+7. **User Exclusion Lists**: Allow users to exclude specific domains from hibernation (like Zen Browser)
+
+**Technical Architecture Changes Needed:**
+- Enhanced TabHibernationManager with real resource management
+- WKProcessPool sharing configuration in WebView setup
+- Memory pressure monitoring service integration
+- Proper WebView lifecycle management with state preservation/restoration
+
+**Performance Impact:**
+- Current: Cosmetic hibernation with full resource consumption
+- Target: 80%+ memory reduction per hibernated tab, CPU/network resource elimination
+
+**Priority**: HIGH - Current implementation provides minimal performance benefits
 
 ### Session 7: Security & Privacy (Week 7)
 - [ ] Native ad blocker with EasyList integration
