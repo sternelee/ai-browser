@@ -14,9 +14,10 @@ This specification details the integration of local AI capabilities into the Web
 ## Technical Architecture
 
 ### Core Technologies
-- **AI Model:** Google Gemma 3n 4B (int4 quantized: 2.6 GB RAM)
+- **AI Model:** Google Gemma 3n 2B Q8 (on-demand download: 4.79 GB)
+- **Distribution:** On-demand model downloading for efficient app distribution
 - **AI Framework:** Apple MLX for optimal Apple Silicon performance
-- **Context Window:** 128K tokens with hybrid attention optimization
+- **Context Window:** 32K tokens with efficient context management
 - **Memory Management:** Unified memory architecture with lazy computation
 - **Integration Language:** Swift 6 with MLX Swift API
 - **Fallback for Intel:** llama.cpp via Swift bindings
@@ -33,8 +34,7 @@ Web/
 │   │   └── AIResponse.swift
 │   ├── Services/
 │   │   ├── GemmaService.swift      # MLX/Gemma integration
-│   │   ├── ContextOptimizer.swift  # Context window management
-│   │   ├── SummarizationService.swift # Tab content summarization
+│   │   ├── OnDemandModelService.swift # Model downloading and management
 │   │   └── PrivacyManager.swift    # Local data encryption
 │   ├── Views/
 │   │   ├── AISidebar.swift         # Right-side AI chat interface
@@ -43,8 +43,7 @@ Web/
 │   │   └── AIStatusIndicator.swift # Model loading/status
 │   └── Utils/
 │       ├── MLXWrapper.swift        # MLX framework integration
-│       ├── ContextProcessor.swift  # Context optimization utilities
-│       └── ModelDownloader.swift   # Model management
+│       └── HardwareDetector.swift  # Hardware compatibility detection
 ├── Extensions/
 │   └── NSApp+AIShortcuts.swift     # AI-specific keyboard shortcuts
 ```

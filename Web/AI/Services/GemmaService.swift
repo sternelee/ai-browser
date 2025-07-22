@@ -38,10 +38,10 @@ class GemmaService {
         }
         
         do {
-            // Get model path from bundled service
-            let bundledService = BundledModelService()
-            guard let modelPath = bundledService.getModelPath() else {
-                throw GemmaError.modelNotAvailable("Bundled model file not found")
+            // Get model path from on-demand service
+            let onDemandService = OnDemandModelService()
+            guard let modelPath = onDemandService.getModelPath() else {
+                throw GemmaError.modelNotAvailable("AI model file not found - needs download")
             }
             
             NSLog("📂 Loading Gemma model from \(modelPath.lastPathComponent)")

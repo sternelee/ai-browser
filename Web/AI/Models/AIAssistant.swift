@@ -16,7 +16,7 @@ class AIAssistant: ObservableObject {
     // MARK: - Dependencies
     
     private let mlxWrapper: MLXWrapper
-    private let bundledModelService: BundledModelService
+    private let onDemandModelService: OnDemandModelService
     private let privacyManager: PrivacyManager
     private let conversationHistory: ConversationHistory
     private let gemmaService: GemmaService
@@ -31,7 +31,7 @@ class AIAssistant: ObservableObject {
     init() {
         // Initialize dependencies
         self.mlxWrapper = MLXWrapper()
-        self.bundledModelService = BundledModelService()
+        self.onDemandModelService = OnDemandModelService()
         self.privacyManager = PrivacyManager()
         self.conversationHistory = ConversationHistory()
         
@@ -53,7 +53,7 @@ class AIAssistant: ObservableObject {
     
     // MARK: - Public Interface
     
-    /// Initialize the AI system with model loading and setup
+    /// Initialize the AI system with on-demand model downloading
     func initialize() async {
         updateStatus("Initializing AI system...")
         
@@ -68,20 +68,28 @@ class AIAssistant: ObservableObject {
                 try await mlxWrapper.initialize()
             }
             
-            // Step 3: Initialize bundled model (out-of-box experience)
-            updateStatus("Loading bundled AI model...")
-            // BundledModelService automatically initializes the model
-            while !bundledModelService.isModelReady {
-                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                // Wait for model to be ready
+            // Step 3: Check if AI model is ready, download if needed
+            if !onDemandModelService.isAIReady() {
+                updateStatus("AI model not found - preparing download...")
+                
+                let downloadInfo = onDemandModelService.getDownloadInfo()
+                NSLog("🔽 AI model needs to be downloaded: \(downloadInfo.formattedSize)")
+                
+                try await onDemandModelService.initializeAI()
             }
-            NSLog("✅ Using bundled Gemma 3n model for instant AI")
             
-            // Step 4: Initialize Gemma service
+            // Step 4: Wait for model to be ready
             updateStatus("Loading AI model...")
+            while !onDemandModelService.isAIReady() {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+            }
+            NSLog("✅ AI model is ready")
+            
+            // Step 5: Initialize Gemma service
+            updateStatus("Starting AI inference engine...")
             try await gemmaService.initialize()
             
-            // Step 5: Initialize privacy manager
+            // Step 6: Initialize privacy manager
             updateStatus("Setting up privacy protection...")
             try await privacyManager.initialize()
             
@@ -255,13 +263,23 @@ class AIAssistant: ObservableObject {
     }
     
     private func setupBindings() {
-        // Bind bundled model status  
-        bundledModelService.$isModelReady
+        // Bind on-demand model status  
+        onDemandModelService.$isModelReady
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isReady in
                 if !isReady && self?.isInitialized == true {
                     self?.isInitialized = false
-                    self?.updateStatus("Bundled model not available")
+                    self?.updateStatus("AI model not available")
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Bind download progress for status updates
+        onDemandModelService.$downloadProgress
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] progress in
+                if progress > 0 && progress < 1.0 {
+                    self?.updateStatus("Downloading AI model: \(Int(progress * 100))%")
                 }
             }
             .store(in: &cancellables)
