@@ -24,47 +24,33 @@ struct WindowConfigurator: NSViewRepresentable {
     }
     
     private func configureWindow(_ window: NSWindow) {
-        // EXPERIMENTAL FIX: Less aggressive window configuration to preserve responder chain
-        // The previous borderless configuration may have been disrupting input handling
+        // RESTORE BORDERLESS ARCHITECTURE: Bring back the truly borderless floating window
+        // while maintaining input safety through targeted fixes instead of architectural changes
         
-        // Enhance window appearance while keeping it visible
+        // Enhance window appearance - transparent floating glass panel
         window.backgroundColor = NSColor.clear
         window.isOpaque = false
         window.hasShadow = true
         
-        // RESPONDER CHAIN FIX: Use .titled instead of .borderless to preserve normal input handling
-        // Keep .resizable and .miniaturizable for proper window behavior
-        window.styleMask = [.titled, .resizable, .miniaturizable, .closable]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.toolbar = nil // Remove any toolbar
+        // RESTORE BORDERLESS: Use the original borderless style for true floating aesthetic
+        // This creates a window with no title bar or system chrome
+        window.styleMask = [.borderless, .resizable]
         
-        // RESPONDER CHAIN FIX: Disable window background movability - this intercepts all mouse events
-        // and may be preventing proper input focus handling
+        // INPUT SAFETY: Keep movable background DISABLED to prevent global mouse event interception
+        // This was the real cause of input locking - not the borderless style itself
         window.isMovableByWindowBackground = false
         
-        // Content view configuration for transparency and full size
+        // Full-size content configuration for true edge-to-edge design
         if let contentView = window.contentView {
             contentView.wantsLayer = true
             contentView.layer?.backgroundColor = NSColor.clear.cgColor
             
-            // Ensure content view takes up the entire window frame
+            // Ensure content view takes up the entire window frame with no title bar space
             contentView.autoresizingMask = [.width, .height]
         }
         
-        // Completely hide and disable window controls - we'll add custom ones with hover
-        if let closeButton = window.standardWindowButton(.closeButton) {
-            closeButton.isHidden = true
-            closeButton.alphaValue = 0.0
-        }
-        if let miniButton = window.standardWindowButton(.miniaturizeButton) {
-            miniButton.isHidden = true
-            miniButton.alphaValue = 0.0
-        }
-        if let zoomButton = window.standardWindowButton(.zoomButton) {
-            zoomButton.isHidden = true
-            zoomButton.alphaValue = 0.0
-        }
+        // No system window controls in borderless mode - we use custom implementations
+        // This maintains the pure floating glass panel aesthetic
     }
     
 }

@@ -497,23 +497,20 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func rightEdgeActivationZone() -> some View {
-        // CRITICAL FIX: Temporarily disable right edge activation to test input locking fix
-        // This 20px invisible overlay may be consuming input events
-        // if !isExpanded {
-        //     HStack {
-        //         Spacer()
-        //         Rectangle()
-        //             .fill(Color.clear)
-        //             .frame(width: 20) // 20pt hover zone
-        //             .contentShape(Rectangle())
-        //             .onHover { hovering in
-        //                 if hovering {
-        //                     expandSidebar()
-        //                 }
-        //             }
-        //     }
-        // }
-        EmptyView()
+        if !isExpanded {
+            HStack {
+                Spacer()
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 20) // 20pt hover zone
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering {
+                            expandSidebar()
+                        }
+                    }
+            }
+        }
     }
     
     // MARK: - Interaction Methods
