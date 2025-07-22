@@ -71,8 +71,8 @@ struct WebView: NSViewRepresentable {
         // Configure enhanced tracking prevention
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         
-        // User agent customization - Use modern Safari user agent to ensure proper Google homepage rendering
-        config.applicationNameForUserAgent = "Web/1.0 Safari/605.1.15"
+        // User agent customization - Use standard Safari user agent to prevent Google's embedded browser detection
+        config.applicationNameForUserAgent = ""
         
         // Add link hover detection script to existing user content controller
         let linkHoverScript = WKUserScript(
@@ -98,8 +98,8 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // Apply standard WebKit settings from manager
-        webView.customUserAgent = "Web/1.0 Safari/605.1.15"
+        // Apply standard Safari user agent to prevent Google's embedded browser detection
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
         }
@@ -144,19 +144,53 @@ struct WebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
-        // Always load if URL is different from what webview is currently showing
+        // Smart navigation logic with comprehensive debug logging
         if let url = url {
+            let currentWebViewURL = webView.url?.absoluteString ?? "nil"
             let isCurrentlyDifferent = webView.url?.absoluteString != url.absoluteString
             let isNotCurrentlyLoading = !webView.isLoading
             
-            // Load if URL is different and we're not already loading something
-            if isCurrentlyDifferent && isNotCurrentlyLoading {
+            // Only apply minimal debouncing for duplicate requests to the exact same URL
+            let lastLoadedURLString = context.coordinator.lastLoadedURL?.absoluteString ?? "nil"
+            let isDuplicateRequest = context.coordinator.lastLoadedURL?.absoluteString == url.absoluteString
+            let now = Date()
+            let timeSinceLastLoad = context.coordinator.lastLoadTime.map { now.timeIntervalSince($0) } ?? 1.0
+            
+            // Debug logging
+            print("🔍 WebView.updateNSView DEBUG:")
+            print("  - Requested URL: \(url.absoluteString)")
+            print("  - WebView current URL: \(currentWebViewURL)")
+            print("  - Last loaded URL: \(lastLoadedURLString)")
+            print("  - isCurrentlyDifferent: \(isCurrentlyDifferent)")
+            print("  - isNotCurrentlyLoading: \(isNotCurrentlyLoading)")
+            print("  - isDuplicateRequest: \(isDuplicateRequest)")
+            print("  - timeSinceLastLoad: \(timeSinceLastLoad)s")
+            print("  - webView.isLoading: \(webView.isLoading)")
+            
+            // Load if:
+            // 1. URL is different (always allow new URLs)
+            // 2. OR not currently loading
+            // 3. OR if it's a duplicate request, only block if it happened very recently (< 100ms)
+            let shouldLoad = isCurrentlyDifferent || 
+                           isNotCurrentlyLoading || 
+                           !isDuplicateRequest || 
+                           timeSinceLastLoad > 0.1
+            
+            print("  - shouldLoad: \(shouldLoad)")
+            
+            if shouldLoad {
+                print("  ✅ LOADING: \(url.absoluteString)")
                 let request = URLRequest(url: url)
                 webView.load(request)
                 
-                // Store the URL in coordinator to track what we last attempted to load
+                // Store the URL and timestamp in coordinator
                 context.coordinator.lastLoadedURL = url
+                context.coordinator.lastLoadTime = now
+            } else {
+                print("  ❌ BLOCKED: \(url.absoluteString)")
             }
+        } else {
+            print("🔍 WebView.updateNSView: No URL provided")
         }
     }
     
@@ -334,6 +368,7 @@ struct WebView: NSViewRepresentable {
         private var titleObserver: NSKeyValueObservation?
         private var urlObserver: NSKeyValueObservation?
         var lastLoadedURL: URL?
+        var lastLoadTime: Date?
         
         // Static shared cache to prevent duplicate downloads across all tabs
         private static var faviconCache: [String: NSImage] = [:]
@@ -375,11 +410,13 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            print("🚀 WebView.didStartProvisionalNavigation: \(webView.url?.absoluteString ?? "nil")")
             parent.isLoading = true
             parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            print("📍 WebView.didCommit: \(webView.url?.absoluteString ?? "nil")")
             // Update URL immediately when navigation commits (before page finishes loading)
             if let url = webView.url {
                 DispatchQueue.main.async {
@@ -388,15 +425,13 @@ struct WebView: NSViewRepresentable {
                         tab.url = url
                     }
                     
-                    // CRITICAL: Clear focus when navigating to Google to prevent focus conflicts
-                    if url.host?.contains("google.com") == true || url.host?.contains("google.") == true {
-                        FocusCoordinator.shared.handleGoogleNavigation()
-                    }
+                    // Allow Google to manage its own focus naturally - no interference needed
                 }
             }
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            print("✅ WebView.didFinish: \(webView.url?.absoluteString ?? "nil")")
             parent.isLoading = false
             parent.title = webView.title
             parent.canGoBack = webView.canGoBack
@@ -442,11 +477,15 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("❌ WebView.didFail navigation: \(webView.url?.absoluteString ?? "nil")")
+            print("   Error: \(error.localizedDescription) (code: \((error as NSError).code))")
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("💥 WebView.didFailProvisionalNavigation: \(webView.url?.absoluteString ?? "nil")")
+            print("   Error: \(error.localizedDescription) (code: \((error as NSError).code))")
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
         }

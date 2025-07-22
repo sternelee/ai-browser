@@ -132,13 +132,22 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     }
     
     func navigate(to url: URL) {
+        print("🧭 Tab.navigate called:")
+        print("   - Tab ID: \(id)")
+        print("   - New URL: \(url.absoluteString)")
+        print("   - Current URL: \(self.url?.absoluteString ?? "nil")")
+        print("   - Has WebView: \(webView != nil)")
+        
         self.url = url
         updateLastAccessed()
         
         // Trigger navigation in the webView if it exists
         if let webView = webView {
+            print("   ✅ Loading URL in Tab's WebView: \(url.absoluteString)")
             let request = URLRequest(url: url)
             webView.load(request)
+        } else {
+            print("   ⚠️ No WebView available, URL stored in tab only")
         }
     }
     

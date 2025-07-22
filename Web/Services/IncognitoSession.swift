@@ -176,7 +176,11 @@ class IncognitoSession: NSObject, ObservableObject {
             }
             
             // Use shared timer for incognito tracking stats to reduce CPU usage
+            // CRITICAL: Increased interval to prevent Google CPU issues in incognito mode
             window.incognitoStatsTimer = window.incognitoStatsTimer || setInterval(() => {
+                // Skip if page is hidden to save CPU (especially important for Google in incognito)
+                if (document.hidden) return;
+                
                 if (blockedRequests > 0 && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.incognitoHandler) {
                     window.webkit.messageHandlers.incognitoHandler.postMessage({
                         type: 'trackingBlocked',
@@ -184,7 +188,7 @@ class IncognitoSession: NSObject, ObservableObject {
                     });
                     blockedRequests = 0;
                 }
-            }, 15000); // Increased from 5s to 15s for incognito mode
+            }, 30000); // Increased from 15s to 30s to prevent Google search CPU spikes in incognito
             
             // Cleanup timer on page unload
             window.addEventListener('beforeunload', () => {

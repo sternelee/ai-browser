@@ -270,10 +270,40 @@ struct ExistingWebView: NSViewRepresentable {
             return // Prevent state updates from wrong WebView instance
         }
         
-        // Check if we need to navigate to a new URL
-        if let tabURL = tab.url, webView.url?.absoluteString != tabURL.absoluteString {
-            let request = URLRequest(url: tabURL)
-            webView.load(request)
+        // CRITICAL FIX: Only navigate if WebView has no URL or is significantly different domain
+        // Don't interfere with WebKit's natural navigation flow (like Google search results)
+        if let tabURL = tab.url {
+            let webViewURL = webView.url?.absoluteString
+            let shouldNavigate: Bool
+            
+            if webViewURL == nil {
+                // WebView has no URL - safe to navigate
+                shouldNavigate = true
+            } else if let currentURL = webView.url {
+                // Only navigate if it's a completely different domain/host to avoid search result conflicts
+                let isSameDomain = currentURL.host == tabURL.host
+                let isWebViewLoading = webView.isLoading
+                
+                // Don't interfere if same domain and WebView is loading (e.g., Google search results)
+                shouldNavigate = !isSameDomain && !isWebViewLoading
+            } else {
+                shouldNavigate = false
+            }
+            
+            if shouldNavigate {
+                print("🔄 ExistingWebView.updateNSView navigation:")
+                print("   - Tab URL: \(tabURL.absoluteString)")
+                print("   - WebView URL: \(webViewURL ?? "nil")")
+                print("   - Tab ID: \(tab.id)")
+                print("   - Navigating: different domain or no URL")
+                let request = URLRequest(url: tabURL)
+                webView.load(request)
+            } else {
+                print("🚫 ExistingWebView.updateNSView SKIPPED:")
+                print("   - Tab URL: \(tabURL.absoluteString)")
+                print("   - WebView URL: \(webViewURL ?? "nil")")
+                print("   - Reason: Same domain or WebView loading - avoiding interference")
+            }
         }
         
         // Sync the tab's properties with webview state - ONLY for the correct WebView

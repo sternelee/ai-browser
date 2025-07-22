@@ -310,7 +310,7 @@ class PasswordManager: NSObject, ObservableObject {
             
             let formObserver;
             let lastFormCheck = 0;
-            const FORM_CHECK_INTERVAL = 3000; // Increased from 1s to 3s to reduce CPU usage
+            const FORM_CHECK_INTERVAL = 10000; // Increased from 3s to 10s to prevent Google CPU issues
             
             function findLoginForms() {
                 const forms = document.querySelectorAll('form');
@@ -404,8 +404,13 @@ class PasswordManager: NSObject, ObservableObject {
                 if (now - lastFormCheck < FORM_CHECK_INTERVAL) return;
                 lastFormCheck = now;
                 
-                // Skip checking if page is hidden to save CPU
+                // Skip checking if page is hidden to save CPU (critical for Google performance)
                 if (document.hidden) return;
+                
+                // Skip on Google search pages to prevent CPU spikes - Google search doesn't need autofill
+                if (window.location.hostname.includes('google.com') || window.location.hostname.includes('google.')) {
+                    return;
+                }
                 
                 const loginForms = findLoginForms();
                 
@@ -438,6 +443,11 @@ class PasswordManager: NSObject, ObservableObject {
             formObserver = new MutationObserver(function(mutations) {
                 // Throttle mutation observer to prevent excessive CPU usage
                 if (document.hidden) return;
+                
+                // Skip Google search pages to prevent CPU spikes during search interactions
+                if (window.location.hostname.includes('google.com') || window.location.hostname.includes('google.')) {
+                    return;
+                }
                 
                 let shouldCheck = false;
                 mutations.forEach(function(mutation) {

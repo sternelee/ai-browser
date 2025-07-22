@@ -87,12 +87,12 @@ class FocusCoordinator: ObservableObject {
         }
     }
     
-    // Special handling for Google.com to prevent focus conflicts
+    // Special handling for Google.com - minimal intervention approach
     func handleGoogleNavigation() {
-        // Clear focus locks when navigating to Google to prevent conflicts with their search input
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.clearAllFocus()
-            print("⚗️ Google navigation detected - focus cleared to prevent conflicts")
+        // Only clear stale focus locks, don't interfere with Google's natural focus management
+        if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > 2.0 {
+            clearAllFocus()
+            print("⚗️ Google navigation detected - cleared only stale focus locks")
         }
     }
     

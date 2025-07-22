@@ -221,8 +221,12 @@ class AdBlockService: NSObject, ObservableObject {
                 attributeFilter: ['src', 'href']
             });
             
-            // Use a single shared timer instead of per-tab intervals to reduce CPU usage
+            // Use a single shared timer instead of per-tab intervals to reduce CPU usage  
+            // CRITICAL: Reduced frequency from 10s to 30s to prevent Google CPU issues
             window.adBlockStatsTimer = window.adBlockStatsTimer || setInterval(() => {
+                // Skip if page is hidden to save CPU (especially important for Google)
+                if (document.hidden) return;
+                
                 if (blockedCount > 0 && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.adBlockHandler) {
                     window.webkit.messageHandlers.adBlockHandler.postMessage({
                         type: 'stats',
@@ -230,7 +234,7 @@ class AdBlockService: NSObject, ObservableObject {
                         blockedDomains: Array.from(blockedDomains)
                     });
                 }
-            }, 10000); // Reduced frequency from 5s to 10s
+            }, 30000); // Increased from 10s to 30s to prevent Google search CPU spikes
             
             // Cleanup function for proper timer disposal
             window.addEventListener('beforeunload', () => {

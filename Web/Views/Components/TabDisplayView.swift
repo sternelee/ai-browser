@@ -341,6 +341,7 @@ struct WebContentArea: View {
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
+    @State private var urlString: String = ""
     
     // Computed property to determine if URL bar should be shown
     private var shouldShowURLBar: Bool {
@@ -349,21 +350,14 @@ struct WebContentArea: View {
         return tabManager.activeTab != nil
     }
     
-    // Computed property to get current URL string from active tab - NO SHARED STATE
+    // Simplified URL string binding to prevent synchronization loops that cause Google issues
     private var currentURLString: Binding<String> {
         Binding(
             get: {
-                if let activeTab = tabManager.activeTab, let url = activeTab.url {
-                    return url.absoluteString
-                }
-                return ""
+                return urlString
             },
             set: { newValue in
-                // Update the active tab's URL directly, not a shared state
-                if let activeTab = tabManager.activeTab,
-                   let url = URL(string: newValue) {
-                    activeTab.url = url
-                }
+                urlString = newValue
             }
         )
     }
@@ -539,7 +533,15 @@ struct WebContentArea: View {
     }
     
     private func navigateToURL(_ url: String) {
-        guard let activeTab = tabManager.activeTab else { return }
+        print("🎯 TabDisplayView.navigateToURL called:")
+        print("   - URL string: \(url)")
+        
+        guard let activeTab = tabManager.activeTab else { 
+            print("   ❌ No active tab")
+            return 
+        }
+        
+        print("   - Active tab ID: \(activeTab.id)")
         
         let processedURL: URL?
         
@@ -556,7 +558,12 @@ struct WebContentArea: View {
             processedURL = URL(string: "https://www.google.com/search?q=\(query)")
         }
         
-        guard let validURL = processedURL else { return }
+        guard let validURL = processedURL else { 
+            print("   ❌ Invalid URL")
+            return 
+        }
+        
+        print("   - Processed URL: \(validURL.absoluteString)")
         
         // Navigate to URL - tab manages its own state
         activeTab.navigate(to: validURL)
