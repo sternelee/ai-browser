@@ -230,14 +230,14 @@ struct ConversationMessage: Identifiable {
     let role: ConversationRole
     let content: String
     let timestamp: Date
-    let contextData: ContextData?
+    let contextData: String? // Simplified context data
     let metadata: ResponseMetadata?
     
     init(
         role: ConversationRole,
         content: String,
         timestamp: Date,
-        contextData: ContextData? = nil,
+        contextData: String? = nil,
         metadata: ResponseMetadata? = nil
     ) {
         self.id = UUID().uuidString

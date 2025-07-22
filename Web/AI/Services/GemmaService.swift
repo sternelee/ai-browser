@@ -38,10 +38,10 @@ class GemmaService {
         }
         
         do {
-            // Get model path from downloader
-            let modelDownloader = ModelDownloader()
-            guard let modelPath = modelDownloader.getModelPath() else {
-                throw GemmaError.modelNotAvailable("Model file not found")
+            // Get model path from bundled service
+            let bundledService = BundledModelService()
+            guard let modelPath = bundledService.getModelPath() else {
+                throw GemmaError.modelNotAvailable("Bundled model file not found")
             }
             
             NSLog("📂 Loading Gemma model from \(modelPath.lastPathComponent)")
@@ -69,7 +69,7 @@ class GemmaService {
     /// Generate a response for the given query and context
     func generateResponse(
         query: String,
-        context: ContextData?,
+        context: String?,
         conversationHistory: [ConversationMessage]
     ) async throws -> AIResponse {
         
@@ -137,10 +137,7 @@ class GemmaService {
             // Update metrics
             mlxWrapper.updateInferenceMetrics(tokensGenerated: outputTokens.count)
             
-            // Add tab/history references if context was used
-            if let context = context {
-                addContextReferences(to: responseBuilder, from: context)
-            }
+            // Context references will be added in Phase 11
             
             return responseBuilder
                 .setText(cleanedResponse)
@@ -156,7 +153,7 @@ class GemmaService {
     /// Generate a streaming response with real-time token updates
     func generateStreamingResponse(
         query: String,
-        context: ContextData?,
+        context: String?,
         conversationHistory: [ConversationMessage]
     ) async throws -> AsyncThrowingStream<String, Error> {
         
@@ -244,7 +241,7 @@ class GemmaService {
     
     private func buildPrompt(
         query: String,
-        context: ContextData?,
+        context: String?,
         conversationHistory: [ConversationMessage]
     ) throws -> String {
         
@@ -256,8 +253,8 @@ class GemmaService {
         """)
         
         // Add context if available
-        if let context = context {
-            promptParts.append(buildContextPrompt(context))
+        if let context = context, !context.isEmpty {
+            promptParts.append("Context: \(context)")
         }
         
         // Add conversation history (last few messages)
@@ -290,30 +287,7 @@ class GemmaService {
         return fullPrompt
     }
     
-    private func buildContextPrompt(_ context: ContextData) -> String {
-        var contextParts: [String] = []
-        
-        // Active tab context
-        if let activeTab = context.activeTab {
-            contextParts.append("""
-            Current webpage:
-            Title: \(activeTab.title)
-            URL: \(activeTab.url.absoluteString)
-            Content: \(activeTab.summary)
-            """)
-        }
-        
-        // Recent tabs context
-        if !context.recentTabs.isEmpty {
-            let recentTabsText = context.recentTabs.prefix(3).map { tab in
-                "- \(tab.title) (\(tab.url.host ?? "unknown"))"
-            }.joined(separator: "\n")
-            
-            contextParts.append("Recent tabs:\n\(recentTabsText)")
-        }
-        
-        return contextParts.joined(separator: "\n\n")
-    }
+    // Context processing will be added in Phase 11
     
     private func runInference(inputTokens: [Int]) async throws -> [Int] {
         // Placeholder for actual MLX inference
@@ -362,31 +336,7 @@ class GemmaService {
         return cleaned
     }
     
-    private func addContextReferences(to builder: AIResponseBuilder, from context: ContextData) {
-        // Add active tab reference
-        if let activeTab = context.activeTab {
-            let reference = TabReference(
-                id: activeTab.tabId,
-                url: activeTab.url,
-                title: activeTab.title,
-                relevanceScore: 0.9,
-                contentSummary: activeTab.summary
-            )
-            builder.addTabReference(reference)
-        }
-        
-        // Add recent tab references
-        for tab in context.recentTabs.prefix(3) {
-            let reference = TabReference(
-                id: tab.tabId,
-                url: tab.url,
-                title: tab.title,
-                relevanceScore: 0.6,
-                contentSummary: tab.summary
-            )
-            builder.addTabReference(reference)
-        }
-    }
+    // Context reference processing will be added in Phase 11
 }
 
 // MARK: - Gemma Tokenizer

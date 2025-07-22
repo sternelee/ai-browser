@@ -130,27 +130,27 @@ class HardwareDetector {
         case .appleSilicon(let generation):
             return AIConfiguration(
                 framework: .mlx,
-                modelVariant: generation >= .m3 ? .gemma4B : .gemma2B,
-                quantization: generation >= .m2 ? .int4 : .int8,
-                maxContextTokens: generation >= .m3 ? 128000 : 64000,
+                modelVariant: .gemma3n_2B, // Single bundled model
+                quantization: .int4,
+                maxContextTokens: 32768, // Gemma 3n context length
                 maxMemoryGB: recommendedMemoryLimit,
                 expectedTokensPerSecond: expectedTokensPerSecond
             )
         case .intel(let cores, let architecture):
             return AIConfiguration(
                 framework: .llamaCpp,
-                modelVariant: .gemma2B, // Smaller model for Intel
+                modelVariant: .gemma3n_2B, // Same bundled model via llama.cpp
                 quantization: .int4,
-                maxContextTokens: 32000,
+                maxContextTokens: 32768,
                 maxMemoryGB: recommendedMemoryLimit,
                 expectedTokensPerSecond: expectedTokensPerSecond
             )
         case .unknown:
             return AIConfiguration(
                 framework: .llamaCpp,
-                modelVariant: .gemma2B,
-                quantization: .int8,
-                maxContextTokens: 16000,
+                modelVariant: .gemma3n_2B,
+                quantization: .int4,
+                maxContextTokens: 16384, // Reduced for safety
                 maxMemoryGB: 1,
                 expectedTokensPerSecond: 10
             )
@@ -272,8 +272,7 @@ struct AIConfiguration {
     }
     
     enum ModelVariant {
-        case gemma2B
-        case gemma4B
+        case gemma3n_2B    // Gemma 3n 2B - 4.79GB bundled
         case custom(String)
     }
     

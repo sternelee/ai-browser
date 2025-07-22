@@ -16,8 +16,7 @@ class AIAssistant: ObservableObject {
     // MARK: - Dependencies
     
     private let mlxWrapper: MLXWrapper
-    private let modelDownloader: ModelDownloader
-    private let contextManager: ContextManager
+    private let bundledModelService: BundledModelService
     private let privacyManager: PrivacyManager
     private let conversationHistory: ConversationHistory
     private let gemmaService: GemmaService
@@ -32,8 +31,7 @@ class AIAssistant: ObservableObject {
     init() {
         // Initialize dependencies
         self.mlxWrapper = MLXWrapper()
-        self.modelDownloader = ModelDownloader()
-        self.contextManager = ContextManager()
+        self.bundledModelService = BundledModelService()
         self.privacyManager = PrivacyManager()
         self.conversationHistory = ConversationHistory()
         
@@ -70,12 +68,14 @@ class AIAssistant: ObservableObject {
                 try await mlxWrapper.initialize()
             }
             
-            // Step 3: Download model if needed
-            updateStatus("Checking model availability...")
-            if !modelDownloader.isModelAvailable {
-                updateStatus("Downloading AI model...")
-                try await modelDownloader.downloadOptimalModel()
+            // Step 3: Initialize bundled model (out-of-box experience)
+            updateStatus("Loading bundled AI model...")
+            // BundledModelService automatically initializes the model
+            while !bundledModelService.isModelReady {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                // Wait for model to be ready
             }
+            NSLog("✅ Using bundled Gemma 3n model for instant AI")
             
             // Step 4: Initialize Gemma service
             updateStatus("Loading AI model...")
@@ -85,9 +85,7 @@ class AIAssistant: ObservableObject {
             updateStatus("Setting up privacy protection...")
             try await privacyManager.initialize()
             
-            // Step 6: Initialize context manager
-            updateStatus("Initializing context processing...")
-            contextManager.initialize()
+            // Context processing will be added in Phase 11
             
             // Mark as initialized
             isInitialized = true
@@ -116,8 +114,8 @@ class AIAssistant: ObservableObject {
         defer { isProcessing = false }
         
         do {
-            // Extract current context if requested
-            let context = includeContext ? await contextManager.getCurrentContext() : nil
+            // Context extraction will be implemented in Phase 11
+            let context: String? = nil
             
             // Create conversation entry
             let userMessage = ConversationMessage(
@@ -169,8 +167,8 @@ class AIAssistant: ObservableObject {
                     isProcessing = true
                     defer { isProcessing = false }
                     
-                    // Extract current context if requested
-                    let context = includeContext ? await contextManager.getCurrentContext() : nil
+                    // Context extraction will be implemented in Phase 11
+                    let context: String? = nil
                     
                     // Process with streaming
                     let stream = try await gemmaService.generateStreamingResponse(
@@ -221,8 +219,7 @@ class AIAssistant: ObservableObject {
     /// Clear conversation history and context
     func clearConversation() {
         conversationHistory.clear()
-        contextManager.clearCache()
-        NSLog("🗑️ Conversation and context cleared")
+        NSLog("🗑️ Conversation cleared")
     }
     
     /// Get current system status
@@ -233,7 +230,7 @@ class AIAssistant: ObservableObject {
             modelVariant: aiConfiguration.modelVariant,
             memoryUsage: Int(mlxWrapper.memoryUsage),
             inferenceSpeed: mlxWrapper.inferenceSpeed,
-            contextTokenCount: contextManager.currentTokenCount,
+            contextTokenCount: 0, // Context processing will be added in Phase 11
             conversationLength: conversationHistory.messageCount,
             hardwareInfo: HardwareDetector.processorType.description
         )
@@ -258,13 +255,13 @@ class AIAssistant: ObservableObject {
     }
     
     private func setupBindings() {
-        // Bind model downloader status
-        modelDownloader.$isModelAvailable
+        // Bind bundled model status  
+        bundledModelService.$isModelReady
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isAvailable in
-                if !isAvailable && self?.isInitialized == true {
+            .sink { [weak self] isReady in
+                if !isReady && self?.isInitialized == true {
                     self?.isInitialized = false
-                    self?.updateStatus("Model not available")
+                    self?.updateStatus("Bundled model not available")
                 }
             }
             .store(in: &cancellables)
