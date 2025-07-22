@@ -11,6 +11,10 @@ class FocusCoordinator: ObservableObject {
     // Panel state tracking to prevent focus conflicts during panel operations
     @Published private var isPanelOpen: Bool = false
     
+    // Track individual panel states to prevent conflicts
+    private var isAISidebarOpen: Bool = false
+    private var isOtherPanelOpen: Bool = false
+    
     // Reduced complexity - no debounce timer to prevent conflicts with Google search
     // Timeout after which a locked focus is considered stale (seconds)
     private let focusTimeout: TimeInterval = 1.0 // Reduced from 2s to 1s for faster recovery
@@ -105,14 +109,38 @@ class FocusCoordinator: ObservableObject {
     }
     
     // Panel state management methods
+    func setAISidebarOpen(_ isOpen: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.isAISidebarOpen = isOpen
+            self?.updateOverallPanelState()
+            if isOpen {
+                // When AI sidebar opens, clear any existing focus to prevent conflicts
+                self?.clearAllFocus()
+                print("⚗️ AI Sidebar opened - cleared URL bar focus to prevent conflicts")
+            }
+        }
+    }
+    
     func setPanelOpen(_ isOpen: Bool) {
         DispatchQueue.main.async { [weak self] in
-            self?.isPanelOpen = isOpen
+            self?.isOtherPanelOpen = isOpen
+            self?.updateOverallPanelState()
             if isOpen {
                 // When a panel opens, clear any existing focus to prevent conflicts
                 self?.clearAllFocus()
                 print("⚗️ Panel opened - cleared URL bar focus to prevent conflicts")
             }
+        }
+    }
+    
+    private func updateOverallPanelState() {
+        let wasOpen = isPanelOpen
+        isPanelOpen = isAISidebarOpen || isOtherPanelOpen
+        
+        if !wasOpen && isPanelOpen {
+            print("⚗️ Panel state changed: now open")
+        } else if wasOpen && !isPanelOpen {
+            print("⚗️ Panel state changed: now closed")
         }
     }
     

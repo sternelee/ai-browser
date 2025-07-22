@@ -47,7 +47,7 @@ class GemmaService {
         do {
             // Check for local GGUF model
             guard let modelPath = onDemandModelService.getModelPath() else {
-                throw GemmaError.modelNotAvailable("No local GGUF model found. Please download the model first.")
+                throw GemmaError.modelNotAvailable("AI model is being prepared. Please wait for the download to complete.")
             }
             
             NSLog("📂 Found GGUF model: \(modelPath.lastPathComponent)")
@@ -111,7 +111,7 @@ class GemmaService {
 
             // Get local GGUF model path
             guard let modelPath = onDemandModelService.getModelPath() else {
-                throw GemmaError.modelNotAvailable("No local GGUF model available for inference")
+                throw GemmaError.modelNotAvailable("AI model is being prepared for inference")
             }
 
             do {
@@ -160,7 +160,7 @@ class GemmaService {
                     
                     // Get local GGUF model path
                     guard let modelPath = onDemandModelService.getModelPath() else {
-                        throw GemmaError.modelNotAvailable("No local GGUF model available for streaming")
+                        throw GemmaError.modelNotAvailable("AI model is still being prepared for streaming")
                     }
                     
                     // Use LLMRunner for streaming

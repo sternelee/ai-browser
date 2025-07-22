@@ -468,19 +468,26 @@ struct AISidebar: View {
         }
         
         if isExpanded {
+            // Notify focus coordinator that AI sidebar is opening
+            FocusCoordinator.shared.setAISidebarOpen(true)
             startAutoCollapseTimer()
-            // Focus input after animation
+            // Focus input after animation and focus coordinator has cleared conflicts
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 isChatInputFocused = true
             }
         } else {
             stopAutoCollapseTimer()
             isChatInputFocused = false
+            // Notify focus coordinator that AI sidebar is closed
+            FocusCoordinator.shared.setAISidebarOpen(false)
         }
     }
     
     private func expandSidebar() {
         guard !isExpanded else { return }
+        
+        // Notify focus coordinator that AI sidebar is opening
+        FocusCoordinator.shared.setAISidebarOpen(true)
         
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             isExpanded = true
@@ -488,7 +495,7 @@ struct AISidebar: View {
         
         startAutoCollapseTimer()
         
-        // Focus input after animation
+        // Focus input after animation and focus coordinator has cleared conflicts
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             isChatInputFocused = true
         }
@@ -503,6 +510,8 @@ struct AISidebar: View {
         
         stopAutoCollapseTimer()
         isChatInputFocused = false
+        // Notify focus coordinator that AI sidebar is closed
+        FocusCoordinator.shared.setAISidebarOpen(false)
     }
     
     private func expandAndFocusInput() {

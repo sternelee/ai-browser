@@ -64,7 +64,7 @@ class AIAssistant: ObservableObject {
         conversationHistory.messageCount
     }
     
-    /// OPTIMIZED: Initialize the AI system with parallel async tasks
+    /// FIXED: Initialize the AI system with safe parallel tasks (race condition fixed)
     func initialize() async {
         updateStatus("Initializing AI system...")
         
@@ -73,7 +73,39 @@ class AIAssistant: ObservableObject {
             updateStatus("Validating hardware compatibility...")
             try validateHardware()
             
-            // OPTIMIZATION: Run independent tasks in parallel for 60% faster startup
+            // CRITICAL FIX: Model checking must be SEQUENTIAL to prevent race conditions
+            // Multiple parallel tasks were causing model deletion conflicts
+            updateStatus("Checking AI model availability...")
+            if !onDemandModelService.isAIReady() {
+                updateStatus("AI model not found - preparing download...")
+                
+                let downloadInfo = onDemandModelService.getDownloadInfo()
+                NSLog("🔽 AI model needs to be downloaded: \(downloadInfo.formattedSize)")
+                
+                try await onDemandModelService.initializeAI()
+            }
+            
+            // Wait for model to be ready with timeout
+            updateStatus("Loading AI model...")
+            let timeout = 60.0 // 60 second timeout
+            let startTime = Date()
+            
+            while !onDemandModelService.isAIReady() {
+                // Check for timeout
+                if Date().timeIntervalSince(startTime) > timeout {
+                    throw ModelError.downloadFailed("Model loading timed out after \(timeout) seconds")
+                }
+                
+                // Check if download failed
+                if case .failed(let error) = onDemandModelService.downloadState {
+                    throw ModelError.downloadFailed("Model download failed: \(error)")
+                }
+                
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second (longer interval)
+            }
+            NSLog("✅ AI model is ready")
+            
+            // SAFE PARALLEL: Run independent framework tasks in parallel AFTER model is secured
             await withTaskGroup(of: Void.self) { group in
                 
                 // Parallel Task 1: Initialize MLX (Apple Silicon only)
@@ -99,43 +131,6 @@ class AIAssistant: ObservableObject {
                         NSLog("❌ Privacy manager initialization failed: \(error)")
                     }
                 }
-                
-                // Parallel Task 3: Model download/validation (can run while others initialize)
-                group.addTask { [weak self] in
-                    guard let self = self else { return }
-                    do {
-                        if !self.onDemandModelService.isAIReady() {
-                            await self.updateStatus("AI model not found - preparing download...")
-                            
-                            let downloadInfo = self.onDemandModelService.getDownloadInfo()
-                            NSLog("🔽 AI model needs to be downloaded: \(downloadInfo.formattedSize)")
-                            
-                            try await self.onDemandModelService.initializeAI()
-                        }
-                        
-                        // Wait for model to be ready with timeout
-                        await self.updateStatus("Loading AI model...")
-                        let timeout = 60.0 // 60 second timeout
-                        let startTime = Date()
-                        
-                        while !self.onDemandModelService.isAIReady() {
-                            // Check for timeout
-                            if Date().timeIntervalSince(startTime) > timeout {
-                                throw ModelError.downloadFailed("Model loading timed out after \(timeout) seconds")
-                            }
-                            
-                            // Check if download failed
-                            if case .failed(let error) = self.onDemandModelService.downloadState {
-                                throw ModelError.downloadFailed("Model download failed: \(error)")
-                            }
-                            
-                            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second (longer interval)
-                        }
-                        NSLog("✅ AI model is ready")
-                    } catch {
-                        NSLog("❌ Model initialization failed: \(error)")
-                    }
-                }
             }
             
             // SEQUENTIAL: Only Gemma service needs to be sequential (depends on model + privacy)
@@ -148,11 +143,6 @@ class AIAssistant: ObservableObject {
             isInitialized = true
             updateStatus("AI Assistant ready")
             lastError = nil
-            
-            // Clear any focus locks that may have occurred during initialization
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                FocusCoordinator.shared.clearAllFocus()
-            }
             
             NSLog("✅ AI Assistant initialization completed successfully (OPTIMIZED)")
             

@@ -64,19 +64,21 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
     
     // MARK: - Paths
     
-    private var modelsCacheDirectory: URL {
-        let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        let modelsCache = cacheDir.appendingPathComponent("Web/AI/Models")
+    private var modelsPersistentDirectory: URL {
+        // CRITICAL FIX: Use Application Support directory instead of Caches 
+        // Caches directory gets automatically cleaned up by macOS, causing model deletion
+        let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let modelsDirectory = appSupportDir.appendingPathComponent("Web/AI/Models")
         
         // Ensure directory exists with proper error handling
         do {
-            try fileManager.createDirectory(at: modelsCache, withIntermediateDirectories: true, attributes: nil)
-            NSLog("📁 Ensured models cache directory exists: \(modelsCache.path)")
+            try fileManager.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
+            NSLog("📁 Ensured persistent models directory exists: \(modelsDirectory.path)")
         } catch {
-            NSLog("⚠️ Warning: Could not create models cache directory: \(error)")
+            NSLog("⚠️ Warning: Could not create persistent models directory: \(error)")
         }
         
-        return modelsCache
+        return modelsDirectory
     }
     
     // MARK: - Initialization
@@ -96,12 +98,52 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         // Update session with delegate after super.init()
         self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         
+        // MIGRATION: Move any existing models from Caches to Application Support
+        migrateModelsFromCaches()
+        
         // Immediately check for existing model on initialization
         Task {
             await performIntelligentModelCheck()
         }
         
         NSLog("🤖 OnDemandModelService initialized - checking for existing AI model...")
+    }
+    
+    /// Migrate existing models from Caches directory to Application Support
+    private func migrateModelsFromCaches() {
+        let oldCacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let oldModelsDir = oldCacheDir.appendingPathComponent("Web/AI/Models")
+        
+        // Check if old directory exists
+        guard fileManager.fileExists(atPath: oldModelsDir.path) else {
+            return // No migration needed
+        }
+        
+        do {
+            let files = try fileManager.contentsOfDirectory(atPath: oldModelsDir.path)
+            
+            for filename in files {
+                let oldFilePath = oldModelsDir.appendingPathComponent(filename)
+                let newFilePath = modelsPersistentDirectory.appendingPathComponent(filename)
+                
+                // Only migrate if the file doesn't already exist in the new location
+                if fileManager.fileExists(atPath: oldFilePath.path) && !fileManager.fileExists(atPath: newFilePath.path) {
+                    do {
+                        try fileManager.moveItem(at: oldFilePath, to: newFilePath)
+                        NSLog("📦 Migrated model file: \(filename) → Application Support")
+                    } catch {
+                        NSLog("⚠️ Failed to migrate model file \(filename): \(error)")
+                    }
+                }
+            }
+            
+            // Try to remove the old directory if it's empty
+            try? fileManager.removeItem(at: oldModelsDir)
+            NSLog("✅ Model migration completed successfully")
+            
+        } catch {
+            NSLog("⚠️ Model migration failed: \(error)")
+        }
     }
     
     deinit {
@@ -121,7 +163,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             return nil
         }
         
-        let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+        let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
 
         // Return GGUF model path if it exists (we now use GGUF models directly)
         guard fileManager.fileExists(atPath: modelPath.path) else {
@@ -183,7 +225,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
     
     /// Download tokenizer.model if not present - NO MORE HARDCODED VOCABULARY!
     func downloadTokenizerIfNeeded() async throws {
-        let tokenizerPath = modelsCacheDirectory.appendingPathComponent("tokenizer.model")
+        let tokenizerPath = modelsPersistentDirectory.appendingPathComponent("tokenizer.model")
         
         // Check if tokenizer already exists and is valid
         if FileManager.default.fileExists(atPath: tokenizerPath.path) {
@@ -217,7 +259,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         }
         
         let model = ModelConfiguration.gemma3n_2B_Q8
-        let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+        let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
         
         await MainActor.run {
             currentModel = model
@@ -268,7 +310,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         }
         
         // Remove any corrupted existing file if it exists
-        let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+        let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
         try? fileManager.removeItem(at: modelPath)
         
         NSLog("🔽 Starting AI model download: \(model.name) (\(formatBytes(model.sizeBytes)))")
@@ -315,7 +357,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             }
             
             // Clean up failed download
-            let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+            let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
             try? fileManager.removeItem(at: modelPath)
             
             NSLog("❌ AI model download failed: \(error)")
@@ -386,7 +428,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         // Immediately move the file to prevent system cleanup
         do {
             let model = ModelConfiguration.gemma3n_2B_Q8
-            let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+            let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
             
             // Verify the temporary file exists and has the expected size
             if fileManager.fileExists(atPath: location.path) {

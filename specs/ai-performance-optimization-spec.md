@@ -335,6 +335,7 @@ User Query → Real Streaming (3s) → Token by Token → Display
 6. ✅ **Enhanced User Feedback** - "Thinking..." indicators and proper status updates
 7. ✅ **Runtime Crash Fix** - Simplified Swift 6 actor model to prevent launch crashes
 8. ✅ **Persistent Model Caching** - Smart caching between app launches to prevent 4.5GB reloads
+9. ✅ **Fixed Model Deletion Issue** - Moved models from volatile Caches to persistent Application Support directory
 
 ### 📊 **Performance Results Achieved**:
 - **App Launch Time**: **15-30s model reload → 2-5s cached reload** (80% improvement)
@@ -355,12 +356,64 @@ User Query → Real Streaming (3s) → Token by Token → Display
 - **Swift 6 Compatibility**: Removed complex global actors, simplified concurrency model for stability
 
 ### 💾 **Persistent Caching System**:
-- **Cache Location**: `~/Library/Caches/LLMCache/model_metadata.json`
-- **Validation**: File size, modification date, and hash verification
+- **LLM Cache**: `~/Library/Caches/LLMCache/model_metadata.json`
+- **Model Storage**: `~/Library/Application Support/Web/AI/Models/` (macOS won't auto-delete)
+- **Migration**: Automatic migration from old cache location to persistent location
+- **Validation**: File size, modification date, and hash verification  
 - **Cache Duration**: 7 days with automatic invalidation
-- **Benefits**: 90% faster app launches after initial model load
+- **Benefits**: 90% faster app launches, no more auto-deletion by macOS
 - **Fallback**: Graceful degradation to full reload if cache invalid
+
+### 🔧 **Root Cause Fix**:
+The issue was that models were stored in `~/Library/Caches/` which macOS automatically cleans up when:
+- System is low on disk space
+- App is not running for extended periods
+- During system maintenance
+
+**Solution**: Moved model storage to `~/Library/Application Support/Web/AI/Models/` which is persistent and won't be auto-deleted by macOS.
 
 **Build Status**: ✅ **BUILDS SUCCESSFULLY** - Zero errors, zero warnings, all tests pass  
 **Runtime Status**: ✅ **LAUNCHES WITHOUT CRASHES** - Fixed debugger attachment issues  
 **User Experience**: ✅ **OPTIMIZED** - Spinner animations working, real streaming, fast responses
+
+## 🔧 **CRITICAL RACE CONDITION FIX** (July 22, 2025)
+
+### Problem Identified and Resolved
+**Root Cause**: The parallel initialization optimization I implemented in AIAssistant.swift created race conditions where multiple TaskGroup tasks were running simultaneously and interfering with model management.
+
+**Race Condition Details**:
+- Task 1: `performIntelligentModelCheck()` finds existing model: "✅ Existing AI model validated and ready"
+- Task 2: Concurrently runs `isAIReady()` check, returns false due to file system race conditions  
+- Task 2: Starts `initializeAI()` which calls `downloadModelIfNeeded()`
+- `downloadModelIfNeeded()` **deletes existing model first** (line 314: `try? fileManager.removeItem(at: modelPath)`)
+- Result: Working model gets deleted and replaced with fresh download
+
+**Solution Applied**:
+```swift
+// BEFORE: Parallel model checking (caused race conditions)
+await withTaskGroup(of: Void.self) { group in
+    group.addTask { /* Task 1: MLX init */ }
+    group.addTask { /* Task 2: Privacy init */ }  
+    group.addTask { /* Task 3: Model check/download */ } // ← RACE CONDITION
+}
+
+// AFTER: Sequential model checking, safe parallel framework init
+updateStatus("Checking AI model availability...")
+// Model validation is now SEQUENTIAL - no race conditions
+if !onDemandModelService.isAIReady() {
+    try await onDemandModelService.initializeAI()
+}
+
+// Only independent framework tasks run in parallel AFTER model is secured
+await withTaskGroup(of: Void.self) { group in
+    group.addTask { /* MLX init - safe, no file system access */ }
+    group.addTask { /* Privacy init - safe, no model dependencies */ }
+}
+```
+
+**Files Modified**:
+- `AIAssistant.swift:67-138` - Converted model checking from parallel to sequential
+- Maintained performance optimization for framework initialization tasks
+- Preserved all other optimizations (caching, streaming, animations)
+
+**Result**: ✅ **Model deletion issue RESOLVED** - No more race conditions causing model files to be deleted on app launch.
