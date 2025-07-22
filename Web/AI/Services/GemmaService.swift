@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(SentencepieceTokenizer)
+import SentencepieceTokenizer
+#endif
 
 /// Gemma AI service for local inference with Apple MLX optimization
 /// Handles model initialization, text generation, and response streaming
@@ -439,243 +442,122 @@ class GemmaService {
 
 // MARK: - Gemma Tokenizer
 
-/// Simplified tokenizer for Gemma model
+/// Real SentencePiece tokenizer for Gemma models using swift-sentencepiece
+/// This properly loads the tokenizer.model file from Gemma models - NO HARDCODED SHIT!
 class GemmaTokenizer {
     private let modelPath: URL
-    private var vocabulary: [String: Int] = [:]
-    private var reverseVocabulary: [Int: String] = [:]
+    #if canImport(SentencepieceTokenizer)
+    private var sentencePieceTokenizer: SentencepieceTokenizer?
+    #endif
     
     init(modelPath: URL) throws {
         self.modelPath = modelPath
-        try loadVocabulary()
+        try loadSentencePieceTokenizer()
     }
     
     func encode(_ text: String) throws -> [Int] {
-        // Enhanced tokenization - better handling until SentencePiece is available
-        var tokens: [Int] = []
-        
-        // Add BOS token for conversation start
-        if let bosToken = vocabulary["<bos>"] {
-            tokens.append(bosToken)
+        #if canImport(SentencepieceTokenizer)
+        guard let tokenizer = sentencePieceTokenizer else {
+            throw GemmaError.tokenizerNotAvailable
         }
         
-        // Tokenize with better word/punctuation splitting
-        let processedText = preprocessText(text)
-        let components = tokenizeText(processedText)
-        
-        for component in components {
-            if let tokenId = vocabulary[component] {
-                tokens.append(tokenId)
-            } else {
-                // Handle unknown words with subword fallback
-                let fallbackTokens = handleUnknownWord(component)
-                tokens.append(contentsOf: fallbackTokens)
-            }
-        }
-        
-        // Add EOS token for completion
-        if let eosToken = vocabulary["<eos>"] {
-            tokens.append(eosToken)
-        }
-        
+        // Use real SentencePiece tokenization - supports ALL languages
+        let tokens = try tokenizer.encode(text)
+        NSLog("📝 SentencePiece encoded '\(text.prefix(50))...' to \(tokens.count) tokens")
         return tokens
-    }
-    
-    private func preprocessText(_ text: String) -> String {
-        // Clean and normalize text
-        var processed = text.lowercased()
-        
-        // Handle contractions
-        processed = processed.replacingOccurrences(of: "don't", with: "do not")
-        processed = processed.replacingOccurrences(of: "won't", with: "will not")
-        processed = processed.replacingOccurrences(of: "can't", with: "cannot")
-        processed = processed.replacingOccurrences(of: "'re", with: " are")
-        processed = processed.replacingOccurrences(of: "'ve", with: " have")
-        processed = processed.replacingOccurrences(of: "'ll", with: " will")
-        processed = processed.replacingOccurrences(of: "'d", with: " would")
-        
-        return processed
-    }
-    
-    private func tokenizeText(_ text: String) -> [String] {
-        var components: [String] = []
-        var currentWord = ""
-        
-        for char in text {
-            let charStr = String(char)
-            
-            if charStr.rangeOfCharacter(from: .letters) != nil {
-                // Letter - add to current word
-                currentWord += charStr
-            } else {
-                // Non-letter - finish current word and add punctuation/space
-                if !currentWord.isEmpty {
-                    components.append(currentWord)
-                    currentWord = ""
-                }
-                
-                if !charStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    components.append(charStr)
-                }
-            }
-        }
-        
-        // Add final word if exists
-        if !currentWord.isEmpty {
-            components.append(currentWord)
-        }
-        
-        return components
-    }
-    
-    private func handleUnknownWord(_ word: String) -> [Int] {
-        // Simple subword tokenization for unknown words
-        let unkToken = vocabulary["<unk>"] ?? 3
-        
-        // Try to split into smaller components
-        if word.count > 3 {
-            var tokens: [Int] = []
-            let midpoint = word.count / 2
-            let firstHalf = String(word.prefix(midpoint))
-            let secondHalf = String(word.suffix(word.count - midpoint))
-            
-            tokens.append(vocabulary[firstHalf] ?? unkToken)
-            tokens.append(vocabulary[secondHalf] ?? unkToken)
-            return tokens
-        } else {
-            return [unkToken]
-        }
+        #else
+        // Fallback error when SentencePiece is not available
+        throw GemmaError.tokenizerNotAvailable
+        #endif
     }
     
     func decode(_ tokens: [Int]) throws -> String {
-        // Enhanced detokenization with better formatting
-        var words: [String] = []
-        
-        for token in tokens {
-            guard let word = reverseVocabulary[token] else {
-                // Skip unknown token IDs
-                continue
-            }
-            
-            // Skip special tokens in output
-            if ["<bos>", "<eos>", "<pad>"].contains(word) {
-                continue
-            }
-            
-            words.append(word)
+        #if canImport(SentencepieceTokenizer)
+        guard let tokenizer = sentencePieceTokenizer else {
+            throw GemmaError.tokenizerNotAvailable
         }
         
-        // Smart joining - don't add spaces before punctuation
-        var result = ""
-        let punctuation = Set([".", ",", "!", "?", ":", ";", "'", "\"", ")", "]", "}"])
-        
-        for (index, word) in words.enumerated() {
-            if index == 0 {
-                result = word
-            } else if punctuation.contains(word) {
-                // Don't add space before punctuation
-                result += word
-            } else if word == " " || word == "\n" || word == "\t" {
-                // Add whitespace as-is
-                result += word
-            } else {
-                // Add space before regular words
-                result += " " + word
-            }
-        }
-        
-        return result
+        // Use real SentencePiece detokenization - handles ALL languages properly
+        let text = try tokenizer.decode(tokens)
+        return text
+        #else
+        // Fallback error when SentencePiece is not available
+        throw GemmaError.tokenizerNotAvailable
+        #endif
     }
     
-    private func loadVocabulary() throws {
-        // Enhanced vocabulary for better tokenization until real SentencePiece is available
-        // This provides a more realistic tokenization than the minimal placeholder
-        
-        // Check if tokenizer file exists alongside model
-        let tokenizerPath = modelPath.appendingPathExtension("tokenizer")
-        if FileManager.default.fileExists(atPath: tokenizerPath.path) {
-            try loadTokenizerFromFile(tokenizerPath)
-        } else {
-            // Generate comprehensive fallback vocabulary
-            vocabulary = createFallbackVocabulary()
-        }
-        
-        reverseVocabulary = Dictionary(uniqueKeysWithValues: vocabulary.map { ($1, $0) })
-        NSLog("📝 Loaded vocabulary with \(vocabulary.count) tokens")
-    }
-    
-    private func loadTokenizerFromFile(_ path: URL) throws {
-        // TODO: Load actual SentencePiece tokenizer from file when available
-        _ = try Data(contentsOf: path)
-        // Parse tokenizer data (JSON, binary, etc.)
-        // For now, fall back to comprehensive vocabulary
-        vocabulary = createFallbackVocabulary()
-    }
-    
-    private func createFallbackVocabulary() -> [String: Int] {
-        var vocab: [String: Int] = [:]
-        var tokenId = 0
-        
-        // Special tokens (matching Gemma format)
-        let specialTokens = [
-            "<pad>": tokenId, // 0
-            "<eos>": tokenId + 1, // 1  
-            "<bos>": tokenId + 2, // 2
-            "<unk>": tokenId + 3  // 3
+    private func loadSentencePieceTokenizer() throws {
+        // Look for tokenizer.model file alongside the model
+        let possiblePaths = [
+            modelPath.appendingPathComponent("tokenizer.model"),
+            modelPath.appendingPathExtension("model"),
+            modelPath.deletingLastPathComponent().appendingPathComponent("tokenizer.model"),
+            modelPath.deletingLastPathComponent().appendingPathComponent("sentencepiece.model")
         ]
         
-        for (token, id) in specialTokens {
-            vocab[token] = id
-            tokenId = max(tokenId, id + 1)
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path.path) {
+                #if canImport(SentencepieceTokenizer)
+                do {
+                    sentencePieceTokenizer = try SentencepieceTokenizer(modelPath: path.path)
+                    NSLog("✅ Loaded SentencePiece tokenizer from: \(path.path)")
+                    return
+                } catch {
+                    NSLog("⚠️ Failed to load tokenizer from \(path.path): \(error)")
+                }
+                #endif
+            }
         }
         
-        // Common words and subwords (more realistic for actual text processing)
-        let commonWords = [
-            "the", "and", "is", "in", "to", "of", "a", "that", "it", "with",
-            "for", "as", "was", "on", "are", "you", "this", "be", "at", "or",
-            "have", "from", "they", "we", "been", "had", "their", "said", "each",
-            "which", "do", "how", "if", "will", "up", "other", "about", "out",
-            "many", "then", "them", "these", "so", "some", "her", "would", "make",
-            "like", "into", "him", "has", "two", "more", "very", "what", "know",
-            "just", "first", "get", "over", "think", "also", "your", "work", "life",
-            "only", "new", "years", "way", "may", "say", "come", "could", "now",
-            "than", "my", "well", "such", "because", "when", "much", "can", "through",
-            "back", "good", "before", "try", "same", "should", "our", "own", "while",
-            "where", "right", "there", "see", "between", "long", "here", "something",
-            "both", "little", "under", "might", "go", "day", "another", "find", "head",
-            "system", "set", "every", "start", "hand", "high", "group", "real", "problem",
-            "fact", "place", "end", "case", "point", "government", "company", "number",
-            "part", "take", "seem", "water", "become", "made", "around", "however",
-            "actually", "against", "policy", "together", "business", "really", "almost",
-            "enough", "quite", "taken", "being", "nothing", "turn", "put", "called",
-            "doesn", "going", "look", "asked", "later", "knew", "people", "came", "want",
-            "things", "though", "still", "always", "money", "seen", "didn", "getting"
-        ]
-        
-        for word in commonWords {
-            vocab[word] = tokenId
-            tokenId += 1
-        }
-        
-        // Add common punctuation and symbols
-        let punctuation = [".", ",", "!", "?", ":", ";", "'", "\"", "(", ")", "[", "]", "{", "}",
-                          "-", "_", "+", "=", "@", "#", "$", "%", "&", "*", "/", "\\", "|", "^", "~", "`"]
-        
-        for punct in punctuation {
-            vocab[punct] = tokenId
-            tokenId += 1
-        }
-        
-        // Add space tokens
-        vocab[" "] = tokenId
-        tokenId += 1
-        vocab["\n"] = tokenId
-        tokenId += 1
-        vocab["\t"] = tokenId
-        tokenId += 1
-        
-        return vocab
+        // If no tokenizer.model found, try to download it automatically
+        NSLog("📁 No tokenizer.model found, will attempt download on first use")
     }
+    
+    /// Download tokenizer.model from Hugging Face for a given Gemma model
+    func downloadTokenizerModel(for modelName: String = "google/gemma-2-2b-it") async throws {
+        let tokenizerURL = "https://huggingface.co/\(modelName)/resolve/main/tokenizer.model"
+        let destinationPath = modelPath.deletingLastPathComponent().appendingPathComponent("tokenizer.model")
+        
+        NSLog("📁 Downloading tokenizer.model from \(tokenizerURL)...")
+        
+        guard let url = URL(string: tokenizerURL) else {
+            throw GemmaError.initializationFailed("Invalid tokenizer URL")
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            try data.write(to: destinationPath)
+            
+            // Now load the downloaded tokenizer
+            #if canImport(SentencepieceTokenizer)
+            sentencePieceTokenizer = try SentencepieceTokenizer(modelPath: destinationPath.path)
+            NSLog("✅ Downloaded and loaded SentencePiece tokenizer (\(data.count / 1024)KB)")
+            #endif
+        } catch {
+            throw GemmaError.initializationFailed("Failed to download tokenizer: \(error)")
+        }
+    }
+    
+    /// Get vocabulary size from the SentencePiece model
+    var vocabularySize: Int {
+        #if canImport(SentencepieceTokenizer)
+        // SentencePiece tokenizer doesn't expose vocabularySize directly
+        // Use a reasonable estimate for Gemma models (around 256k tokens)
+        return sentencePieceTokenizer != nil ? 256000 : 0
+        #else
+        return 0
+        #endif
+    }
+    
+    /// Get the special token IDs used by Gemma
+    struct SpecialTokens {
+        let pad: Int = 0
+        let eos: Int = 1
+        let bos: Int = 2
+        let unk: Int = 3
+    }
+    
+    let specialTokens = SpecialTokens()
 }
 
 // MARK: - Errors

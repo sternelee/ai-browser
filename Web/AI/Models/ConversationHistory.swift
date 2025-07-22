@@ -24,9 +24,9 @@ class TokenEstimator {
     }
     
     private static func getAvailableTokenizer() -> GemmaTokenizer? {
-        // For now, return nil - will be connected to actual tokenizer later
-        // when services are properly connected
-        return nil
+        // Try to get tokenizer from available service - will use REAL SentencePiece
+        // This would ideally be injected as a dependency
+        return nil // Will be connected when service architecture is updated
     }
     
     private static func improvedTokenEstimation(for text: String) -> Int {

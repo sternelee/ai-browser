@@ -180,6 +180,33 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         NSLog("❌ AI model download cancelled by user")
     }
     
+    /// Download tokenizer.model if not present - NO MORE HARDCODED VOCABULARY!
+    func downloadTokenizerIfNeeded() async throws {
+        let tokenizerPath = modelsCacheDirectory.appendingPathComponent("tokenizer.model")
+        
+        // Check if tokenizer already exists and is valid
+        if FileManager.default.fileExists(atPath: tokenizerPath.path) {
+            do {
+                try TokenizerDownloader.shared.validateTokenizer(at: tokenizerPath)
+                NSLog("✅ Valid tokenizer.model already exists")
+                return
+            } catch {
+                NSLog("⚠️ Existing tokenizer invalid, re-downloading: \(error)")
+            }
+        }
+        
+        // Download appropriate tokenizer based on system capabilities
+        let recommendedModel = TokenizerDownloader.shared.recommendedModel()
+        NSLog("🚀 Downloading REAL SentencePiece tokenizer for \(recommendedModel.displayName)...")
+        
+        try await TokenizerDownloader.shared.downloadTokenizer(
+            for: recommendedModel,
+            to: tokenizerPath
+        )
+        
+        NSLog("✅ Tokenizer download completed - ready for multilingual tokenization!")
+    }
+    
     // MARK: - Private Methods
     
     /// Intelligent model detection and validation
