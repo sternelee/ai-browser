@@ -239,9 +239,8 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             downloadProgress = 0.0
         }
         
+        // Remove any corrupted existing file if it exists
         let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
-        
-        // Remove any corrupted existing file
         try? fileManager.removeItem(at: modelPath)
         
         NSLog("🔽 Starting AI model download: \(model.name) (\(formatBytes(model.sizeBytes)))")
@@ -251,8 +250,8 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             // Start download with progress tracking
             downloadTask = urlSession.downloadTask(with: model.downloadURL)
             
-            // Use continuation to wait for download completion
-            let tempURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            // Use continuation to wait for download completion and file move
+            let finalModelPath = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
                 downloadContinuation = continuation
                 downloadTask?.resume()
             }
@@ -262,29 +261,10 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
                 downloadProgress = 0.95
             }
             
-            NSLog("📁 Moving downloaded model to final location...")
-            
-            // Ensure destination directory exists
-            let destinationDir = modelPath.deletingLastPathComponent()
-            try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true, attributes: nil)
-            
-            // Verify temp file still exists before moving
-            guard fileManager.fileExists(atPath: tempURL.path) else {
-                throw ModelError.downloadFailed("Temporary download file was removed before move operation")
-            }
-            
-            // Remove any existing file at destination
-            if fileManager.fileExists(atPath: modelPath.path) {
-                try fileManager.removeItem(at: modelPath)
-                NSLog("🗑️ Removed existing model file before moving new download")
-            }
-            
-            // Move to final location
-            try fileManager.moveItem(at: tempURL, to: modelPath)
-            NSLog("✅ Successfully moved model to: \(modelPath.path)")
+            NSLog("📁 Model successfully downloaded and moved to final location")
             
             // Validate downloaded model
-            let isValid = try await validateExistingModel(at: modelPath, expected: model)
+            let isValid = try await validateExistingModel(at: finalModelPath, expected: model)
             
             guard isValid else {
                 throw ModelError.corruptedDownload
@@ -307,6 +287,7 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             }
             
             // Clean up failed download
+            let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
             try? fileManager.removeItem(at: modelPath)
             
             NSLog("❌ AI model download failed: \(error)")
@@ -367,20 +348,45 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         NSLog("✅ AI model download completed, validating...")
         NSLog("📍 Temporary download location: \(location.path)")
         
-        // Verify the temporary file exists and has the expected size
-        if fileManager.fileExists(atPath: location.path) {
-            do {
+        // Immediately move the file to prevent system cleanup
+        do {
+            let model = ModelConfiguration.gemma3n_2B_Q8
+            let modelPath = modelsCacheDirectory.appendingPathComponent(model.filename)
+            
+            // Verify the temporary file exists and has the expected size
+            if fileManager.fileExists(atPath: location.path) {
                 let attributes = try fileManager.attributesOfItem(atPath: location.path)
                 let fileSize = attributes[.size] as? Int64 ?? 0
                 NSLog("📏 Downloaded file size: \(formatBytes(fileSize))")
-            } catch {
-                NSLog("⚠️ Could not read downloaded file attributes: \(error)")
+                
+                // Ensure destination directory exists
+                let destinationDir = modelPath.deletingLastPathComponent()
+                try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true, attributes: nil)
+                
+                // Remove any existing file at destination
+                if fileManager.fileExists(atPath: modelPath.path) {
+                    try fileManager.removeItem(at: modelPath)
+                    NSLog("🗑️ Removed existing model file before moving new download")
+                }
+                
+                // Immediately move to final location to prevent system cleanup
+                try fileManager.moveItem(at: location, to: modelPath)
+                NSLog("✅ Successfully moved model to: \(modelPath.path)")
+                
+                // Resume continuation with the final path
+                downloadContinuation?.resume(returning: modelPath)
+                
+            } else {
+                NSLog("❌ Error: Temporary download file does not exist at expected location")
+                let error = ModelError.downloadFailed("Temporary download file was removed by system")
+                downloadContinuation?.resume(throwing: error)
             }
-        } else {
-            NSLog("❌ Warning: Temporary download file does not exist at expected location")
+            
+        } catch {
+            NSLog("❌ Error moving downloaded model: \(error)")
+            downloadContinuation?.resume(throwing: error)
         }
         
-        downloadContinuation?.resume(returning: location)
         downloadContinuation = nil
     }
     

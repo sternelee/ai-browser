@@ -38,11 +38,12 @@ class AIAssistant: ObservableObject {
         // Get optimal configuration for current hardware
         self.aiConfiguration = HardwareDetector.getOptimalAIConfiguration()
         
-        // Initialize Gemma service with configuration
+        // Initialize Gemma service with configuration and shared services
         self.gemmaService = GemmaService(
             configuration: aiConfiguration,
             mlxWrapper: mlxWrapper,
-            privacyManager: privacyManager
+            privacyManager: privacyManager,
+            onDemandModelService: onDemandModelService
         )
         
         // Set up bindings

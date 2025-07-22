@@ -9,6 +9,7 @@ class GemmaService {
     private let configuration: AIConfiguration
     private let mlxWrapper: MLXWrapper
     private let privacyManager: PrivacyManager
+    private let onDemandModelService: OnDemandModelService
     
     private var isModelLoaded: Bool = false
     private var modelWeights: [String: Any]? = nil
@@ -19,11 +20,13 @@ class GemmaService {
     init(
         configuration: AIConfiguration,
         mlxWrapper: MLXWrapper,
-        privacyManager: PrivacyManager
+        privacyManager: PrivacyManager,
+        onDemandModelService: OnDemandModelService
     ) {
         self.configuration = configuration
         self.mlxWrapper = mlxWrapper
         self.privacyManager = privacyManager
+        self.onDemandModelService = onDemandModelService
         
         NSLog("🔮 Gemma Service initialized with \(configuration.modelVariant)")
     }
@@ -38,9 +41,8 @@ class GemmaService {
         }
         
         do {
-            // Get model path from on-demand service
-            let onDemandService = OnDemandModelService()
-            guard let modelPath = onDemandService.getModelPath() else {
+            // Get model path from shared on-demand service
+            guard let modelPath = onDemandModelService.getModelPath() else {
                 throw GemmaError.modelNotAvailable("AI model file not found - needs download")
             }
             
