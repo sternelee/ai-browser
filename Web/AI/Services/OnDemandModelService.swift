@@ -165,23 +165,30 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         
         let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
 
-        // Return GGUF model path if it exists (we now use GGUF models directly)
-        guard fileManager.fileExists(atPath: modelPath.path) else {
-            Task {
-                await MainActor.run {
-                    isModelReady = false
-                    downloadState = .notStarted
-                }
-            }
+        // CRITICAL FIX: Don't destructively reset model status on every call
+        // This was causing race conditions where validated models got deleted
+        // Only log if file exists, but don't reset status - validation happens elsewhere
+        if fileManager.fileExists(atPath: modelPath.path) {
+            NSLog("✅ Found local GGUF model: \(model.filename)")
+            return modelPath
+        } else {
+            NSLog("⚠️ Model path missing but status shows ready - possible race condition")
             return nil
         }
-
-        NSLog("✅ Found local GGUF model: \(model.filename)")
-        return modelPath
     }
     
     /// Start AI initialization - downloads model if needed
     func initializeAI() async throws {
+        // CRITICAL FIX: Double-check with file system before starting download
+        // This prevents race condition where model exists but status isn't updated yet
+        let model = ModelConfiguration.gemma3n_2B_Q8
+        let modelPath = modelsPersistentDirectory.appendingPathComponent(model.filename)
+        
+        if fileManager.fileExists(atPath: modelPath.path) && isModelReady {
+            NSLog("✅ AI model already ready - no download needed")
+            return
+        }
+        
         // If already ready, no action needed
         if isAIReady() {
             NSLog("✅ AI model already ready - no download needed")
@@ -194,7 +201,19 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             return
         }
         
-        // Start download process
+        // Final safety check: if model file exists but state is wrong, re-validate instead of downloading
+        if fileManager.fileExists(atPath: modelPath.path) {
+            NSLog("🔄 Model file exists but not marked ready - re-validating instead of downloading")
+            await performIntelligentModelCheck()
+            
+            // After validation, check if ready now
+            if isAIReady() {
+                NSLog("✅ Model validated successfully - no download needed")
+                return
+            }
+        }
+        
+        // Start download process only if truly needed
         try await downloadModelIfNeeded()
     }
     
