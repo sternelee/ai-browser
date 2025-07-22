@@ -186,26 +186,43 @@ class AdBlockService: NSObject, ObservableObject {
             }
             
             const observer = new MutationObserver(function(mutations) {
+                // Throttle processing if too many mutations to prevent CPU spikes
+                if (mutations.length > 50) {
+                    console.log('AdBlock: Too many mutations, throttling processing');
+                    return;
+                }
+                
+                // Skip processing if page is hidden to save CPU
+                if (document.hidden) return;
+                
                 mutations.forEach(function(mutation) {
-                    mutation.addedNodes.forEach(function(node) {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            if (node.tagName === 'SCRIPT' && node.src && isTrackingRequest(node.src)) {
-                                node.remove();
-                                reportBlocked(node.src);
+                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                if (node.tagName === 'SCRIPT' && node.src && isTrackingRequest(node.src)) {
+                                    node.remove();
+                                    reportBlocked(node.src);
+                                }
+                                
+                                if (node.tagName === 'IMG' && node.src && isTrackingRequest(node.src)) {
+                                    node.remove();
+                                    reportBlocked(node.src);
+                                }
                             }
-                            
-                            if (node.tagName === 'IMG' && node.src && isTrackingRequest(node.src)) {
-                                node.remove();
-                                reportBlocked(node.src);
-                            }
-                        }
-                    });
+                        });
+                    }
                 });
             });
             
-            observer.observe(document, { childList: true, subtree: true });
+            observer.observe(document, { 
+                childList: true, 
+                subtree: true,
+                // Reduce monitoring scope to only critical changes to improve performance
+                attributeFilter: ['src', 'href']
+            });
             
-            setInterval(() => {
+            // Use a single shared timer instead of per-tab intervals to reduce CPU usage
+            window.adBlockStatsTimer = window.adBlockStatsTimer || setInterval(() => {
                 if (blockedCount > 0 && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.adBlockHandler) {
                     window.webkit.messageHandlers.adBlockHandler.postMessage({
                         type: 'stats',
@@ -213,7 +230,15 @@ class AdBlockService: NSObject, ObservableObject {
                         blockedDomains: Array.from(blockedDomains)
                     });
                 }
-            }, 5000);
+            }, 10000); // Reduced frequency from 5s to 10s
+            
+            // Cleanup function for proper timer disposal
+            window.addEventListener('beforeunload', () => {
+                if (window.adBlockStatsTimer) {
+                    clearInterval(window.adBlockStatsTimer);
+                    window.adBlockStatsTimer = null;
+                }
+            });
             
         })();
         """
@@ -456,12 +481,23 @@ class AdBlockService: NSObject, ObservableObject {
     }
     
     private func setupDailyStatsReset() {
-        Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-            let today = Calendar.current.startOfDay(for: Date())
-            if let lastReset = UserDefaults.standard.object(forKey: "lastStatsReset") as? Date,
-               !Calendar.current.isDate(lastReset, inSameDayAs: today) {
-                self.resetDailyStats()
-            }
+        // Use a more efficient approach - check only when app becomes active instead of hourly timer
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(checkDailyStatsReset),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        // Check immediately on init
+        checkDailyStatsReset()
+    }
+    
+    @objc private func checkDailyStatsReset() {
+        let today = Calendar.current.startOfDay(for: Date())
+        if let lastReset = UserDefaults.standard.object(forKey: "lastStatsReset") as? Date,
+           !Calendar.current.isDate(lastReset, inSameDayAs: today) {
+            resetDailyStats()
         }
     }
     

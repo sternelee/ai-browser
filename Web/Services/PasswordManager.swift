@@ -310,7 +310,7 @@ class PasswordManager: NSObject, ObservableObject {
             
             let formObserver;
             let lastFormCheck = 0;
-            const FORM_CHECK_INTERVAL = 1000;
+            const FORM_CHECK_INTERVAL = 3000; // Increased from 1s to 3s to reduce CPU usage
             
             function findLoginForms() {
                 const forms = document.querySelectorAll('form');
@@ -404,6 +404,9 @@ class PasswordManager: NSObject, ObservableObject {
                 if (now - lastFormCheck < FORM_CHECK_INTERVAL) return;
                 lastFormCheck = now;
                 
+                // Skip checking if page is hidden to save CPU
+                if (document.hidden) return;
+                
                 const loginForms = findLoginForms();
                 
                 loginForms.forEach(loginForm => {
@@ -421,22 +424,39 @@ class PasswordManager: NSObject, ObservableObject {
                 checkForForms();
             }
             
-            setInterval(checkForForms, FORM_CHECK_INTERVAL);
+            // Use a single shared timer to reduce CPU load across multiple tabs
+            window.passwordFormTimer = window.passwordFormTimer || setInterval(checkForForms, FORM_CHECK_INTERVAL);
+            
+            // Cleanup timer on page unload
+            window.addEventListener('beforeunload', () => {
+                if (window.passwordFormTimer) {
+                    clearInterval(window.passwordFormTimer);
+                    window.passwordFormTimer = null;
+                }
+            });
             
             formObserver = new MutationObserver(function(mutations) {
+                // Throttle mutation observer to prevent excessive CPU usage
+                if (document.hidden) return;
+                
                 let shouldCheck = false;
                 mutations.forEach(function(mutation) {
-                    mutation.addedNodes.forEach(function(node) {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            if (node.tagName === 'FORM' || node.querySelector('form')) {
-                                shouldCheck = true;
+                    if (mutation.addedNodes.length > 0) {
+                        for (let node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                if (node.tagName === 'FORM' || node.querySelector && node.querySelector('form')) {
+                                    shouldCheck = true;
+                                    break;
+                                }
                             }
                         }
-                    });
+                    }
                 });
                 
                 if (shouldCheck) {
-                    setTimeout(checkForForms, 100);
+                    // Debounce the check to prevent rapid successive calls
+                    if (window.formCheckTimeout) clearTimeout(window.formCheckTimeout);
+                    window.formCheckTimeout = setTimeout(checkForForms, 500);
                 }
             });
             

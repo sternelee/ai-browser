@@ -8,11 +8,9 @@ class FocusCoordinator: ObservableObject {
     @Published private var _activeURLBarID: String?
     @Published private var _isAnyURLBarFocused: Bool = false
     
-    // Debounce timer to prevent rapid focus changes
-    private var debounceTimer: Timer?
-    private let debounceDelay: TimeInterval = 0.1
+    // Reduced complexity - no debounce timer to prevent conflicts with Google search
     // Timeout after which a locked focus is considered stale (seconds)
-    private let focusTimeout: TimeInterval = 2.0
+    private let focusTimeout: TimeInterval = 1.0 // Reduced from 2s to 1s for faster recovery
 
     // Tracks the last time focus was updated – used for stale lock detection
     private var lastFocusUpdate: Date?
@@ -28,12 +26,9 @@ class FocusCoordinator: ObservableObject {
     }
     
     func setFocusedURLBar(_ id: String, focused: Bool) {
-        // Debounce rapid focus changes to prevent lock-ups
-        debounceTimer?.invalidate()
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: debounceDelay, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.updateFocusState(id: id, focused: focused)
-            }
+        // Direct update without debouncing to prevent conflicts with Google's focus handling
+        DispatchQueue.main.async {
+            self.updateFocusState(id: id, focused: focused)
         }
     }
     
@@ -42,8 +37,8 @@ class FocusCoordinator: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?._activeURLBarID = nil
             self?._isAnyURLBarFocused = false
-            self?.debounceTimer?.invalidate()
             self?.lastFocusUpdate = nil
+            print("⚗️ Focus coordinator cleared all focus locks")
         }
     }
     
@@ -85,15 +80,24 @@ class FocusCoordinator: ObservableObject {
     // Force focus on a specific URL bar, clearing any existing locks
     func forceFocus(_ id: String) {
         DispatchQueue.main.async { [weak self] in
-            self?.debounceTimer?.invalidate()
             self?._activeURLBarID = id
             self?._isAnyURLBarFocused = true
             self?.lastFocusUpdate = Date()
+            print("⚗️ Force focus applied to URL bar: \(id)")
+        }
+    }
+    
+    // Special handling for Google.com to prevent focus conflicts
+    func handleGoogleNavigation() {
+        // Clear focus locks when navigating to Google to prevent conflicts with their search input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.clearAllFocus()
+            print("⚗️ Google navigation detected - focus cleared to prevent conflicts")
         }
     }
     
     deinit {
-        debounceTimer?.invalidate()
+        // No timers to clean up since we removed debounce timer
     }
 }
 

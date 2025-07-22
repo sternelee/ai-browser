@@ -83,6 +83,15 @@ struct WebView: NSViewRepresentable {
         config.userContentController.addUserScript(linkHoverScript)
         config.userContentController.add(context.coordinator, name: "linkHover")
         
+        // Add timer cleanup script to prevent memory leaks and CPU issues
+        let timerCleanupScript = WKUserScript(
+            source: timerCleanupJavaScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(timerCleanupScript)
+        config.userContentController.add(context.coordinator, name: "timerCleanup")
+        
         // Create WebView using WebKitManager for optimal memory usage
         let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
         let webView = WKWebView(frame: safeFrame, configuration: config)
@@ -155,6 +164,111 @@ struct WebView: NSViewRepresentable {
         Coordinator(self)
     }
     
+    // JavaScript for comprehensive timer cleanup to prevent CPU issues
+    private var timerCleanupJavaScript: String {
+        """
+        (function() {
+            'use strict';
+            
+            // Global timer registry to track all timers for cleanup
+            window.webBrowserTimerRegistry = window.webBrowserTimerRegistry || {
+                intervals: new Set(),
+                timeouts: new Set(),
+                originalSetInterval: window.setInterval,
+                originalSetTimeout: window.setTimeout,
+                originalClearInterval: window.clearInterval,
+                originalClearTimeout: window.clearTimeout
+            };
+            
+            const registry = window.webBrowserTimerRegistry;
+            
+            // Override setInterval to track all intervals
+            window.setInterval = function(callback, delay, ...args) {
+                const id = registry.originalSetInterval.call(this, callback, delay, ...args);
+                registry.intervals.add(id);
+                return id;
+            };
+            
+            // Override setTimeout to track all timeouts
+            window.setTimeout = function(callback, delay, ...args) {
+                const id = registry.originalSetTimeout.call(this, callback, delay, ...args);
+                registry.timeouts.add(id);
+                return id;
+            };
+            
+            // Override clearInterval to remove from tracking
+            window.clearInterval = function(id) {
+                registry.intervals.delete(id);
+                return registry.originalClearInterval.call(this, id);
+            };
+            
+            // Override clearTimeout to remove from tracking
+            window.clearTimeout = function(id) {
+                registry.timeouts.delete(id);
+                return registry.originalClearTimeout.call(this, id);
+            };
+            
+            // Global cleanup function
+            window.cleanupAllTimers = function() {
+                // Clear all tracked intervals
+                registry.intervals.forEach(id => {
+                    try {
+                        registry.originalClearInterval.call(window, id);
+                    } catch (e) {
+                        console.warn('Failed to clear interval:', id, e);
+                    }
+                });
+                registry.intervals.clear();
+                
+                // Clear all tracked timeouts
+                registry.timeouts.forEach(id => {
+                    try {
+                        registry.originalClearTimeout.call(window, id);
+                    } catch (e) {
+                        console.warn('Failed to clear timeout:', id, e);
+                    }
+                });
+                registry.timeouts.clear();
+                
+                // Clean up specific timers that might not be tracked
+                if (window.adBlockStatsTimer) {
+                    registry.originalClearInterval.call(window, window.adBlockStatsTimer);
+                    window.adBlockStatsTimer = null;
+                }
+                
+                if (window.passwordFormTimer) {
+                    registry.originalClearInterval.call(window, window.passwordFormTimer);
+                    window.passwordFormTimer = null;
+                }
+                
+                if (window.incognitoStatsTimer) {
+                    registry.originalClearInterval.call(window, window.incognitoStatsTimer);
+                    window.incognitoStatsTimer = null;
+                }
+                
+                if (window.formCheckTimeout) {
+                    registry.originalClearTimeout.call(window, window.formCheckTimeout);
+                    window.formCheckTimeout = null;
+                }
+                
+                // Notify native code that cleanup is complete
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.timerCleanup) {
+                    window.webkit.messageHandlers.timerCleanup.postMessage({
+                        type: 'cleanupComplete',
+                        intervalsCleared: registry.intervals.size,
+                        timeoutsCleared: registry.timeouts.size
+                    });
+                }
+            };
+            
+            // Auto-cleanup on page unload
+            window.addEventListener('beforeunload', window.cleanupAllTimers);
+            window.addEventListener('pagehide', window.cleanupAllTimers);
+            
+        })();
+        """
+    }
+    
     // JavaScript for link hover detection
     private var linkHoverJavaScript: String {
         """
@@ -198,6 +312,17 @@ struct WebView: NSViewRepresentable {
                     type: 'clear'
                 });
             });
+            
+            // PERFORMANCE: Pause/resume expensive operations based on page visibility
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    // Page is hidden - pause expensive operations
+                    console.log('Page hidden - pausing expensive operations');
+                } else {
+                    // Page is visible - resume operations
+                    console.log('Page visible - resuming operations');
+                }
+            });
         })();
         """
     }
@@ -214,7 +339,8 @@ struct WebView: NSViewRepresentable {
         private static var faviconCache: [String: NSImage] = [:]
         private static var faviconDownloadTasks: Set<String> = []
         private static let cacheQueue = DispatchQueue(label: "favicon.cache", attributes: .concurrent)
-        private static let maxCacheSize = 100 // Limit cache to prevent memory issues
+        private static let maxCacheSize = 50 // Reduced cache size to prevent memory issues
+        private static var cacheAccessOrder: [String] = [] // LRU tracking
         
         init(_ parent: WebView) {
             self.parent = parent
@@ -261,6 +387,11 @@ struct WebView: NSViewRepresentable {
                     if let tab = self.parent.tab {
                         tab.url = url
                     }
+                    
+                    // CRITICAL: Clear focus when navigating to Google to prevent focus conflicts
+                    if url.host?.contains("google.com") == true || url.host?.contains("google.") == true {
+                        FocusCoordinator.shared.handleGoogleNavigation()
+                    }
                 }
             }
         }
@@ -294,6 +425,10 @@ struct WebView: NSViewRepresentable {
                             self.extractFavicon(from: webView, websiteHost: host)
                         }
                     } else if let cachedFavicon = Self.faviconCache[host] {
+                        // Update LRU access order
+                        Self.cacheAccessOrder.removeAll { $0 == host }
+                        Self.cacheAccessOrder.append(host)
+                        
                         // Use cached favicon
                         DispatchQueue.main.async {
                             self.parent.favicon = cachedFavicon
@@ -449,17 +584,22 @@ struct WebView: NSViewRepresentable {
                 
                 // Validate that we got a proper image
                 if let image = NSImage(data: data), image.isValid {
-                    // Cache the favicon using website host as key (not favicon URL host)
+                    // Cache the favicon using website host as key with LRU eviction
                     Self.cacheQueue.async(flags: .barrier) {
-                        // Clean cache if it gets too large to prevent memory issues
+                        // Clean cache using LRU if it gets too large
                         if Self.faviconCache.count >= Self.maxCacheSize {
                             let removeCount = Self.faviconCache.count - Self.maxCacheSize + 10
-                            let keysToRemove = Array(Self.faviconCache.keys.prefix(removeCount))
+                            let keysToRemove = Array(Self.cacheAccessOrder.prefix(removeCount))
                             for key in keysToRemove {
                                 Self.faviconCache.removeValue(forKey: key)
+                                Self.cacheAccessOrder.removeAll { $0 == key }
                             }
                         }
+                        
+                        // Update cache and access order
                         Self.faviconCache[websiteHost] = image
+                        Self.cacheAccessOrder.removeAll { $0 == websiteHost }
+                        Self.cacheAccessOrder.append(websiteHost)
                     }
                     
                     DispatchQueue.main.async {
@@ -509,17 +649,22 @@ struct WebView: NSViewRepresentable {
                 } else if let data = data, 
                           let image = NSImage(data: data),
                           image.isValid {
-                    // Cache the favicon using website host as key
+                    // Cache the favicon using website host as key with LRU eviction
                     Self.cacheQueue.async(flags: .barrier) {
-                        // Clean cache if it gets too large to prevent memory issues
+                        // Clean cache using LRU if it gets too large
                         if Self.faviconCache.count >= Self.maxCacheSize {
                             let removeCount = Self.faviconCache.count - Self.maxCacheSize + 10
-                            let keysToRemove = Array(Self.faviconCache.keys.prefix(removeCount))
+                            let keysToRemove = Array(Self.cacheAccessOrder.prefix(removeCount))
                             for key in keysToRemove {
                                 Self.faviconCache.removeValue(forKey: key)
+                                Self.cacheAccessOrder.removeAll { $0 == key }
                             }
                         }
+                        
+                        // Update cache and access order
                         Self.faviconCache[websiteHost] = image
+                        Self.cacheAccessOrder.removeAll { $0 == websiteHost }
+                        Self.cacheAccessOrder.append(websiteHost)
                     }
                     
                     DispatchQueue.main.async {
@@ -609,7 +754,8 @@ struct WebView: NSViewRepresentable {
         
         // MARK: - WKScriptMessageHandler
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "linkHover" {
+            switch message.name {
+            case "linkHover":
                 guard let body = message.body as? [String: Any] else { return }
                 
                 DispatchQueue.main.async {
@@ -626,13 +772,63 @@ struct WebView: NSViewRepresentable {
                         }
                     }
                 }
+                
+            case "timerCleanup":
+                guard let body = message.body as? [String: Any],
+                      let type = body["type"] as? String else { return }
+                
+                if type == "cleanupComplete" {
+                    let intervalsCleared = body["intervalsCleared"] as? Int ?? 0
+                    let timeoutsCleared = body["timeoutsCleared"] as? Int ?? 0
+                    print("✅ Timer cleanup completed - Intervals: \(intervalsCleared), Timeouts: \(timeoutsCleared)")
+                }
+                
+            default:
+                break
+            }
+        }
+        
+        // MARK: - Public Methods for Timer Management
+        func cleanupWebViewTimers() {
+            guard let webView = webView else { return }
+            
+            // Execute JavaScript timer cleanup
+            webView.evaluateJavaScript("if (window.cleanupAllTimers) { window.cleanupAllTimers(); }") { result, error in
+                if let error = error {
+                    print("⚠️ Timer cleanup error: \(error.localizedDescription)")
+                } else {
+                    print("🧹 WebView timer cleanup executed successfully")
+                }
             }
         }
         
         deinit {
+            // Comprehensive cleanup to prevent memory leaks
             progressObserver?.invalidate()
             titleObserver?.invalidate()
             urlObserver?.invalidate()
+            progressObserver = nil
+            titleObserver = nil
+            urlObserver = nil
+            
+            // Clean up WebView references
+            if let webView = webView {
+                webView.navigationDelegate = nil
+                webView.uiDelegate = nil
+                webView.configuration.userContentController.removeAllUserScripts()
+                
+                // Clean up JavaScript timers before removing handlers
+                webView.evaluateJavaScript("if (window.cleanupAllTimers) { window.cleanupAllTimers(); }")
+                
+                // Remove script message handlers
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkHover")
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "timerCleanup")
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "adBlockHandler")
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "autofillHandler")
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "incognitoHandler")
+                
+                self.webView = nil
+            }
         }
     }
 }

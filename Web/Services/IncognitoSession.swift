@@ -175,8 +175,8 @@ class IncognitoSession: NSObject, ObservableObject {
                 // Properties might already be defined
             }
             
-            // Report blocked requests periodically
-            setInterval(() => {
+            // Use shared timer for incognito tracking stats to reduce CPU usage
+            window.incognitoStatsTimer = window.incognitoStatsTimer || setInterval(() => {
                 if (blockedRequests > 0 && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.incognitoHandler) {
                     window.webkit.messageHandlers.incognitoHandler.postMessage({
                         type: 'trackingBlocked',
@@ -184,7 +184,15 @@ class IncognitoSession: NSObject, ObservableObject {
                     });
                     blockedRequests = 0;
                 }
-            }, 5000);
+            }, 15000); // Increased from 5s to 15s for incognito mode
+            
+            // Cleanup timer on page unload
+            window.addEventListener('beforeunload', () => {
+                if (window.incognitoStatsTimer) {
+                    clearInterval(window.incognitoStatsTimer);
+                    window.incognitoStatsTimer = null;
+                }
+            });
             
         })();
         """
