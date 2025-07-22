@@ -28,7 +28,6 @@ struct TopBarTabView: View {
                 .padding(.horizontal, 4)
             
             tabScrollView
-            controlsSection
         }
         .frame(height: 40)
         .dropDestination(for: Web.Tab.self) { tabs, location in
@@ -58,18 +57,15 @@ struct TopBarTabView: View {
                         TopBarTabPreview(tab: tab)
                     }
                 }
+                
+                // New tab button positioned after tabs
+                newTabButton
+                    .padding(.leading, 8)
             }
             .padding(.horizontal, 12)
         }
     }
     
-    private var controlsSection: some View {
-        HStack(spacing: 8) {
-            newTabButton
-            menuButton
-        }
-        .padding(.trailing, 12)
-    }
     
     private var topBarBackground: some View {
         ZStack {
@@ -121,19 +117,6 @@ struct TopBarTabView: View {
         .buttonStyle(PlainButtonStyle())
     }
     
-    private var menuButton: some View {
-        Button(action: showMenu) {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color.secondary)
-                .frame(width: 32, height: 28)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private func showMenu() {
-        // Show browser menu
-    }
     
     private func handleTabDrop(tabs: [Web.Tab], location: CGPoint) {
         guard let droppedTab = tabs.first,
