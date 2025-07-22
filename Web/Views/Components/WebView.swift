@@ -281,9 +281,9 @@ struct WebView: NSViewRepresentable {
                 }
             };
             
-            // Auto-cleanup on page unload
+            // Only cleanup on actual navigation away from page, not visibility changes
             window.addEventListener('beforeunload', window.cleanupAllTimers);
-            window.addEventListener('pagehide', window.cleanupAllTimers);
+            // Removed 'pagehide' event - too aggressive and interferes with focus management
             
         })();
         """
@@ -454,6 +454,21 @@ struct WebView: NSViewRepresentable {
                         }
                     }
                 }
+            }
+        }
+
+        // Guard-rail: if the WebContent process crashes (common on heavy WebGL
+        // pages or under memory pressure) the WKWebView turns blank and no
+        // page inputs work.  This delegate method lets us notice the crash
+        // immediately and attempt an automatic reload so the tab recovers
+        // without forcing the user to close/reopen it.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // Simple heuristic: if we have a URL attempt a normal reload.
+            if webView.url != nil {
+                NSLog("🔄 WebContent process terminated – reloading tab")
+                webView.reload()
+            } else {
+                NSLog("⚠️ WebContent process terminated but no URL to reload")
             }
         }
         
