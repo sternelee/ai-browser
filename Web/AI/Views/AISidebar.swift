@@ -132,17 +132,33 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func chatMessagesArea() -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if !aiAssistant.isInitialized {
-                    // Initialization status
-                    aiInitializationView()
-                } else {
-                    // Chat messages will be added in next phase
-                    chatMessagesPlaceholder()
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if !aiAssistant.isInitialized {
+                        // Initialization status
+                        aiInitializationView()
+                    } else if aiAssistant.messages.isEmpty {
+                        // Show placeholder when no messages
+                        chatMessagesPlaceholder()
+                    } else {
+                        // Display actual chat messages
+                        ForEach(aiAssistant.messages) { message in
+                            ChatBubbleView(message: message)
+                                .id(message.id)
+                        }
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+            .onReceive(aiAssistant.$isProcessing) { _ in
+                // Auto-scroll to bottom when new messages arrive
+                if let lastMessage = aiAssistant.messages.last {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
                 }
             }
-            .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

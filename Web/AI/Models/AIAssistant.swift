@@ -54,6 +54,16 @@ class AIAssistant: ObservableObject {
     
     // MARK: - Public Interface
     
+    /// Get current conversation messages for UI display
+    var messages: [ConversationMessage] {
+        conversationHistory.getRecentMessages()
+    }
+    
+    /// Get message count for UI binding
+    var messageCount: Int {
+        conversationHistory.messageCount
+    }
+    
     /// Initialize the AI system with on-demand model downloading
     func initialize() async {
         updateStatus("Initializing AI system...")
@@ -264,6 +274,15 @@ class AIAssistant: ObservableObject {
     }
     
     private func setupBindings() {
+        // Bind conversation history changes to trigger UI updates
+        conversationHistory.$messageCount
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                // Trigger UI update by changing a published property
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+        
         // Bind on-demand model status  
         onDemandModelService.$isModelReady
             .receive(on: DispatchQueue.main)
