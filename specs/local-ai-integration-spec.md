@@ -84,27 +84,39 @@ Web/
 
 ### Phase 11: Context-Aware Chat Interface
 **Timeline: Week 11**
+**Dependencies: Phase 10 completed**
+**Goal**: Create the AI chat UI and integrate with the established AI infrastructure
 
-1. **Right Sidebar AI Chat**
-   - Collapsible right sidebar with glass morphism
-   - Chat interface with message bubbles (user/assistant)
-   - Smooth expand/collapse animations
-   - Keyboard shortcut: `Cmd+Shift+A` (AI Assistant)
-   - Auto-expand on AI interaction, auto-collapse on idle
+#### Next Implementation Tasks
+1. **Right Sidebar AI Chat UI**
+   - [ ] Create AISidebar.swift with collapsible right panel
+   - [ ] Implement ChatBubbleView.swift for user/assistant messages
+   - [ ] Add glass morphism styling consistent with browser theme
+   - [ ] Integrate with existing BrowserView.swift layout
+   - [ ] Add keyboard shortcut: `Cmd+Shift+A` (AI Assistant)
 
-2. **Context Visualization**
-   - Visual indicators showing which tabs are being referenced
-   - Tab context preview cards within chat
-   - History timeline visualization for referenced content
-   - Smart context suggestions ("Would you like me to analyze this tab?")
-   - Context confidence indicators
+2. **AI Integration & User Flow**
+   - [ ] Connect AISidebar to existing AIAssistant service
+   - [ ] Implement first AI interaction trigger (show download dialog)
+   - [ ] Add download progress UI for model initialization
+   - [ ] Handle AI model download UX flow
+   - [ ] Create AI status indicator in browser interface
 
-3. **Intelligent Tab Understanding**
-   - Automatic tab content summarization on focus change
-   - Page structure understanding (headers, key content, forms)
-   - Multi-tab comparison and analysis capabilities
-   - Cross-tab relationship detection
-   - Dynamic context relevance scoring
+3. **Basic Chat Functionality**
+   - [ ] Text input field with send button
+   - [ ] Display conversation history from ConversationHistory service
+   - [ ] Show real-time typing indicators during AI responses
+   - [ ] Handle streaming responses from GemmaService
+   - [ ] Basic error handling for AI failures
+
+#### Ready Foundation Components
+- ✅ **AIAssistant**: Ready to process chat queries
+- ✅ **OnDemandModelService**: Handles model download/validation
+- ✅ **ConversationHistory**: Manages chat persistence
+- ✅ **GemmaService**: Provides streaming AI responses
+- ✅ **PrivacyManager**: Ensures encrypted local storage
+
+**Next Step**: Begin with AISidebar.swift implementation to create the chat interface foundation.
 
 ### Phase 12: Advanced AI Interactions
 **Timeline: Week 12**
