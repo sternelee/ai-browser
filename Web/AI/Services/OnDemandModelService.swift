@@ -3,7 +3,7 @@ import Combine
 
 /// On-demand model service for efficient app distribution
 /// Intelligently detects existing models and downloads only when needed
-class OnDemandModelService: ObservableObject {
+class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelegate {
     
     // MARK: - Published Properties
     
@@ -60,6 +60,7 @@ class OnDemandModelService: ObservableObject {
     private let fileManager = FileManager.default
     private var downloadTask: URLSessionDownloadTask?
     private var urlSession: URLSession
+    private var downloadContinuation: CheckedContinuation<URL, Error>?
     
     // MARK: - Paths
     
@@ -75,14 +76,20 @@ class OnDemandModelService: ObservableObject {
     
     // MARK: - Initialization
     
-    init() {
-        // Configure URL session for large downloads
+    override init() {
+        // Configure URL session for large downloads with delegate
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 7200 // 2 hours for 5GB download
         config.waitsForConnectivity = true
         
+        // Initialize urlSession before super.init()
         self.urlSession = URLSession(configuration: config)
+        
+        super.init()
+        
+        // Update session with delegate after super.init()
+        self.urlSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         
         // Immediately check for existing model on initialization
         Task {
@@ -236,14 +243,21 @@ class OnDemandModelService: ObservableObject {
         NSLog("💡 This is a one-time download - future app launches will be instant")
         
         do {
-            // Download with progress tracking
-            let (tempURL, _) = try await urlSession.download(from: model.downloadURL)
+            // Start download with progress tracking
+            downloadTask = urlSession.downloadTask(with: model.downloadURL)
+            
+            // Use continuation to wait for download completion
+            let tempURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                downloadContinuation = continuation
+                downloadTask?.resume()
+            }
             
             await MainActor.run {
                 downloadState = .validating
                 downloadProgress = 0.95
             }
             
+            NSLog("📁 Moving downloaded model to final location...")
             // Move to final location
             try fileManager.moveItem(at: tempURL, to: modelPath)
             
@@ -308,6 +322,37 @@ class OnDemandModelService: ObservableObject {
         formatter.allowedUnits = [.useGB, .useMB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+    
+    // MARK: - URLSessionDownloadDelegate
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        // Update progress on main thread
+        DispatchQueue.main.async {
+            let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            self.downloadProgress = min(max(progress, 0.0), 0.95) // Cap at 95% until validation
+            
+            // Log progress periodically
+            if Int(progress * 100) % 10 == 0 {
+                let downloaded = self.formatBytes(totalBytesWritten)
+                let total = self.formatBytes(totalBytesExpectedToWrite)
+                NSLog("📊 AI model download progress: \(Int(progress * 100))% (\(downloaded) / \(total))")
+            }
+        }
+    }
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        NSLog("✅ AI model download completed, validating...")
+        downloadContinuation?.resume(returning: location)
+        downloadContinuation = nil
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            NSLog("❌ AI model download failed: \(error.localizedDescription)")
+            downloadContinuation?.resume(throwing: error)
+        }
+        downloadContinuation = nil
     }
 }
 

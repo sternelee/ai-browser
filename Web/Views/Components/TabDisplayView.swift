@@ -49,6 +49,9 @@ struct TabDisplayView: View {
                         // Main web content
                         WebContentArea(tabManager: tabManager)
                             .clipped()
+                        
+                        // AI Assistant sidebar (right side)
+                        AISidebar()
                     }
                 }
                 

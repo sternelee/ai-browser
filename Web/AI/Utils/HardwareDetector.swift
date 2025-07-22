@@ -93,7 +93,7 @@ class HardwareDetector {
         
         // Reserve memory for system and browser operations
         switch shared.processorInfo {
-        case .appleSilicon(let generation):
+        case .appleSilicon(_):
             // Apple Silicon unified memory - can use more aggressively
             if totalGB >= 32 {
                 return min(8, totalGB / 3) // Up to 8GB for AI
@@ -127,7 +127,7 @@ class HardwareDetector {
     /// Get optimal AI configuration for the detected hardware
     static func getOptimalAIConfiguration() -> AIConfiguration {
         switch shared.processorInfo {
-        case .appleSilicon(let generation):
+        case .appleSilicon(_):
             return AIConfiguration(
                 framework: .mlx,
                 modelVariant: .gemma3n_2B, // Single bundled model
@@ -136,7 +136,7 @@ class HardwareDetector {
                 maxMemoryGB: recommendedMemoryLimit,
                 expectedTokensPerSecond: expectedTokensPerSecond
             )
-        case .intel(let cores, let architecture):
+        case .intel(_, _):
             return AIConfiguration(
                 framework: .llamaCpp,
                 modelVariant: .gemma3n_2B, // Same bundled model via llama.cpp
@@ -228,8 +228,11 @@ class HardwareDetector {
     private static func getCoreInformation() -> (logical: Int, performance: Int, efficiency: Int) {
         let logical = getCoreCount()
         
+        // Detect processor type directly without using shared instance
+        let processorType = detectProcessorType()
+        
         // Apple Silicon core detection
-        if isAppleSilicon {
+        if case .appleSilicon = processorType {
             let performance = getIntSysctl("hw.perflevel0.logicalcpu") ?? (logical / 2)
             let efficiency = getIntSysctl("hw.perflevel1.logicalcpu") ?? (logical - performance)
             return (logical, performance, efficiency)
@@ -253,13 +256,48 @@ class HardwareDetector {
     
     // MARK: - Logging
     
+    private func calculateRecommendedMemoryLimit() -> Int {
+        let totalGB = Int(physicalMemory / (1024 * 1024 * 1024))
+        
+        // Reserve memory for system and browser operations
+        switch processorInfo {
+        case .appleSilicon(_):
+            // Apple Silicon unified memory - can use more aggressively
+            if totalGB >= 32 {
+                return min(8, totalGB / 3) // Up to 8GB for AI
+            } else if totalGB >= 16 {
+                return min(4, totalGB / 4) // Up to 4GB for AI
+            } else {
+                return min(2, totalGB / 6) // Up to 2GB for AI
+            }
+        case .intel:
+            // Intel Macs - more conservative due to discrete memory
+            return min(2, totalGB / 8)
+        case .unknown:
+            return min(1, totalGB / 10)
+        }
+    }
+    
+    private func calculateExpectedTokensPerSecond() -> Int {
+        switch processorInfo {
+        case .appleSilicon(let generation):
+            let basePerformance = 80 // M1 baseline
+            return Int(Double(basePerformance) * generation.performanceMultiplier)
+        case .intel(let cores, _):
+            // Intel fallback with llama.cpp
+            return min(40, cores * 5)
+        case .unknown:
+            return 20
+        }
+    }
+    
     private func logHardwareInfo() {
         NSLog("🖥️ Hardware Detection Results:")
         NSLog("   Processor: \(processorInfo)")
-        NSLog("   Memory: \(Self.totalMemoryGB) GB")
+        NSLog("   Memory: \(Int(physicalMemory / (1024 * 1024 * 1024))) GB")
         NSLog("   Cores: \(logicalCores) logical (\(performanceCores) performance, \(efficiencyCores) efficiency)")
-        NSLog("   AI Memory Limit: \(Self.recommendedMemoryLimit) GB")
-        NSLog("   Expected Performance: \(Self.expectedTokensPerSecond) tokens/second")
+        NSLog("   AI Memory Limit: \(calculateRecommendedMemoryLimit()) GB")
+        NSLog("   Expected Performance: \(calculateExpectedTokensPerSecond()) tokens/second")
     }
 }
 

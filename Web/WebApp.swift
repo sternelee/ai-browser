@@ -140,6 +140,18 @@ struct BrowserCommands: Commands {
             DownloadsMenuContent()
         }
         
+        CommandMenu("AI Assistant") {
+            Button("Toggle AI Sidebar") {
+                NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            
+            Button("Focus AI Input") {
+                NotificationCenter.default.post(name: .focusAIInput, object: nil)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .option])
+        }
+        
         CommandGroup(after: .windowArrangement) {
             
             Button("Developer Tools") {
@@ -223,6 +235,9 @@ extension Notification.Name {
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
     static let focusURLBarRequested = Notification.Name("focusURLBarRequested")
     
+    // AI Assistant shortcuts
+    static let toggleAISidebar = Notification.Name("toggleAISidebar")
+    static let focusAIInput = Notification.Name("focusAIInput")
     
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
