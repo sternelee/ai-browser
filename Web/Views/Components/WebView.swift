@@ -51,22 +51,11 @@ struct WebView: NSViewRepresentable {
     let onDownloadRequest: ((URL, String?) -> Void)?
     
     func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
+        // Use shared WebKitManager for optimized memory usage and shared process pool
+        let isIncognito = tab?.isIncognito ?? false
+        let config = WebKitManager.shared.createConfiguration(isIncognito: isIncognito)
         
-        // Enhanced security and privacy settings
-        config.allowsAirPlayForMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-        config.preferences.isElementFullscreenEnabled = true
-        config.preferences.isSiteSpecificQuirksModeEnabled = true
-        
-        // Configure data store based on incognito mode
-        if let tab = tab, tab.isIncognito {
-            config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
-        } else {
-            config.websiteDataStore = WKWebsiteDataStore.default()
-        }
-        
-        // Enhanced privacy settings
+        // Enhanced privacy settings specific to this app
         config.preferences.isFraudulentWebsiteWarningEnabled = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         
@@ -85,25 +74,28 @@ struct WebView: NSViewRepresentable {
         // User agent customization - Use modern Safari user agent to ensure proper Google homepage rendering
         config.applicationNameForUserAgent = "Web/1.0 Safari/605.1.15"
         
-        // Content blocking and security setup
-        let contentController = WKUserContentController()
-        
-        // Add link hover detection script
+        // Add link hover detection script to existing user content controller
         let linkHoverScript = WKUserScript(
             source: linkHoverJavaScript,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: false
         )
-        contentController.addUserScript(linkHoverScript)
-        contentController.add(context.coordinator, name: "linkHover")
+        config.userContentController.addUserScript(linkHoverScript)
+        config.userContentController.add(context.coordinator, name: "linkHover")
         
-        config.userContentController = contentController
-        
-        // Create WebView with safe frame to prevent frame calculation issues
+        // Create WebView using WebKitManager for optimal memory usage
         let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
         let webView = WKWebView(frame: safeFrame, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
+        
+        // Apply standard WebKit settings from manager
+        webView.customUserAgent = "Web/1.0 Safari/605.1.15"
+        if #available(macOS 13.3, *) {
+            webView.isInspectable = true
+        }
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsMagnification = true
         
         // Configure security services after webview creation
         AdBlockService.shared.configureWebView(webView)

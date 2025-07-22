@@ -23,6 +23,14 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     @Published var snapshot: NSImage?
     @Published var memoryUsage: Int64 = 0
     
+    // Enhanced state preservation for true hibernation
+    @Published var scrollPosition: CGPoint = .zero
+    @Published var zoomScale: CGFloat = 1.0
+    @Published var hasFormData: Bool = false
+    @Published var hasMediaPlayback: Bool = false
+    @Published var hasActiveDownloads: Bool = false
+    private var preservedState: TabState?
+    
     // Navigation history
     private(set) var backHistory: [HistoryEntry] = []
     private(set) var forwardHistory: [HistoryEntry] = []
@@ -63,6 +71,41 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
         let timestamp: Date
     }
     
+    /// Comprehensive state preservation for true hibernation
+    struct TabState: Codable {
+        let url: URL?
+        let title: String
+        let scrollPosition: CGPoint
+        let zoomScale: CGFloat
+        let canGoBack: Bool
+        let canGoForward: Bool
+        let lastAccessed: Date
+        let hasFormData: Bool
+        let hasMediaPlayback: Bool
+        let estimatedProgress: Double
+        
+        // Navigation history preservation
+        let backHistoryURLs: [URL]
+        let forwardHistoryURLs: [URL]
+        
+        init(from tab: Tab, webView: WKWebView?) {
+            self.url = tab.url
+            self.title = tab.title
+            self.scrollPosition = tab.scrollPosition
+            self.zoomScale = tab.zoomScale
+            self.canGoBack = webView?.canGoBack ?? tab.canGoBack
+            self.canGoForward = webView?.canGoForward ?? tab.canGoForward
+            self.lastAccessed = tab.lastAccessed
+            self.hasFormData = tab.hasFormData
+            self.hasMediaPlayback = tab.hasMediaPlayback
+            self.estimatedProgress = tab.estimatedProgress
+            
+            // Extract navigation history from WebView if available
+            self.backHistoryURLs = webView?.backForwardList.backList.compactMap { $0.url } ?? []
+            self.forwardHistoryURLs = webView?.backForwardList.forwardList.compactMap { $0.url } ?? []
+        }
+    }
+    
     init(url: URL? = nil, isIncognito: Bool = false) {
         self.url = url
         self.isIncognito = isIncognito
@@ -101,6 +144,25 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
     
     // MARK: - Performance Management
     func hibernate() {
+        // Use TabHibernationManager for true resource hibernation
+        TabHibernationManager.shared.forceHibernate(self)
+    }
+    
+    func wakeUp() {
+        guard isHibernated else { return }
+        
+        // Use TabHibernationManager for proper WebView recreation
+        let restoredWebView = TabHibernationManager.shared.wakeUpTab(self)
+        
+        if restoredWebView != nil {
+            updateLastAccessed()
+        }
+    }
+    
+    // MARK: - Legacy Hibernation Support (Backward Compatibility)
+    
+    /// Legacy hibernation method - now delegates to TabHibernationManager
+    func hibernateLegacy() {
         // Only hibernate if tab has been inactive for a very long time and not loading
         // Don't hibernate tabs that are actively loading or recently accessed
         guard !isActive && !isHibernated && !isLoading else { return }
@@ -116,13 +178,118 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
         // Tab hibernated successfully
     }
     
-    func wakeUp() {
+    /// Legacy wake up method
+    func wakeUpLegacy() {
         guard isHibernated else { return }
         
         isHibernated = false
         updateLastAccessed()
         
         // Tab woken up successfully
+    }
+    
+    // MARK: - Enhanced State Preservation
+    
+    /// Captures comprehensive tab state for true hibernation
+    func captureState() {
+        guard let webView = webView else { return }
+        
+        // Capture current scroll position and zoom
+        webView.evaluateJavaScript("window.scrollX") { [weak self] (x, _) in
+            webView.evaluateJavaScript("window.scrollY") { [weak self] (y, _) in
+                DispatchQueue.main.async {
+                    self?.scrollPosition = CGPoint(
+                        x: x as? Double ?? 0,
+                        y: y as? Double ?? 0
+                    )
+                }
+            }
+        }
+        
+        // Capture zoom scale
+        DispatchQueue.main.async { [weak self] in
+            self?.zoomScale = webView.magnification
+        }
+        
+        // Check for form data
+        detectFormData(in: webView)
+        
+        // Check for media playback
+        detectMediaPlayback(in: webView)
+        
+        // Create preserved state object
+        preservedState = TabState(from: self, webView: webView)
+    }
+    
+    /// Restores comprehensive tab state after hibernation
+    func restoreState(to webView: WKWebView) {
+        guard let state = preservedState else { return }
+        
+        // Restore zoom scale
+        webView.magnification = state.zoomScale
+        
+        // Restore scroll position after page loads
+        let script = """
+            window.scrollTo(\(state.scrollPosition.x), \(state.scrollPosition.y));
+        """
+        
+        webView.evaluateJavaScript(script)
+        
+        // Update tab properties from preserved state
+        self.scrollPosition = state.scrollPosition
+        self.zoomScale = state.zoomScale
+        self.hasFormData = state.hasFormData
+        self.hasMediaPlayback = state.hasMediaPlayback
+    }
+    
+    /// Detects if the page has form data that might be lost
+    private func detectFormData(in webView: WKWebView) {
+        let script = """
+            (function() {
+                var inputs = document.querySelectorAll('input, textarea');
+                for (var i = 0; i < inputs.length; i++) {
+                    if (inputs[i].value && inputs[i].value.length > 0) {
+                        return true;
+                    }
+                }
+                return false;
+            })();
+        """
+        
+        webView.evaluateJavaScript(script) { [weak self] (result, _) in
+            DispatchQueue.main.async {
+                self?.hasFormData = result as? Bool ?? false
+            }
+        }
+    }
+    
+    /// Detects if the page has active media playback
+    private func detectMediaPlayback(in webView: WKWebView) {
+        let script = """
+            (function() {
+                var videos = document.querySelectorAll('video');
+                var audios = document.querySelectorAll('audio');
+                for (var i = 0; i < videos.length; i++) {
+                    if (!videos[i].paused) return true;
+                }
+                for (var i = 0; i < audios.length; i++) {
+                    if (!audios[i].paused) return true;
+                }
+                return false;
+            })();
+        """
+        
+        webView.evaluateJavaScript(script) { [weak self] (result, _) in
+            DispatchQueue.main.async {
+                self?.hasMediaPlayback = result as? Bool ?? false
+            }
+        }
+    }
+    
+    /// Checks if this tab should be excluded from hibernation
+    func shouldExcludeFromHibernation() -> Bool {
+        return hasMediaPlayback || hasActiveDownloads || isLoading || 
+               (hasFormData && Date().timeIntervalSince(lastAccessed) < 300) // Protect recent form data
     }
     
     private func createSnapshot() {

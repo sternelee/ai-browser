@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Foundation
 
 class TabManager: ObservableObject {
     @Published var tabs: [Tab] = []
@@ -8,10 +9,14 @@ class TabManager: ObservableObject {
     
     private let maxRecentlyClosedTabs = 10
     private let maxConcurrentTabs = 50
+    private var hibernationSubscription: AnyCancellable?
     
     init() {
         // Create initial tab
         createNewTab()
+        
+        // Setup hibernation integration
+        setupHibernationIntegration()
     }
     
     // MARK: - Tab Operations
@@ -103,18 +108,29 @@ class TabManager: ObservableObject {
         tabs.move(fromOffsets: source, toOffset: destination)
     }
     
-    // MARK: - Memory Management
-    private func manageTabMemory() {
-        // Hibernate old inactive tabs if we have too many
-        let inactiveTabs = tabs.filter { !$0.isActive && !$0.isHibernated }
-        
-        if tabs.count > maxConcurrentTabs {
-            // Hibernate oldest inactive tabs
-            let oldestInactive = inactiveTabs.sorted { $0.lastAccessed < $1.lastAccessed }
-            for tab in oldestInactive.prefix(5) {
-                tab.hibernate()
+    // MARK: - Memory Management & Hibernation Integration
+    
+    private func setupHibernationIntegration() {
+        // Listen for hibernation evaluation requests
+        hibernationSubscription = NotificationCenter.default
+            .publisher(for: .hibernationEvaluationRequested)
+            .sink { [weak self] _ in
+                self?.evaluateTabsForHibernation()
             }
-        }
+    }
+    
+    private func manageTabMemory() {
+        // Use the new TabHibernationManager for intelligent memory management
+        evaluateTabsForHibernation()
+    }
+    
+    private func evaluateTabsForHibernation() {
+        // Delegate hibernation decisions to the TabHibernationManager
+        TabHibernationManager.shared.evaluateTabs(tabs, activeTab: activeTab)
+    }
+    
+    deinit {
+        hibernationSubscription?.cancel()
     }
     
     // MARK: - Additional Tab Operations

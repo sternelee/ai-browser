@@ -5,7 +5,8 @@ struct SimpleWebView: NSViewRepresentable {
     let url: URL
     
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
+        // Use shared WebKitManager for consistent configuration and memory optimization
+        let webView = WebKitManager.shared.createWebView()
         return webView
     }
     
