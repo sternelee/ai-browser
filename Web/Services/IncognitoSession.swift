@@ -38,10 +38,8 @@ class IncognitoSession: NSObject, ObservableObject {
         config.allowsAirPlayForMediaPlayback = false
         config.preferences.isFraudulentWebsiteWarningEnabled = true
         
-        // Disable various storage mechanisms
-        config.preferences.setValue(false, forKey: "storageBlockingPolicy")
-        config.preferences.setValue(true, forKey: "privateClickMeasurementEnabled")
-        config.preferences.setValue(false, forKey: "isWebRTCEnabled")
+        // Disable various storage mechanisms - using only valid WKPreferences keys
+        // Note: WebRTC blocking is handled in JavaScript injection instead of invalid preference key
         
         // Enhanced tracking prevention
         if #available(macOS 14.0, *) {

@@ -8,14 +8,27 @@ struct PanelManager: View {
     @State private var isDragging = false
     
     var body: some View {
-        ZStack {
-            // History Panel
-            if keyboardHandler.showHistoryPanel {
-                HistoryView()
-                    .position(
-                        x: keyboardHandler.historyPanelPosition.x + dragOffset.width,
-                        y: keyboardHandler.historyPanelPosition.y + dragOffset.height
-                    )
+        GeometryReader { geometry in
+            ZStack {
+                // History Panel
+                if keyboardHandler.showHistoryPanel {
+                    HistoryView()
+                        .frame(
+                            width: min(480, geometry.size.width - 40),
+                            height: min(600, geometry.size.height - 40)
+                        )
+                        .position(
+                            x: calculateSafePosition(
+                                preferred: keyboardHandler.historyPanelPosition.x + dragOffset.width,
+                                panelWidth: min(480, geometry.size.width - 40),
+                                containerWidth: geometry.size.width
+                            ),
+                            y: calculateSafePosition(
+                                preferred: keyboardHandler.historyPanelPosition.y + dragOffset.height,
+                                panelWidth: min(600, geometry.size.height - 40),
+                                containerWidth: geometry.size.height
+                            )
+                        )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.8).combined(with: .opacity),
                         removal: .scale(scale: 0.9).combined(with: .opacity)
@@ -42,13 +55,25 @@ struct PanelManager: View {
                     .zIndex(3)
             }
             
-            // Bookmarks Panel
-            if keyboardHandler.showBookmarksPanel {
-                BookmarkView()
-                    .position(
-                        x: keyboardHandler.bookmarksPanelPosition.x + dragOffset.width,
-                        y: keyboardHandler.bookmarksPanelPosition.y + dragOffset.height
-                    )
+                // Bookmarks Panel
+                if keyboardHandler.showBookmarksPanel {
+                    BookmarkView()
+                        .frame(
+                            width: min(400, geometry.size.width - 40),
+                            height: min(500, geometry.size.height - 40)
+                        )
+                        .position(
+                            x: calculateSafePosition(
+                                preferred: keyboardHandler.bookmarksPanelPosition.x + dragOffset.width,
+                                panelWidth: min(400, geometry.size.width - 40),
+                                containerWidth: geometry.size.width
+                            ),
+                            y: calculateSafePosition(
+                                preferred: keyboardHandler.bookmarksPanelPosition.y + dragOffset.height,
+                                panelWidth: min(500, geometry.size.height - 40),
+                                containerWidth: geometry.size.height
+                            )
+                        )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.8).combined(with: .opacity),
                         removal: .scale(scale: 0.9).combined(with: .opacity)
@@ -75,13 +100,25 @@ struct PanelManager: View {
                     .zIndex(2)
             }
             
-            // Downloads Panel
-            if keyboardHandler.showDownloadsPanel {
-                DownloadsView()
-                    .position(
-                        x: keyboardHandler.downloadsPanelPosition.x + dragOffset.width,
-                        y: keyboardHandler.downloadsPanelPosition.y + dragOffset.height
-                    )
+                // Downloads Panel
+                if keyboardHandler.showDownloadsPanel {
+                    DownloadsView()
+                        .frame(
+                            width: min(400, geometry.size.width - 40),
+                            height: min(500, geometry.size.height - 40)
+                        )
+                        .position(
+                            x: calculateSafePosition(
+                                preferred: keyboardHandler.downloadsPanelPosition.x + dragOffset.width,
+                                panelWidth: min(400, geometry.size.width - 40),
+                                containerWidth: geometry.size.width
+                            ),
+                            y: calculateSafePosition(
+                                preferred: keyboardHandler.downloadsPanelPosition.y + dragOffset.height,
+                                panelWidth: min(500, geometry.size.height - 40),
+                                containerWidth: geometry.size.height
+                            )
+                        )
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.8).combined(with: .opacity),
                         removal: .scale(scale: 0.9).combined(with: .opacity)
@@ -107,10 +144,20 @@ struct PanelManager: View {
                     )
                     .zIndex(1)
             }
+            }
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showHistoryPanel)
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showBookmarksPanel)
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showDownloadsPanel)
         }
-        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showHistoryPanel)
-        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showBookmarksPanel)
-        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showDownloadsPanel)
+    }
+    
+    /// Calculate safe position ensuring panels stay within window bounds
+    private func calculateSafePosition(preferred: CGFloat, panelWidth: CGFloat, containerWidth: CGFloat) -> CGFloat {
+        let halfPanelWidth = panelWidth / 2
+        let minPosition = halfPanelWidth + 20
+        let maxPosition = containerWidth - halfPanelWidth - 20
+        
+        return max(minPosition, min(preferred, maxPosition))
     }
 }
 
@@ -219,7 +266,8 @@ struct DownloadsView: View {
             }
             .opacity(contentOpacity)
         }
-        .frame(width: 400, height: 500)
+        // Frame will be set by PanelManager for responsive sizing
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
         .onAppear {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {

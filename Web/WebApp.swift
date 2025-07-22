@@ -91,21 +91,52 @@ struct BrowserCommands: Commands {
             
         }
         
+        CommandGroup(before: .windowArrangement) {
+            Menu("Bookmarks") {
+                Button("Show All Bookmarks") {
+                    NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                
+                Divider()
+                
+                Button("Bookmark This Page") {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("BookmarkCurrentPageRequested"),
+                        object: nil
+                    )
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            }
+            
+            Menu("History") {
+                Button("Show All History") {
+                    NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
+                }
+                .keyboardShortcut("y", modifiers: .command)
+                
+                Divider()
+                
+                Button("Clear History...") {
+                    // TODO: Implement clear history
+                }
+            }
+            
+            Menu("Downloads") {
+                Button("Show Downloads") {
+                    NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
+                }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+                
+                Divider()
+                
+                Button("Clear Downloads...") {
+                    // TODO: Implement clear downloads
+                }
+            }
+        }
+        
         CommandGroup(after: .windowArrangement) {
-            Button("History") {
-                NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
-            }
-            .keyboardShortcut("y", modifiers: .command)
-            
-            Button("Bookmark Page") {
-                NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
-            }
-            .keyboardShortcut("d", modifiers: .command)
-            
-            Button("Downloads") {
-                NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
-            }
-            .keyboardShortcut("j", modifiers: [.command, .shift])
             
             Button("Developer Tools") {
                 NotificationCenter.default.post(name: .showDeveloperToolsRequested, object: nil)

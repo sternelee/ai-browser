@@ -85,7 +85,8 @@ struct HistoryView: View {
             }
             .opacity(contentOpacity)
         }
-        .frame(width: 480, height: 600)
+        // Frame will be set by PanelManager for responsive sizing
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
         .onAppear {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {

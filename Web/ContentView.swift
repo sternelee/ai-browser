@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var isEdgeToEdgeMode: Bool = false
     @State private var isExpanded: Bool = false
+    @State private var previousWindowFrame: CGRect = .zero
     
     var body: some View {
         ZStack {
@@ -59,10 +60,14 @@ struct ContentView: View {
         guard let window = NSApplication.shared.keyWindow else { return }
         
         if isExpanded {
-            // Return to normal size
+            // Return to previous size
             isExpanded = false
-            // Let the window handle its own sizing
+            if previousWindowFrame != .zero {
+                window.setFrame(previousWindowFrame, display: true, animate: true)
+            }
         } else {
+            // Store current frame before expanding
+            previousWindowFrame = window.frame
             // Expand to fill screen
             isExpanded = true
             if let screen = window.screen {

@@ -136,6 +136,8 @@ struct URLBar: View {
             
             // Quick actions with improved spacing
             HStack(spacing: 6) {
+                HistoryButton()
+                DownloadsButton()
                 ShareButton(urlString: urlString)
                 BookmarkButton(urlString: urlString)
             }
@@ -437,6 +439,65 @@ struct BookmarkButton: View {
     private func toggleBookmark() {
         isBookmarked.toggle()
         // TODO: Implement actual bookmark functionality
+    }
+}
+
+// History button component
+struct HistoryButton: View {
+    @State private var hovering: Bool = false
+    
+    var body: some View {
+        Button(action: showHistory) {
+            Image(systemName: "clock")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.textSecondary)
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.hovering = hovering
+            }
+        }
+    }
+    
+    private func showHistory() {
+        KeyboardShortcutHandler.shared.showHistoryPanel.toggle()
+    }
+}
+
+// Downloads button component
+struct DownloadsButton: View {
+    @ObservedObject private var downloadManager = DownloadManager.shared
+    @State private var hovering: Bool = false
+    
+    var body: some View {
+        Button(action: showDownloads) {
+            ZStack {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.textSecondary)
+                    .frame(width: 20, height: 20)
+                
+                // Active download indicator
+                if downloadManager.totalActiveDownloads > 0 {
+                    Circle()
+                        .fill(.blue)
+                        .frame(width: 6, height: 6)
+                        .offset(x: 6, y: -6)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.hovering = hovering
+            }
+        }
+    }
+    
+    private func showDownloads() {
+        KeyboardShortcutHandler.shared.showDownloadsPanel.toggle()
     }
 }
 

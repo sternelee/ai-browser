@@ -15,10 +15,10 @@ class KeyboardShortcutHandler: ObservableObject {
     @Published var showBookmarksPanel = false
     @Published var showDownloadsPanel = false
     
-    // UI positioning for panels
-    @Published var historyPanelPosition = CGPoint(x: 200, y: 100)
-    @Published var bookmarksPanelPosition = CGPoint(x: 250, y: 100)
-    @Published var downloadsPanelPosition = CGPoint(x: 300, y: 100)
+    // UI positioning for panels - using center-based coordinates that will be made safe by PanelManager
+    @Published var historyPanelPosition = CGPoint(x: 400, y: 300)
+    @Published var bookmarksPanelPosition = CGPoint(x: 450, y: 320)
+    @Published var downloadsPanelPosition = CGPoint(x: 500, y: 340)
     
     // Dependencies
     private let historyService = HistoryService.shared
