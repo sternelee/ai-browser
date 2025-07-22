@@ -71,8 +71,8 @@ struct WebView: NSViewRepresentable {
         // Configure enhanced tracking prevention
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         
-        // User agent customization - Use modern Safari user agent to ensure proper Google homepage rendering
-        config.applicationNameForUserAgent = "Web/1.0 Safari/605.1.15"
+        // User agent customization - Use original working user agent
+        config.applicationNameForUserAgent = "Web/1.0"
         
         // Add link hover detection script to existing user content controller
         let linkHoverScript = WKUserScript(
@@ -98,8 +98,7 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
-        // Apply standard WebKit settings from manager
-        webView.customUserAgent = "Web/1.0 Safari/605.1.15"
+        // WebKitManager already sets the full customUserAgent. Avoid overriding here.
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
         }
@@ -386,11 +385,6 @@ struct WebView: NSViewRepresentable {
                     self.parent.url = url
                     if let tab = self.parent.tab {
                         tab.url = url
-                    }
-                    
-                    // CRITICAL: Clear focus when navigating to Google to prevent focus conflicts
-                    if url.host?.contains("google.com") == true || url.host?.contains("google.") == true {
-                        FocusCoordinator.shared.handleGoogleNavigation()
                     }
                 }
             }
@@ -778,9 +772,7 @@ struct WebView: NSViewRepresentable {
                       let type = body["type"] as? String else { return }
                 
                 if type == "cleanupComplete" {
-                    let intervalsCleared = body["intervalsCleared"] as? Int ?? 0
-                    let timeoutsCleared = body["timeoutsCleared"] as? Int ?? 0
-                    print("✅ Timer cleanup completed - Intervals: \(intervalsCleared), Timeouts: \(timeoutsCleared)")
+                    // Timer cleanup completed successfully
                 }
                 
             default:

@@ -43,7 +43,7 @@ struct BookmarkView: View {
         HStack(spacing: 0) {
             // Sidebar with folders
             sidebarView
-                .frame(width: 180)
+                .frame(minWidth: 160, maxWidth: 200)
                 .offset(x: sidebarOffset)
             
             // Separator
@@ -56,7 +56,7 @@ struct BookmarkView: View {
                 .offset(x: mainContentOffset)
         }
         .background(glassBackground)
-        .frame(width: 720, height: 500)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
                 contentOpacity = 1.0
@@ -88,23 +88,13 @@ struct BookmarkView: View {
     }
     
     private var glassBackground: some View {
-        RoundedRectangle(cornerRadius: 20)
+        RoundedRectangle(cornerRadius: 12)
             .fill(.ultraThinMaterial)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color.blue.opacity(0.03),
-                        Color.purple.opacity(0.02)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.white.opacity(0.15), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
+            .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 8)
     }
     
     private var sidebarView: some View {
@@ -173,8 +163,8 @@ struct BookmarkView: View {
         }
         .background(
             Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.3)
+                .fill(.regularMaterial)
+                .opacity(0.2)
         )
     }
     
@@ -313,10 +303,10 @@ struct BookmarkView: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.thickMaterial)
+                    .fill(.thinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
                     )
             )
         }
@@ -392,7 +382,7 @@ struct BookmarkView: View {
             HStack(spacing: 8) {
                 // Favicon
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(.thickMaterial)
+                    .fill(.regularMaterial)
                     .frame(width: 20, height: 20)
                     .overlay(
                         Group {
@@ -447,10 +437,10 @@ struct BookmarkView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(.thickMaterial)
+                .fill(.regularMaterial)
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(hoveredBookmark?.id == bookmark.id ? .blue.opacity(0.4) : .white.opacity(0.1), lineWidth: 0.5)
+                        .stroke(hoveredBookmark?.id == bookmark.id ? .blue.opacity(0.3) : .white.opacity(0.08), lineWidth: 0.5)
                 }
         )
         .scaleEffect(hoveredBookmark?.id == bookmark.id ? 1.02 : 1.0)

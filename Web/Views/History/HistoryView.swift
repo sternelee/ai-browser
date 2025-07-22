@@ -54,22 +54,12 @@ struct HistoryView: View {
     
     var body: some View {
         ZStack {
-            // Glass background with subtle gradient
-            RoundedRectangle(cornerRadius: 20)
+            // Simplified glass background
+            RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.1),
-                            Color.white.opacity(0.05)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.white.opacity(0.15), lineWidth: 0.5)
                 )
             
             VStack(spacing: 0) {
@@ -152,10 +142,10 @@ struct HistoryView: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.thickMaterial)
+                    .fill(.thinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                            .stroke(.white.opacity(0.1), lineWidth: 0.5)
                     )
             )
             .offset(y: searchBarOffset)
@@ -268,7 +258,7 @@ struct HistoryView: View {
         HStack(spacing: 12) {
             // Favicon or fallback icon
             RoundedRectangle(cornerRadius: 6)
-                .fill(.thickMaterial)
+                .fill(.regularMaterial)
                 .frame(width: 24, height: 24)
                 .overlay(
                     Group {
@@ -339,7 +329,7 @@ struct HistoryView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(hoveredItem?.id == item.id ? .white.opacity(0.05) : .clear)
+                .fill(hoveredItem?.id == item.id ? .white.opacity(0.03) : .clear)
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {

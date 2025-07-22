@@ -378,11 +378,7 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
         
         // Execute JavaScript timer cleanup to prevent CPU spikes
         webView.evaluateJavaScript("if (window.cleanupAllTimers) { window.cleanupAllTimers(); }") { result, error in
-            if let error = error {
-                print("⚠️ Tab \(self.id) timer cleanup error: \(error.localizedDescription)")
-            } else {
-                print("🧹 Tab \(self.id) timers cleaned up successfully")
-            }
+            // Timer cleanup executed
         }
     }
     

@@ -14,18 +14,18 @@ struct PanelManager: View {
                 if keyboardHandler.showHistoryPanel {
                     HistoryView()
                         .frame(
-                            width: min(480, geometry.size.width - 40),
-                            height: min(600, geometry.size.height - 40)
+                            width: max(480, min(geometry.size.width * 0.4, 720)),
+                            height: max(400, geometry.size.height * 0.85)
                         )
                         .position(
                             x: calculateSafePosition(
                                 preferred: keyboardHandler.historyPanelPosition.x + dragOffset.width,
-                                panelWidth: min(480, geometry.size.width - 40),
+                                panelWidth: max(480, min(geometry.size.width * 0.4, 720)),
                                 containerWidth: geometry.size.width
                             ),
                             y: calculateSafePosition(
                                 preferred: keyboardHandler.historyPanelPosition.y + dragOffset.height,
-                                panelWidth: min(600, geometry.size.height - 40),
+                                panelWidth: max(400, geometry.size.height * 0.85),
                                 containerWidth: geometry.size.height
                             )
                         )
@@ -59,18 +59,18 @@ struct PanelManager: View {
                 if keyboardHandler.showBookmarksPanel {
                     BookmarkView()
                         .frame(
-                            width: min(400, geometry.size.width - 40),
-                            height: min(500, geometry.size.height - 40)
+                            width: max(560, min(geometry.size.width * 0.45, 800)),
+                            height: max(400, geometry.size.height * 0.85)
                         )
                         .position(
                             x: calculateSafePosition(
                                 preferred: keyboardHandler.bookmarksPanelPosition.x + dragOffset.width,
-                                panelWidth: min(400, geometry.size.width - 40),
+                                panelWidth: max(560, min(geometry.size.width * 0.45, 800)),
                                 containerWidth: geometry.size.width
                             ),
                             y: calculateSafePosition(
                                 preferred: keyboardHandler.bookmarksPanelPosition.y + dragOffset.height,
-                                panelWidth: min(500, geometry.size.height - 40),
+                                panelWidth: max(400, geometry.size.height * 0.85),
                                 containerWidth: geometry.size.height
                             )
                         )
@@ -104,18 +104,18 @@ struct PanelManager: View {
                 if keyboardHandler.showDownloadsPanel {
                     DownloadsView()
                         .frame(
-                            width: min(400, geometry.size.width - 40),
-                            height: min(500, geometry.size.height - 40)
+                            width: max(400, min(geometry.size.width * 0.35, 600)),
+                            height: max(350, geometry.size.height * 0.75)
                         )
                         .position(
                             x: calculateSafePosition(
                                 preferred: keyboardHandler.downloadsPanelPosition.x + dragOffset.width,
-                                panelWidth: min(400, geometry.size.width - 40),
+                                panelWidth: max(400, min(geometry.size.width * 0.35, 600)),
                                 containerWidth: geometry.size.width
                             ),
                             y: calculateSafePosition(
                                 preferred: keyboardHandler.downloadsPanelPosition.y + dragOffset.height,
-                                panelWidth: min(500, geometry.size.height - 40),
+                                panelWidth: max(350, geometry.size.height * 0.75),
                                 containerWidth: geometry.size.height
                             )
                         )
@@ -151,11 +151,11 @@ struct PanelManager: View {
         }
     }
     
-    /// Calculate safe position ensuring panels stay within window bounds
+    /// Calculate safe position ensuring panels stay within window bounds with improved padding
     private func calculateSafePosition(preferred: CGFloat, panelWidth: CGFloat, containerWidth: CGFloat) -> CGFloat {
         let halfPanelWidth = panelWidth / 2
-        let minPosition = halfPanelWidth + 20
-        let maxPosition = containerWidth - halfPanelWidth - 20
+        let minPosition = halfPanelWidth + 30  // Increased padding from window edges
+        let maxPosition = containerWidth - halfPanelWidth - 30
         
         return max(minPosition, min(preferred, maxPosition))
     }
@@ -169,22 +169,12 @@ struct DownloadsView: View {
     
     var body: some View {
         ZStack {
-            // Glass background
-            RoundedRectangle(cornerRadius: 20)
+            // Simplified glass background
+            RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.green.opacity(0.03),
-                            Color.blue.opacity(0.02)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.white.opacity(0.15), lineWidth: 0.5)
                 )
             
             VStack(spacing: 0) {
@@ -310,7 +300,7 @@ struct DownloadsView: View {
         HStack(spacing: 12) {
             // File icon
             RoundedRectangle(cornerRadius: 6)
-                .fill(.thickMaterial)
+                .fill(.regularMaterial)
                 .frame(width: 24, height: 24)
                 .overlay(
                     Image(systemName: fileIcon(for: download.filename))
@@ -407,7 +397,7 @@ struct DownloadsView: View {
         HStack(spacing: 12) {
             // File icon
             RoundedRectangle(cornerRadius: 6)
-                .fill(.thickMaterial)
+                .fill(.regularMaterial)
                 .frame(width: 24, height: 24)
                 .overlay(
                     Image(systemName: fileIcon(for: historyItem.filename))

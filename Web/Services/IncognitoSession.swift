@@ -282,8 +282,7 @@ class IncognitoSession: NSObject, ObservableObject {
     func configureWebViewForIncognito(_ webView: WKWebView) {
         webView.configuration.userContentController.add(self, name: "incognitoHandler")
         
-        // Additional incognito-specific configuration
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Version/18.0 Safari/537.36"
+        // Additional incognito-specific configuration relies on WebKitManager’s user agent setup
         
         // Disable caching for incognito tabs
         webView.configuration.websiteDataStore.removeData(
