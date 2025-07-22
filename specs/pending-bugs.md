@@ -10,3 +10,6 @@
 [ ] Say "Incognito" in new incognito empty tab
 [ ] Empty new tab buttons don't work
 [ ] Settings button doesn't work
+[ ] AI follow up messages return a 0 token
+[ ] Streaming messages like chatgpt doesn't work, or at least have a loading animation message
+[ ] AI sidebar is a fine line visible when its collapsed
