@@ -16,6 +16,7 @@ struct WebApp: App {
         WindowGroup {
             ContentView()
                 .background(WindowConfigurator())
+                .background(WindowClipGuard()) // Guardrail: forces clipsToBounds=true to avoid TUINS crash
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
         }
         .windowStyle(.automatic)

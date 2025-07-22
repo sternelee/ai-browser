@@ -55,10 +55,11 @@ struct TabDisplayView: View {
                     }
                 }
                 
-                // Edge-to-edge hover zones
-                if isEdgeToEdgeMode {
-                    edgeToEdgeHoverZones(geometry: geometry)
-                }
+                // CRITICAL FIX: Temporarily disable edge-to-edge hover zones to test input locking fix
+                // These invisible overlays may be consuming input events preventing TextFields from working
+                // if isEdgeToEdgeMode {
+                //     edgeToEdgeHoverZones(geometry: geometry)
+                // }
                 
                 // Hoverable URL bar overlay (when top bar is hidden or in edge-to-edge mode)
                 if hideTopBar || isEdgeToEdgeMode {

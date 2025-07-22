@@ -47,9 +47,11 @@ struct ContentView: View {
             PanelManager()
                 .allowsHitTesting(true)
         }
-        .onTapGesture(count: 2) {
-            toggleExpanded()
-        }
+        // CRITICAL FIX: Temporarily disable double-tap gesture to test input locking fix
+        // This window-wide gesture may be consuming single taps preventing input focus
+        // .onTapGesture(count: 2) {
+        //     toggleExpanded()
+        // }
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()
         }

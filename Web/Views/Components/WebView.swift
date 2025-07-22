@@ -456,6 +456,21 @@ struct WebView: NSViewRepresentable {
                 }
             }
         }
+
+        // Guard-rail: if the WebContent process crashes (common on heavy WebGL
+        // pages or under memory pressure) the WKWebView turns blank and no
+        // page inputs work.  This delegate method lets us notice the crash
+        // immediately and attempt an automatic reload so the tab recovers
+        // without forcing the user to close/reopen it.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // Simple heuristic: if we have a URL attempt a normal reload.
+            if webView.url != nil {
+                NSLog("🔄 WebContent process terminated – reloading tab")
+                webView.reload()
+            } else {
+                NSLog("⚠️ WebContent process terminated but no URL to reload")
+            }
+        }
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             print("❌ WebView navigation failed: \(error.localizedDescription) (code: \((error as NSError).code))")
