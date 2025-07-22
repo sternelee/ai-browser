@@ -93,13 +93,6 @@ struct BrowserCommands: Commands {
         
         CommandGroup(before: .windowArrangement) {
             Menu("Bookmarks") {
-                Button("Show All Bookmarks") {
-                    NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
-                }
-                .keyboardShortcut("d", modifiers: .command)
-                
-                Divider()
-                
                 Button("Bookmark This Page") {
                     NotificationCenter.default.post(
                         name: Notification.Name("BookmarkCurrentPageRequested"),
@@ -107,6 +100,15 @@ struct BrowserCommands: Commands {
                     )
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+                
+                Button("Show All Bookmarks") {
+                    NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                
+                Divider()
+                
+                BookmarksMenuContent()
             }
             
             Menu("History") {
@@ -115,11 +117,13 @@ struct BrowserCommands: Commands {
                 }
                 .keyboardShortcut("y", modifiers: .command)
                 
-                Divider()
-                
                 Button("Clear History...") {
                     // TODO: Implement clear history
                 }
+                
+                Divider()
+                
+                HistoryMenuContent()
             }
             
             Menu("Downloads") {
@@ -128,11 +132,13 @@ struct BrowserCommands: Commands {
                 }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
                 
-                Divider()
-                
                 Button("Clear Downloads...") {
                     // TODO: Implement clear downloads
                 }
+                
+                Divider()
+                
+                DownloadsMenuContent()
             }
         }
         
@@ -222,4 +228,105 @@ extension Notification.Name {
     
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
+}
+
+// MARK: - Menu Content Views
+
+/// Displays actual bookmarks in the Bookmarks menu
+struct BookmarksMenuContent: View {
+    @ObservedObject private var bookmarkService = BookmarkService.shared
+    
+    var body: some View {
+        let bookmarks = bookmarkService.getAllBookmarks()
+        
+        if bookmarks.isEmpty {
+            Text("No bookmarks")
+                .foregroundColor(.secondary)
+        } else {
+            ForEach(bookmarks.prefix(15), id: \.id) { bookmark in
+                Button(bookmark.title.isEmpty ? bookmark.url : bookmark.title) {
+                    if let url = URL(string: bookmark.url) {
+                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                    }
+                }
+                .truncationMode(.tail)
+            }
+            
+            if bookmarks.count > 15 {
+                Divider()
+                Text("... and \(bookmarks.count - 15) more")
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+/// Displays recent history in the History menu
+struct HistoryMenuContent: View {
+    @ObservedObject private var historyService = HistoryService.shared
+    
+    var body: some View {
+        let recentHistory = historyService.recentHistory
+        
+        if recentHistory.isEmpty {
+            Text("No history")
+                .foregroundColor(.secondary)
+        } else {
+            ForEach(recentHistory.prefix(15), id: \.id) { item in
+                Button(item.displayTitle) {
+                    if let url = URL(string: item.url) {
+                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                    }
+                }
+                .truncationMode(.tail)
+            }
+            
+            if recentHistory.count > 15 {
+                Divider()
+                Text("... and \(recentHistory.count - 15) more")
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+/// Displays recent downloads in the Downloads menu
+struct DownloadsMenuContent: View {
+    @ObservedObject private var downloadManager = DownloadManager.shared
+    
+    var body: some View {
+        let activeDownloads = downloadManager.downloads
+        let recentHistory = downloadManager.downloadHistory
+        
+        if activeDownloads.isEmpty && recentHistory.isEmpty {
+            Text("No downloads")
+                .foregroundColor(.secondary)
+        } else {
+            // Show active downloads first
+            if !activeDownloads.isEmpty {
+                ForEach(activeDownloads, id: \.id) { download in
+                    Button(download.filename) {
+                        if download.status == .completed {
+                            downloadManager.openDownloadedFile(download)
+                        }
+                    }
+                    .disabled(download.status != .completed)
+                }
+                
+                if !recentHistory.isEmpty {
+                    Divider()
+                }
+            }
+            
+            // Show recent download history
+            ForEach(recentHistory.prefix(10), id: \.id) { item in
+                Button(item.filename) {
+                    if item.fileExists {
+                        NSWorkspace.shared.selectFile(item.filePath, inFileViewerRootedAtPath: "")
+                    }
+                }
+                .disabled(!item.fileExists)
+            }
+        }
+    }
 }

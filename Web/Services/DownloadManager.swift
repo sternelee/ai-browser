@@ -125,22 +125,27 @@ class DownloadManager: NSObject, ObservableObject {
     
     /// Handle WKDownload from WKWebView
     func handleWebViewDownload(_ download: WKDownload) {
-        guard let url = download.originalRequest?.url else { return }
+        guard let url = download.originalRequest?.url else { 
+            logger.error("WKDownload missing original request URL")
+            return 
+        }
         
+        // Safely extract filename with fallback
+        let filename = url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent
         let downloadId = UUID().uuidString
         webViewDownloads[downloadId] = download
         
         let webDownload = Download(
             url: url,
-            destinationURL: downloadDirectory.appendingPathComponent(url.lastPathComponent),
-            filename: url.lastPathComponent
+            destinationURL: downloadDirectory.appendingPathComponent(filename),
+            filename: filename
         )
         webDownload.webKitDownloadId = downloadId
         
         downloads.append(webDownload)
         updateActiveDownloadsCount()
         
-        logger.info("Started WKWebView download: \(url.lastPathComponent)")
+        logger.info("Started WKWebView download: \(filename)")
     }
     
     /// Check if navigation should trigger download based on MIME type

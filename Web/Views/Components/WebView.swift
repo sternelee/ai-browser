@@ -146,6 +146,12 @@ struct WebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         // Smart navigation logic - only prevent rapid duplicate requests to same URL
         if let url = url {
+            // Validate URL before proceeding
+            guard !url.absoluteString.isEmpty else {
+                print("⚠️ Attempted to load empty URL")
+                return
+            }
+            
             let isCurrentlyDifferent = webView.url?.absoluteString != url.absoluteString
             let isNotCurrentlyLoading = !webView.isLoading
             
@@ -458,7 +464,13 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("❌ WebView provisional navigation failed: \(error.localizedDescription) (code: \((error as NSError).code))")
+            let errorCode = (error as NSError).code
+            
+            // Don't log NSURLErrorCancelled (-999) as it's expected behavior
+            if errorCode != NSURLErrorCancelled {
+                print("❌ WebView provisional navigation failed: \(error.localizedDescription) (code: \(errorCode))")
+            }
+            
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
         }

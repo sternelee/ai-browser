@@ -18,6 +18,10 @@ class HistoryService: ObservableObject {
     private let maxHistoryItems = 10000
     private let maxHistoryDays = 365
     
+    // UI update debouncing
+    private var uiUpdateTask: Task<Void, Never>?
+    private let uiUpdateDelay: TimeInterval = 2.0
+    
     private init() {
         loadRecentHistory()
     }
@@ -51,9 +55,9 @@ class HistoryService: ObservableObject {
                     }
                 }
                 
-                // Update UI on main thread
+                // Update UI on main thread with debouncing
                 await MainActor.run {
-                    loadRecentHistory()
+                    scheduleUIUpdate()
                 }
                 
                 // Clean up old history periodically
@@ -91,6 +95,23 @@ class HistoryService: ObservableObject {
             recentHistory = try coreDataStack.viewContext.fetch(request)
         } catch {
             logger.error("Failed to load recent history: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Schedule a debounced UI update to prevent excessive reloads
+    private func scheduleUIUpdate() {
+        // Cancel existing update task
+        uiUpdateTask?.cancel()
+        
+        // Schedule new update with delay
+        uiUpdateTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(uiUpdateDelay * 1_000_000_000))
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run {
+                loadRecentHistory()
+            }
         }
     }
     
@@ -164,10 +185,27 @@ class HistoryService: ObservableObject {
     
     /// Delete a specific history item
     func deleteHistoryItem(_ item: HistoryItem) {
-        coreDataStack.viewContext.delete(item)
-        coreDataStack.save()
-        loadRecentHistory()
-        logger.debug("Deleted history item: \(item.url)")
+        let itemID = item.objectID
+        let url = item.url
+        
+        Task {
+            do {
+                try await coreDataStack.performBackgroundTask { context in
+                    // Fetch the object in the correct context
+                    if let objectToDelete = try? context.existingObject(with: itemID) {
+                        context.delete(objectToDelete)
+                        self.logger.debug("Deleted history item: \(url)")
+                    }
+                }
+                
+                // Update UI on main thread with debouncing
+                await MainActor.run {
+                    scheduleUIUpdate()
+                }
+            } catch {
+                logger.error("Failed to delete history item: \(error.localizedDescription)")
+            }
+        }
     }
     
     /// Delete all history items from a specific date
