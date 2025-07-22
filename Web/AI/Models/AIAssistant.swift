@@ -3,15 +3,14 @@ import Combine
 
 /// Main AI Assistant coordinator managing local AI capabilities
 /// Integrates MLX framework with context management and conversation handling
-@MainActor
 class AIAssistant: ObservableObject {
     
-    // MARK: - Published Properties
+    // MARK: - Published Properties (Main Actor for UI Updates)
     
-    @Published var isInitialized: Bool = false
-    @Published var isProcessing: Bool = false
-    @Published var initializationStatus: String = "Not initialized"
-    @Published var lastError: String?
+    @MainActor @Published var isInitialized: Bool = false
+    @MainActor @Published var isProcessing: Bool = false
+    @MainActor @Published var initializationStatus: String = "Not initialized"
+    @MainActor @Published var lastError: String?
     
     // MARK: - Dependencies
     
@@ -140,17 +139,21 @@ class AIAssistant: ObservableObject {
             // Context processing will be added in Phase 11
             
             // Mark as initialized
-            isInitialized = true
+            Task { @MainActor in
+                isInitialized = true
+                lastError = nil
+            }
             updateStatus("AI Assistant ready")
-            lastError = nil
             
             NSLog("✅ AI Assistant initialization completed successfully (OPTIMIZED)")
             
         } catch {
             let errorMessage = "AI initialization failed: \(error.localizedDescription)"
             updateStatus("Initialization failed")
-            lastError = errorMessage
-            isInitialized = false
+            Task { @MainActor in
+                lastError = errorMessage
+                isInitialized = false
+            }
             
             NSLog("❌ \(errorMessage)")
         }
@@ -158,12 +161,12 @@ class AIAssistant: ObservableObject {
     
     /// Process a user query with current context
     func processQuery(_ query: String, includeContext: Bool = true) async throws -> AIResponse {
-        guard isInitialized else {
+        guard await isInitialized else {
             throw AIError.notInitialized
         }
         
-        isProcessing = true
-        defer { isProcessing = false }
+        Task { @MainActor in isProcessing = true }
+        defer { Task { @MainActor in isProcessing = false } }
         
         do {
             // Context extraction will be implemented in Phase 11
@@ -212,12 +215,12 @@ class AIAssistant: ObservableObject {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    guard isInitialized else {
+                    guard await isInitialized else {
                         throw AIError.notInitialized
                     }
                     
-                    isProcessing = true
-                    defer { isProcessing = false }
+                    Task { @MainActor in isProcessing = true }
+                    defer { Task { @MainActor in isProcessing = false } }
                     
                     // Context extraction will be implemented in Phase 11
                     let context: String? = nil
@@ -281,7 +284,7 @@ class AIAssistant: ObservableObject {
     }
     
     /// Get current system status
-    func getSystemStatus() -> AISystemStatus {
+    @MainActor func getSystemStatus() -> AISystemStatus {
         return AISystemStatus(
             isInitialized: isInitialized,
             framework: aiConfiguration.framework,
@@ -326,10 +329,12 @@ class AIAssistant: ObservableObject {
         onDemandModelService.$isModelReady
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isReady in
-                if !isReady && self?.isInitialized == true {
-                    self?.isInitialized = false
-                    self?.updateStatus("AI model not available")
+                Task { @MainActor [weak self] in
+                    if !isReady && self?.isInitialized == true {
+                        self?.isInitialized = false
+                    }
                 }
+                self?.updateStatus("AI model not available")
             }
             .store(in: &cancellables)
         
@@ -348,8 +353,12 @@ class AIAssistant: ObservableObject {
         mlxWrapper.$isInitialized
             .receive(on: DispatchQueue.main)
             .sink { [weak self] mlxInitialized in
+                Task { @MainActor [weak self] in
+                    if !mlxInitialized && self?.aiConfiguration.framework == .mlx {
+                        self?.isInitialized = false
+                    }
+                }
                 if !mlxInitialized && self?.aiConfiguration.framework == .mlx {
-                    self?.isInitialized = false
                     self?.updateStatus("MLX framework not available")
                 }
             }
@@ -357,7 +366,9 @@ class AIAssistant: ObservableObject {
     }
     
     private func updateStatus(_ status: String) {
-        initializationStatus = status
+        Task { @MainActor in
+            initializationStatus = status
+        }
         NSLog("🤖 AI Status: \(status)")
     }
 }
