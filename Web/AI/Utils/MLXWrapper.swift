@@ -58,8 +58,8 @@ class MLXWrapper: ObservableObject {
             // Configure Metal performance shaders for optimal GPU usage
             configureMLXStreams()
             
-            // Warm up the runtime with a small operation
-            let warmupTensor = MLXArray([1.0, 2.0, 3.0])
+            // Warm up the runtime with a small operation using Float32 (MLX GPU compatible)
+            let warmupTensor = MLXArray([Float32(1.0), Float32(2.0), Float32(3.0)])
             let _ = MLX.sum(warmupTensor)
             
             NSLog("✅ MLX Runtime initialized with \(memoryLimit)GB memory limit")
@@ -172,22 +172,34 @@ class MLXWrapper: ObservableObject {
     
     // MARK: - Tensor Operations
     
-    /// Create MLX tensor from Swift array
+    /// Create MLX tensor from Swift array with proper Float32 conversion
     func createTensor<T: Numeric>(_ data: [T]) -> Any? {
         #if canImport(MLX)
-        // Create actual MLXArray
-        return createMLXArray(from: data)
+        // Convert to Float32 array for MLX GPU compatibility
+        let float32Data = data.map { Float32(exactly: $0 as? Double ?? 0.0) ?? 0.0 }
+        return createMLXArray(from: float32Data)
         #else
         // Return data as-is for fallback processing
         return data
         #endif
     }
     
+    /// Safely convert any numeric type to Float32 for MLX
+    private func toFloat32<T: Numeric>(_ value: T) -> Float32 {
+        if let doubleVal = value as? Double {
+            return Float32(doubleVal)
+        } else if let floatVal = value as? Float {
+            return floatVal
+        } else if let intVal = value as? Int {
+            return Float32(intVal)
+        }
+        return 0.0
+    }
+    
     #if canImport(MLX)
-    private func createMLXArray<T: Numeric>(from data: [T]) -> MLXArray? {
-        // Convert Swift array to MLXArray
-        // return MLXArray(data)
-        return nil // Placeholder until MLX APIs are available
+    private func createMLXArray(from data: [Float32]) -> MLXArray? {
+        // Convert Float32 array to MLXArray for GPU compatibility
+        return MLXArray(data)
     }
     #endif
     
