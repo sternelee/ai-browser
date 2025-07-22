@@ -20,9 +20,9 @@ struct ChatBubbleView: View {
     }
     
     // Configuration
-    private let maxBubbleWidth: CGFloat = 280
-    private let bubblePadding: CGFloat = 12
-    private let bubbleSpacing: CGFloat = 8
+    private let maxBubbleWidth: CGFloat = 260
+    private let bubblePadding: EdgeInsets = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+    private let bubbleSpacing: CGFloat = 12
     
     init(message: ConversationMessage, isStreaming: Bool = false, streamingText: String = "") {
         self.message = message
@@ -33,14 +33,15 @@ struct ChatBubbleView: View {
     var body: some View {
         HStack(alignment: .top, spacing: bubbleSpacing) {
             if isUserMessage {
-                Spacer(minLength: 40) // Right-align user messages
+                Spacer(minLength: 32) // Right-align user messages
                 userMessageBubble()
             } else {
                 assistantMessageBubble()
-                Spacer(minLength: 40) // Left-align assistant messages
+                Spacer(minLength: 32) // Left-align assistant messages
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
         .animation(.easeInOut(duration: 0.2), value: displayText)
     }
     
@@ -52,10 +53,9 @@ struct ChatBubbleView: View {
             HStack(alignment: .bottom, spacing: 6) {
                 // Message content
                 Text(displayText)
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundColor(.white)
-                    .padding(.horizontal, bubblePadding)
-                    .padding(.vertical, 10)
+                    .padding(bubblePadding)
                     .background(userBubbleBackground())
                     .clipShape(ChatBubbleShape(isUserMessage: true))
                 
@@ -71,24 +71,25 @@ struct ChatBubbleView: View {
     @ViewBuilder
     private func userBubbleBackground() -> some View {
         ZStack {
-            // Primary blue gradient
+            // Modern blue gradient with iOS 17 style
             LinearGradient(
                 colors: [
-                    Color.accentColor.opacity(0.9),
-                    Color.accentColor.opacity(0.7)
+                    Color.accentColor.opacity(0.95),
+                    Color.accentColor.opacity(0.85)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             
-            // Subtle highlight
+            // Inner glow for depth
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.15),
+                    Color.white.opacity(0.2),
+                    Color.white.opacity(0.08),
                     Color.clear
                 ],
-                startPoint: .top,
-                endPoint: .bottom
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
         }
     }
@@ -148,10 +149,9 @@ struct ChatBubbleView: View {
     @ViewBuilder
     private func messageContentView() -> some View {
         Text(displayText)
-            .font(.system(size: 14))
+            .font(.system(size: 14, weight: .regular))
             .foregroundColor(.primary)
-            .padding(.horizontal, bubblePadding)
-            .padding(.vertical, 10)
+            .padding(bubblePadding)
             .frame(maxWidth: maxBubbleWidth, alignment: .leading)
             .background(assistantBubbleBackground())
             .clipShape(ChatBubbleShape(isUserMessage: false))
@@ -164,18 +164,18 @@ struct ChatBubbleView: View {
     @ViewBuilder
     private func assistantBubbleBackground() -> some View {
         ZStack {
-            // Base glass material
+            // Modern glass material with improved transparency
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .opacity(0.8)
+                .opacity(0.9)
             
-            // Subtle ambient glow
+            // Sophisticated ambient tint
             Rectangle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.green.opacity(0.05),
-                            Color.green.opacity(0.02),
+                            Color.green.opacity(0.04),
+                            Color.blue.opacity(0.02),
                             Color.clear
                         ],
                         startPoint: .topLeading,
@@ -183,17 +183,18 @@ struct ChatBubbleView: View {
                     )
                 )
             
-            // Surface highlight
+            // Subtle surface reflection
             Rectangle()
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.1),
-                            Color.white.opacity(0.02),
+                            Color.white.opacity(0.12),
+                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.01),
                             Color.clear
                         ],
-                        startPoint: .top,
-                        endPoint: .bottom
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
                 )
         }
@@ -273,7 +274,7 @@ struct ChatBubbleView: View {
                 
                 Spacer()
             }
-            .padding(.horizontal, bubblePadding)
+            .padding(.horizontal, bubblePadding.leading)
             .padding(.vertical, 6)
         }
         .frame(maxWidth: maxBubbleWidth)
@@ -351,51 +352,37 @@ struct ChatBubbleView: View {
 
 struct ChatBubbleShape: Shape {
     let isUserMessage: Bool
-    private let cornerRadius: CGFloat = 16
-    private let tailSize: CGFloat = 8
+    private let cornerRadius: CGFloat = 18
+    private let tailSize: CGFloat = 6
     
     func path(in rect: CGRect) -> Path {
         var path = Path()
         
         if isUserMessage {
-            // User message bubble (right-aligned with tail on bottom-right)
-            path.addRoundedRect(
-                in: CGRect(
-                    x: 0,
-                    y: 0,
-                    width: rect.width - tailSize,
-                    height: rect.height - tailSize
-                ),
-                cornerSize: CGSize(width: cornerRadius, height: cornerRadius)
+            // User message bubble with modern rounded rectangle
+            // Slightly more rounded on the bottom-left to create iOS-style asymmetry
+            path.addPath(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .path(in: CGRect(
+                        x: 0,
+                        y: 0,
+                        width: rect.width,
+                        height: rect.height
+                    ))
             )
-            
-            // Right tail
-            let tailStart = CGPoint(x: rect.width - tailSize, y: rect.height - tailSize - cornerRadius)
-            let tailMid = CGPoint(x: rect.width, y: rect.height - tailSize/2)
-            let tailEnd = CGPoint(x: rect.width - tailSize, y: rect.height - tailSize)
-            
-            path.move(to: tailStart)
-            path.addQuadCurve(to: tailEnd, control: tailMid)
             
         } else {
-            // Assistant message bubble (left-aligned with tail on bottom-left)
-            path.addRoundedRect(
-                in: CGRect(
-                    x: tailSize,
-                    y: 0,
-                    width: rect.width - tailSize,
-                    height: rect.height - tailSize
-                ),
-                cornerSize: CGSize(width: cornerRadius, height: cornerRadius)
+            // Assistant message bubble with modern rounded rectangle
+            // Slightly more rounded on the bottom-right for visual balance
+            path.addPath(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .path(in: CGRect(
+                        x: 0,
+                        y: 0,
+                        width: rect.width,
+                        height: rect.height
+                    ))
             )
-            
-            // Left tail
-            let tailStart = CGPoint(x: tailSize, y: rect.height - tailSize - cornerRadius)
-            let tailMid = CGPoint(x: 0, y: rect.height - tailSize/2)
-            let tailEnd = CGPoint(x: tailSize, y: rect.height - tailSize)
-            
-            path.move(to: tailStart)
-            path.addQuadCurve(to: tailEnd, control: tailMid)
         }
         
         return path

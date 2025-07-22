@@ -87,13 +87,11 @@ struct AISidebar: View {
             // Chat messages area
             chatMessagesArea()
             
-            Divider()
-                .opacity(0.3)
-            
             // Input area
             chatInputArea()
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
     
     // MARK: - Header
@@ -125,7 +123,8 @@ struct AISidebar: View {
                 resetAutoCollapseTimer()
             }
         }
-        .frame(height: 32)
+        .frame(height: 40)
+        .padding(.bottom, 8)
     }
     
     // MARK: - Chat Messages Area
@@ -134,7 +133,7 @@ struct AISidebar: View {
     private func chatMessagesArea() -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     if !aiAssistant.isInitialized {
                         // Initialization status
                         aiInitializationView()
@@ -149,7 +148,7 @@ struct AISidebar: View {
                         }
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 16)
             }
             .onReceive(aiAssistant.$isProcessing) { _ in
                 // Auto-scroll to bottom when new messages arrive
@@ -165,55 +164,183 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func aiInitializationView() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                if aiAssistant.isInitialized {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                } else {
-                    ProgressView()
-                        .scaleEffect(0.8)
+        VStack(alignment: .leading, spacing: 16) {
+            // Modern loading header
+            HStack(spacing: 12) {
+                ZStack {
+                    if aiAssistant.isInitialized {
+                        // Success state
+                        Circle()
+                            .fill(.green.opacity(0.1))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.green)
+                            )
+                    } else {
+                        // Loading state with subtle animation
+                        Circle()
+                            .fill(.blue.opacity(0.08))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Circle()
+                                    .trim(from: 0, to: 0.7)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.blue.opacity(0.8), .blue.opacity(0.3)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                                    )
+                                    .rotationEffect(.degrees(aiAssistant.isInitialized ? 0 : 360))
+                                    .animation(
+                                        .linear(duration: 1.2).repeatForever(autoreverses: false),
+                                        value: aiAssistant.isInitialized
+                                    )
+                            )
+                    }
                 }
                 
-                Text(aiAssistant.initializationStatus)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(aiAssistant.isInitialized ? "AI Ready" : "Preparing AI")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text(aiAssistant.initializationStatus)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+            }
+            
+            // Progress indicator for non-initialized state
+            if !aiAssistant.isInitialized {
+                VStack(spacing: 8) {
+                    // Subtle progress bar
+                    HStack(spacing: 4) {
+                        ForEach(0..<4, id: \.self) { index in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(.blue.opacity(progressDotOpacity(for: index)))
+                                .frame(width: 24, height: 2)
+                                .animation(
+                                    .easeInOut(duration: 0.8)
+                                        .repeatForever(autoreverses: true)
+                                        .delay(Double(index) * 0.2),
+                                    value: aiAssistant.isInitialized
+                                )
+                        }
+                    }
+                    
+                    Text("Downloading and optimizing model...")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
             }
             
             if let error = aiAssistant.lastError {
-                Text(error)
-                    .font(.system(size: 12))
-                    .foregroundColor(.red)
-                    .padding(.leading, 24)
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                    
+                    Text(error)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.top, 4)
             }
         }
-        .padding(12)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
-                .opacity(0.5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.quaternary, lineWidth: 0.5)
+                )
         )
+    }
+    
+    private func progressDotOpacity(for index: Int) -> Double {
+        let time = Date().timeIntervalSince1970
+        let offset = Double(index) * 0.5
+        return 0.3 + 0.7 * abs(sin(time * 2 + offset))
     }
     
     @ViewBuilder
     private func chatMessagesPlaceholder() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("AI Assistant Ready")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green.opacity(0.2), .green.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: "brain")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.green)
+                    )
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI Ready")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Local AI • Private & Secure")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
             
-            Text("Start a conversation or ask about your current browsing session.")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.leading)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Ask me anything about:")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    suggestionRow(icon: "doc.text", text: "Current page content")
+                    suggestionRow(icon: "clock", text: "Browsing history")
+                    suggestionRow(icon: "magnifyingglass", text: "Web search help")
+                }
+            }
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
-                .opacity(0.3)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(.quaternary, lineWidth: 0.5)
+                )
         )
+    }
+    
+    @ViewBuilder
+    private func suggestionRow(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.6))
+                .frame(width: 12)
+            
+            Text(text)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(.secondary)
+        }
     }
     
     // MARK: - Chat Input Area
@@ -248,7 +375,8 @@ struct AISidebar: View {
             .buttonStyle(PlainButtonStyle())
             .disabled(chatInput.isEmpty || !aiAssistant.isInitialized)
         }
-        .frame(height: 44)
+        .frame(minHeight: 44)
+        .padding(.top, 12)
         .onTapGesture {
             // Reset auto-collapse timer on interaction
             resetAutoCollapseTimer()
@@ -424,29 +552,93 @@ struct AIStatusIndicator: View {
     let status: String
     
     var body: some View {
-        HStack(spacing: 6) {
-            // Status dot
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-                .overlay(
-                    // Processing animation
+        HStack(spacing: 8) {
+            // Modern status indicator
+            ZStack {
+                // Background circle
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 20, height: 20)
+                
+                // Status dot or processing indicator
+                if isProcessing {
+                    // Elegant processing animation
                     Circle()
-                        .stroke(statusColor, lineWidth: 1)
-                        .scaleEffect(isProcessing ? 1.5 : 1.0)
-                        .opacity(isProcessing ? 0 : 1)
+                        .trim(from: 0, to: 0.6)
+                        .stroke(
+                            AngularGradient(
+                                colors: [statusColor.opacity(0.3), statusColor],
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
+                            ),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .frame(width: 12, height: 12)
+                        .rotationEffect(.degrees(isProcessing ? 360 : 0))
                         .animation(
-                            isProcessing ? 
-                                .easeInOut(duration: 1.0).repeatForever(autoreverses: false) : 
-                                .default,
+                            .linear(duration: 1.5).repeatForever(autoreverses: false),
                             value: isProcessing
                         )
-                )
+                } else {
+                    // Solid status dot
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [statusColor, statusColor.opacity(0.8)],
+                                center: .topLeading,
+                                startRadius: 2,
+                                endRadius: 8
+                            )
+                        )
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(isInitialized ? 1.0 : 0.8)
+                        .animation(.easeInOut(duration: 0.3), value: isInitialized)
+                }
+                
+                // Pulse effect for ready state
+                if isInitialized && !isProcessing {
+                    Circle()
+                        .stroke(statusColor.opacity(0.4), lineWidth: 1)
+                        .frame(width: 16, height: 16)
+                        .scaleEffect(1.2)
+                        .opacity(0)
+                        .animation(
+                            .easeOut(duration: 2.0).repeatForever(autoreverses: false),
+                            value: isInitialized
+                        )
+                        .onAppear {
+                            withAnimation {
+                                // Trigger pulse animation
+                            }
+                        }
+                }
+            }
             
-            // Status text
-            Text(isProcessing ? "Processing..." : (isInitialized ? "AI Ready" : "Initializing..."))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.primary)
+            VStack(alignment: .leading, spacing: 1) {
+                // Primary status
+                Text(statusText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                // Secondary status
+                if !status.isEmpty && status != statusText {
+                    Text(status)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+    
+    private var statusText: String {
+        if isProcessing {
+            return "Processing"
+        } else if isInitialized {
+            return "AI Ready"
+        } else {
+            return "Starting"
         }
     }
     

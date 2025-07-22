@@ -1,4 +1,6 @@
 import Foundation
+import MLXLLM
+// MLXGemmaRunner included via Web.AI.Runners
 
 /// Gemma AI service for local inference with Apple MLX optimization
 /// Handles model initialization, text generation, and response streaming
@@ -101,16 +103,26 @@ class GemmaService {
                 responseBuilder.setContextUsed(true)
             }
             
+            guard let tokenizer = tokenizer else {
+                throw GemmaError.tokenizerNotAvailable
+            }
+
+            // Fast-path: If MLX is ready, generate real text via MLXGemmaRunner and avoid placeholder logic
+            if mlxWrapper.isInitialized, let modelPath = onDemandModelService.getModelPath() {
+                responseBuilder.addProcessingStep(ProcessingStep(name: "mlx_inference", duration: 0, description: "Running MLX LLM"))
+                let generatedText = try await MLXGemmaRunner.shared.generate(prompt: prompt, modelPath: modelPath)
+                let encoded = try tokenizer.encode(generatedText)
+                let cleaned = postProcessResponse(generatedText)
+                mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
+                return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
+            }
+
             // Step 2: Tokenize input
             responseBuilder.addProcessingStep(ProcessingStep(
                 name: "tokenization",
                 duration: 0.05,
                 description: "Tokenizing input text"
             ))
-            
-            guard let tokenizer = tokenizer else {
-                throw GemmaError.tokenizerNotAvailable
-            }
             
             let inputTokens = try tokenizer.encode(prompt)
             
