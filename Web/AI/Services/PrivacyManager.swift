@@ -261,22 +261,37 @@ class PrivacyManager: ObservableObject {
     // MARK: - Private Methods
     
     private func setupEncryptionKey() async throws {
+        // We want to be resilient: if keychain read fails (e.g. after OS upgrade,
+        // permissions reset, or corrupted entry) we generate a fresh key rather
+        // than aborting the entire AI launch sequence. Existing encrypted files
+        // may become unreadable, but that is preferable to blocking the app.
         do {
-            // Try to retrieve existing key from keychain
-            if let existingKeyData = try keychain.getData(encryptionKeyIdentifier) {
-                encryptionKey = SymmetricKey(data: existingKeyData)
+            let existingKeyData: Data?
+            do {
+                existingKeyData = try keychain.getData(encryptionKeyIdentifier)
+            } catch {
+                // Log and treat as missing – will generate a new key below.
+                NSLog("⚠️ Keychain retrieval failed (will regenerate key): \(error)")
+                existingKeyData = nil
+            }
+
+            if let data = existingKeyData {
+                encryptionKey = SymmetricKey(data: data)
                 NSLog("🔑 Retrieved existing encryption key from keychain")
             } else {
                 // Generate new key
                 let newKey = SymmetricKey(size: .bits256)
                 encryptionKey = newKey
-                
-                // Store key in keychain
-                try keychain.set(newKey.data, forKey: encryptionKeyIdentifier)
-                NSLog("🔑 Generated and stored new encryption key")
+
+                // Store key in keychain; ignore duplicate errors as we just tried to read
+                do {
+                    try keychain.set(newKey.data, forKey: encryptionKeyIdentifier)
+                    NSLog("🔑 Generated and stored new encryption key")
+                } catch {
+                    NSLog("⚠️ Failed to store new key in keychain: \(error)")
+                    // Do not throw – we already have a key in memory and can continue.
+                }
             }
-        } catch {
-            throw PrivacyError.keyGenerationFailed(error.localizedDescription)
         }
     }
     
