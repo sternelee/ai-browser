@@ -15,9 +15,7 @@ struct HoverableURLBar: View {
     @State private var suggestions: [SearchSuggestion] = []
     @State private var displayString: String = ""
     
-    // FocusCoordinator integration
-    private let barID = UUID().uuidString
-    private let focusCoordinator = FocusCoordinator.shared
+    // Simplified - use native SwiftUI focus management
     
     struct SearchSuggestion: Identifiable {
         let id = UUID()
@@ -116,28 +114,12 @@ struct HoverableURLBar: View {
                             .onSubmit {
                                 navigateToURL()
                             }
-                            .onReceive(NotificationCenter.default.publisher(for: .clearFocusForID)) { notification in
-                                if let notificationID = notification.userInfo?["id"] as? String, notificationID == barID {
-                                    NSLog("🎯 TEXTFIELD FIX: Clearing focus for hoverable URL bar \(barID) due to coordinator request")
-                                    isURLBarFocused = false
-                                }
-                            }
                             .onChange(of: isURLBarFocused) { _, focused in
                                 if focused {
-                                    // Always attempt to acquire focus - if denied, defer to coordinator without modifying state
-                                    if focusCoordinator.canFocus(barID) {
-                                        focusCoordinator.setFocusedURLBar(barID, focused: true)
-                                        editingText = urlString
-                                        // Keep visible when focused
-                                        cancelHideTimer()
-                                    } else {
-                                        // CRITICAL FIX: Don't modify isURLBarFocused inside its observer - let coordinator handle it
-                                        // Instead, just update editing state and schedule hide
-                                        editingText = urlString
-                                        scheduleHide()
-                                    }
+                                    editingText = urlString
+                                    // Keep visible when focused
+                                    cancelHideTimer()
                                 } else {
-                                    focusCoordinator.setFocusedURLBar(barID, focused: false)
                                     // Hide after delay when unfocused
                                     scheduleHide()
                                     suggestions = []
@@ -249,12 +231,8 @@ struct HoverableURLBar: View {
         }
         .onAppear {
             updateDisplayString()
-            // Clear any stale global focus when this bar appears
-            focusCoordinator.setFocusedURLBar(barID, focused: false)
         }
-        .onDisappear {
-            focusCoordinator.setFocusedURLBar(barID, focused: false)
-        }
+        // Removed complex focus coordinator - using native SwiftUI focus
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isVisible)
     }
     

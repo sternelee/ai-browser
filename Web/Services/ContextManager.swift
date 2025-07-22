@@ -123,24 +123,27 @@ class ContextManager: ObservableObject {
                 continuation.resume(throwing: ContextError.extractionTimeout)
             }
             
-            webView.evaluateJavaScript(script) { result, error in
-                timeoutTask.cancel()
-                
-                if let error = error {
-                    continuation.resume(throwing: ContextError.javascriptError(error.localizedDescription))
-                    return
-                }
-                
-                guard let data = result as? [String: Any] else {
-                    continuation.resume(throwing: ContextError.invalidResponse)
-                    return
-                }
-                
-                do {
-                    let context = try self.parseExtractionResult(data, from: webView, tab: tab)
-                    continuation.resume(returning: context)
-                } catch {
-                    continuation.resume(throwing: error)
+            // FIXED: Execute JavaScript on main thread
+            Task { @MainActor in
+                webView.evaluateJavaScript(script) { result, error in
+                    timeoutTask.cancel()
+                    
+                    if let error = error {
+                        continuation.resume(throwing: ContextError.javascriptError(error.localizedDescription))
+                        return
+                    }
+                    
+                    guard let data = result as? [String: Any] else {
+                        continuation.resume(throwing: ContextError.invalidResponse)
+                        return
+                    }
+                    
+                    do {
+                        let context = try self.parseExtractionResult(data, from: webView, tab: tab)
+                        continuation.resume(returning: context)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
         }

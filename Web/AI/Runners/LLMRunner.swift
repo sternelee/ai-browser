@@ -3,6 +3,14 @@ import LLM
 
 // Role is imported directly from LLM package as a top-level enum
 
+/// Thread-safe wrapper for mutable values in concurrent contexts
+private class Box<T> {
+    var value: T
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
 /// Local LLM runner using LLM.swift for direct GGUF model inference  
 /// Features persistent model caching to avoid reloading 4.5GB models between app launches
 // SIMPLIFIED: Remove global actor to fix runtime crash
@@ -50,9 +58,9 @@ final class LLMRunner {
 
     /// Ensures model is loaded with persistent caching between app launches
     private func ensureLoaded(modelPath: URL) async throws {
-        // If already loaded with same model, return
+        // If already loaded with same model, return immediately
         if bot != nil && currentModelPath == modelPath {
-            NSLog("♻️ Model already loaded in memory, reusing...")
+            NSLog("♻️ Model already loaded in memory, reusing existing instance...")
             return
         }
         
@@ -132,8 +140,29 @@ final class LLMRunner {
         // Add user message to conversation history
         conversationHistory.append(userChat)
         
-        // Use LLM.swift's built-in conversation management
-        let response = await bot.getCompletion(from: bot.preprocess(prompt, conversationHistory))
+        // FIXED: Use timeout and better error handling for non-streaming generation
+        NSLog("🤖 Starting non-streaming generation with timeout...")
+        
+        let response = await withTaskGroup(of: String?.self) { group in
+            // Main generation task
+            group.addTask { [self] in
+                return await bot.getCompletion(from: bot.preprocess(prompt, self.conversationHistory))
+            }
+            
+            // Timeout task (30 seconds for non-streaming)
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                return nil
+            }
+            
+            // Return the first completed result
+            if let result = await group.next() {
+                group.cancelAll()
+                return result ?? "Response generation timed out after 30 seconds. Please try again or use streaming mode."
+            }
+            
+            return "Unexpected error in response generation."
+        }
         
         // Add assistant response to conversation history
         let assistantChat: (role: Role, content: String) = (.bot, response)
@@ -163,30 +192,38 @@ final class LLMRunner {
                     // Get bot instance for processing
                     let botInstance = await bot!
                     
-                    // SIMPLIFIED: Use basic generation for now (can improve later)
-                    // This avoids complex actor isolation issues
-                    let response = await botInstance.getCompletion(from: botInstance.preprocess(prompt, await conversationHistory))
+                    // FIXED: Use real token-by-token streaming with LLM.swift callback system
+                    let fullResponse = Box("")  // Thread-safe wrapper
                     
-                    // Stream the response in chunks for better UX than original fake streaming
-                    let chunkSize = max(1, response.count / 50) // Smaller chunks = smoother streaming
-                    var currentIndex = response.startIndex
+                    await MainActor.run {
+                        // Set up the streaming callback for real token-by-token streaming
+                        botInstance.update = { [fullResponse] outputDelta in
+                            if let delta = outputDelta {
+                                fullResponse.value += delta
+                                continuation.yield(delta)
+                            }
+                        }
+                    }
                     
-                    while currentIndex < response.endIndex {
-                        let endIndex = response.index(currentIndex, offsetBy: chunkSize, limitedBy: response.endIndex) ?? response.endIndex
-                        let chunk = String(response[currentIndex..<endIndex])
-                        
-                        continuation.yield(chunk)
-                        currentIndex = endIndex
-                        
-                        // Faster streaming than original (10ms vs 50ms)
-                        try await Task.sleep(nanoseconds: 10_000_000) // 10ms for smoother streaming
+                    NSLog("🌊 Starting REAL token streaming...")
+                    
+                    // Preprocess and start streaming generation
+                    let preprocessed = botInstance.preprocess(prompt, conversationHistory)
+                    
+                    // This will trigger the streaming callbacks as tokens are generated
+                    let finalResponse = await botInstance.getCompletion(from: preprocessed)
+                    
+                    // If no streaming occurred, send the final response
+                    if fullResponse.value.isEmpty && !finalResponse.isEmpty {
+                        continuation.yield(finalResponse)
+                        fullResponse.value = finalResponse
                     }
                     
                     // Update conversation history
-                    await self.addToConversationHistory(userPrompt: prompt, response: response)
+                    await self.addToConversationHistory(userPrompt: prompt, response: fullResponse.value.isEmpty ? finalResponse : fullResponse.value)
                     
                     continuation.finish()
-                    NSLog("✅ Streaming response completed: \(response.count) characters")
+                    NSLog("✅ Streaming response completed: \(fullResponse.value.isEmpty ? finalResponse.count : fullResponse.value.count) characters")
                     
                 } catch {
                     NSLog("❌ Streaming failed: \(error)")

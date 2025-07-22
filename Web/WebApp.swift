@@ -83,11 +83,7 @@ struct BrowserCommands: Commands {
             }
             .keyboardShortcut("f", modifiers: .command)
             
-            Button("Emergency Focus Reset") {
-                // Emergency command to clear stuck URL bar focus and reset all state
-                FocusCoordinator.shared.emergencyResetAllFocusState()
-            }
-            .keyboardShortcut(.escape, modifiers: [.command, .option])
+            // Removed emergency focus reset - no longer needed with simplified focus
             
         }
         
@@ -219,7 +215,7 @@ extension Notification.Name {
     static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
-    static let clearFocusForID = Notification.Name("clearFocusForID")
+    // Removed clearFocusForID - no longer needed with simplified focus
     
     // Phase 2: Next-Gen UI shortcuts
     static let toggleTabDisplay = Notification.Name("toggleTabDisplay")

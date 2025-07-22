@@ -521,30 +521,19 @@ struct AISidebar: View {
         }
         
         if isExpanded {
-            NSLog("🎯 SIDEBAR DEBUG: Expanding AI sidebar - about to notify focus coordinator")
-            // Notify focus coordinator that AI sidebar is opening
-            FocusCoordinator.shared.setAISidebarOpen(true)
             startAutoCollapseTimer()
-            // Focus input after animation and focus coordinator has cleared conflicts
-            NSLog("🎯 SIDEBAR DEBUG: Scheduling delayed focus for AI input in 0.4s")
+            // Focus input after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                NSLog("🎯 SIDEBAR DEBUG: Attempting to focus AI input - isChatInputFocused will be set to true")
                 isChatInputFocused = true
             }
         } else {
-            NSLog("🎯 SIDEBAR DEBUG: Collapsing AI sidebar")
             stopAutoCollapseTimer()
             isChatInputFocused = false
-            // Notify focus coordinator that AI sidebar is closed
-            FocusCoordinator.shared.setAISidebarOpen(false)
         }
     }
     
     private func expandSidebar() {
         guard !isExpanded else { return }
-        
-        // Notify focus coordinator that AI sidebar is opening
-        FocusCoordinator.shared.setAISidebarOpen(true)
         
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             isExpanded = true
@@ -552,7 +541,7 @@ struct AISidebar: View {
         
         startAutoCollapseTimer()
         
-        // Focus input after animation and focus coordinator has cleared conflicts
+        // Focus input after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             isChatInputFocused = true
         }
@@ -567,8 +556,6 @@ struct AISidebar: View {
         
         stopAutoCollapseTimer()
         isChatInputFocused = false
-        // Notify focus coordinator that AI sidebar is closed
-        FocusCoordinator.shared.setAISidebarOpen(false)
     }
     
     private func expandAndFocusInput() {
@@ -593,13 +580,29 @@ struct AISidebar: View {
         // Reset auto-collapse timer on interaction
         resetAutoCollapseTimer()
         
-        // Process message with AI Assistant
+        // Process message with AI Assistant using streaming for immediate response
         Task {
             do {
-                let _ = try await aiAssistant.processQuery(message, includeContext: true)
-                // UI updates will be handled by ChatBubbleView in next phase
+                // Use streaming for immediate token-by-token response
+                let stream = aiAssistant.processStreamingQuery(message, includeContext: true)
+                
+                // Process streaming response
+                var streamedResponse = ""
+                for try await chunk in stream {
+                    streamedResponse += chunk
+                    // Tokens will appear immediately in the UI through the streaming mechanism
+                    NSLog("🌊 Received token chunk: \(chunk)")
+                }
+                
+                NSLog("✅ Streaming response completed: \(streamedResponse.count) characters")
             } catch {
-                NSLog("❌ Chat message processing failed: \(error)")
+                NSLog("❌ Streaming chat message processing failed: \(error)")
+                // Fallback to non-streaming if streaming fails
+                do {
+                    let _ = try await aiAssistant.processQuery(message, includeContext: true)
+                } catch {
+                    NSLog("❌ Fallback non-streaming also failed: \(error)")
+                }
             }
         }
     }
