@@ -51,6 +51,7 @@ struct SidebarTabView: View {
             }
             
             Spacer()
+                .background(WindowDragArea())  // Make empty sidebar area draggable
             
             // Bottom section with settings only
             VStack(spacing: 8) {

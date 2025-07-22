@@ -30,6 +30,7 @@ struct TopBarTabView: View {
             tabScrollView
         }
         .frame(height: 40)
+        .background(WindowDragArea())  // Make top bar draggable
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
