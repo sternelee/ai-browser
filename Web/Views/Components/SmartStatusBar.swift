@@ -43,7 +43,8 @@ struct SmartStatusBar: View {
                         .fill(.ultraThinMaterial)
                         .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                 )
-                .fixedSize(horizontal: true, vertical: false) // Adapt to content width
+                .frame(maxWidth: 600, alignment: .leading) // Limit width to prevent overflow
+                .fixedSize(horizontal: false, vertical: true) // Prevent vertical growth
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: statusType)
             }
@@ -84,8 +85,9 @@ struct SmartStatusBar: View {
     
     // MARK: - Public Methods
     func showLinkHover(_ urlString: String) {
-        // Show the full URL instead of just the domain
-        updateStatus(type: .linkHover, message: urlString)
+        // Show truncated URL to prevent layout breaking
+        let truncatedURL = truncateURL(urlString)
+        updateStatus(type: .linkHover, message: truncatedURL)
     }
     
     func hideLinkHover() {
@@ -102,6 +104,57 @@ struct SmartStatusBar: View {
     }
     
     // MARK: - Private Methods
+    private func truncateURL(_ url: String) -> String {
+        // Maximum characters to display before truncation
+        let maxLength = 80
+        
+        guard url.count > maxLength else {
+            return url
+        }
+        
+        // Try to intelligently truncate by preserving the domain and path structure
+        if let urlComponents = URLComponents(string: url) {
+            let scheme = urlComponents.scheme ?? ""
+            let host = urlComponents.host ?? ""
+            let path = urlComponents.path
+            let query = urlComponents.query
+            
+            // Start building the display URL
+            var displayURL = scheme.isEmpty ? "" : "\(scheme)://"
+            displayURL += host
+            
+            // Calculate remaining space for path and query
+            let remainingSpace = maxLength - displayURL.count
+            
+            if remainingSpace > 10 { // Leave some room for ellipsis
+                var pathAndQuery = path
+                if let query = query, !query.isEmpty {
+                    pathAndQuery += "?\(query)"
+                }
+                
+                if pathAndQuery.count <= remainingSpace {
+                    displayURL += pathAndQuery
+                } else {
+                    // Truncate path/query and add ellipsis
+                    let truncatedLength = remainingSpace - 3 // Reserve 3 chars for "..."
+                    if truncatedLength > 0 {
+                        displayURL += String(pathAndQuery.prefix(truncatedLength)) + "..."
+                    } else {
+                        displayURL += "..."
+                    }
+                }
+            } else {
+                // Not enough space, truncate the host itself
+                displayURL += "..."
+            }
+            
+            return displayURL
+        }
+        
+        // Fallback: simple truncation if URL parsing fails
+        return String(url.prefix(maxLength - 3)) + "..."
+    }
+    
     private func updateStatus(type: StatusType, message: String) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             statusType = type

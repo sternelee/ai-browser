@@ -533,15 +533,7 @@ struct WebContentArea: View {
     }
     
     private func navigateToURL(_ url: String) {
-        print("🎯 TabDisplayView.navigateToURL called:")
-        print("   - URL string: \(url)")
-        
-        guard let activeTab = tabManager.activeTab else { 
-            print("   ❌ No active tab")
-            return 
-        }
-        
-        print("   - Active tab ID: \(activeTab.id)")
+        guard let activeTab = tabManager.activeTab else { return }
         
         let processedURL: URL?
         
@@ -558,12 +550,7 @@ struct WebContentArea: View {
             processedURL = URL(string: "https://www.google.com/search?q=\(query)")
         }
         
-        guard let validURL = processedURL else { 
-            print("   ❌ Invalid URL")
-            return 
-        }
-        
-        print("   - Processed URL: \(validURL.absoluteString)")
+        guard let validURL = processedURL else { return }
         
         // Navigate to URL - tab manages its own state
         activeTab.navigate(to: validURL)

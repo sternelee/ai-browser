@@ -144,28 +144,15 @@ struct WebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
-        // Smart navigation logic with comprehensive debug logging
+        // Smart navigation logic - only prevent rapid duplicate requests to same URL
         if let url = url {
-            let currentWebViewURL = webView.url?.absoluteString ?? "nil"
             let isCurrentlyDifferent = webView.url?.absoluteString != url.absoluteString
             let isNotCurrentlyLoading = !webView.isLoading
             
             // Only apply minimal debouncing for duplicate requests to the exact same URL
-            let lastLoadedURLString = context.coordinator.lastLoadedURL?.absoluteString ?? "nil"
             let isDuplicateRequest = context.coordinator.lastLoadedURL?.absoluteString == url.absoluteString
             let now = Date()
             let timeSinceLastLoad = context.coordinator.lastLoadTime.map { now.timeIntervalSince($0) } ?? 1.0
-            
-            // Debug logging
-            print("🔍 WebView.updateNSView DEBUG:")
-            print("  - Requested URL: \(url.absoluteString)")
-            print("  - WebView current URL: \(currentWebViewURL)")
-            print("  - Last loaded URL: \(lastLoadedURLString)")
-            print("  - isCurrentlyDifferent: \(isCurrentlyDifferent)")
-            print("  - isNotCurrentlyLoading: \(isNotCurrentlyLoading)")
-            print("  - isDuplicateRequest: \(isDuplicateRequest)")
-            print("  - timeSinceLastLoad: \(timeSinceLastLoad)s")
-            print("  - webView.isLoading: \(webView.isLoading)")
             
             // Load if:
             // 1. URL is different (always allow new URLs)
@@ -176,21 +163,14 @@ struct WebView: NSViewRepresentable {
                            !isDuplicateRequest || 
                            timeSinceLastLoad > 0.1
             
-            print("  - shouldLoad: \(shouldLoad)")
-            
             if shouldLoad {
-                print("  ✅ LOADING: \(url.absoluteString)")
                 let request = URLRequest(url: url)
                 webView.load(request)
                 
                 // Store the URL and timestamp in coordinator
                 context.coordinator.lastLoadedURL = url
                 context.coordinator.lastLoadTime = now
-            } else {
-                print("  ❌ BLOCKED: \(url.absoluteString)")
             }
-        } else {
-            print("🔍 WebView.updateNSView: No URL provided")
         }
     }
     
@@ -410,13 +390,11 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            print("🚀 WebView.didStartProvisionalNavigation: \(webView.url?.absoluteString ?? "nil")")
             parent.isLoading = true
             parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            print("📍 WebView.didCommit: \(webView.url?.absoluteString ?? "nil")")
             // Update URL immediately when navigation commits (before page finishes loading)
             if let url = webView.url {
                 DispatchQueue.main.async {
@@ -424,14 +402,11 @@ struct WebView: NSViewRepresentable {
                     if let tab = self.parent.tab {
                         tab.url = url
                     }
-                    
-                    // Allow Google to manage its own focus naturally - no interference needed
                 }
             }
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            print("✅ WebView.didFinish: \(webView.url?.absoluteString ?? "nil")")
             parent.isLoading = false
             parent.title = webView.title
             parent.canGoBack = webView.canGoBack
@@ -477,15 +452,13 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("❌ WebView.didFail navigation: \(webView.url?.absoluteString ?? "nil")")
-            print("   Error: \(error.localizedDescription) (code: \((error as NSError).code))")
+            print("❌ WebView navigation failed: \(error.localizedDescription) (code: \((error as NSError).code))")
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("💥 WebView.didFailProvisionalNavigation: \(webView.url?.absoluteString ?? "nil")")
-            print("   Error: \(error.localizedDescription) (code: \((error as NSError).code))")
+            print("❌ WebView provisional navigation failed: \(error.localizedDescription) (code: \((error as NSError).code))")
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
         }

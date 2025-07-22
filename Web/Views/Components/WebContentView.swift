@@ -291,18 +291,8 @@ struct ExistingWebView: NSViewRepresentable {
             }
             
             if shouldNavigate {
-                print("🔄 ExistingWebView.updateNSView navigation:")
-                print("   - Tab URL: \(tabURL.absoluteString)")
-                print("   - WebView URL: \(webViewURL ?? "nil")")
-                print("   - Tab ID: \(tab.id)")
-                print("   - Navigating: different domain or no URL")
                 let request = URLRequest(url: tabURL)
                 webView.load(request)
-            } else {
-                print("🚫 ExistingWebView.updateNSView SKIPPED:")
-                print("   - Tab URL: \(tabURL.absoluteString)")
-                print("   - WebView URL: \(webViewURL ?? "nil")")
-                print("   - Reason: Same domain or WebView loading - avoiding interference")
             }
         }
         
