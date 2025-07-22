@@ -363,7 +363,12 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         // Update progress on main thread
         DispatchQueue.main.async {
             let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-            self.downloadProgress = min(max(progress, 0.0), 0.95) // Cap at 95% until validation
+            let cappedProgress = min(max(progress, 0.0), 0.95) // Cap at 95% until validation
+            
+            // Only update if progress actually changed (prevent infinite updates at 95%)
+            if abs(self.downloadProgress - cappedProgress) > 0.001 {
+                self.downloadProgress = cappedProgress
+            }
             
             // Log progress periodically
             if Int(progress * 100) % 10 == 0 {

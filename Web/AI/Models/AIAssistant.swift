@@ -113,10 +113,23 @@ class AIAssistant: ObservableObject {
                             try await self.onDemandModelService.initializeAI()
                         }
                         
-                        // Wait for model to be ready
+                        // Wait for model to be ready with timeout
                         await self.updateStatus("Loading AI model...")
+                        let timeout = 60.0 // 60 second timeout
+                        let startTime = Date()
+                        
                         while !self.onDemandModelService.isAIReady() {
-                            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                            // Check for timeout
+                            if Date().timeIntervalSince(startTime) > timeout {
+                                throw ModelError.downloadFailed("Model loading timed out after \(timeout) seconds")
+                            }
+                            
+                            // Check if download failed
+                            if case .failed(let error) = self.onDemandModelService.downloadState {
+                                throw ModelError.downloadFailed("Model download failed: \(error)")
+                            }
+                            
+                            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second (longer interval)
                         }
                         NSLog("✅ AI model is ready")
                     } catch {
@@ -135,6 +148,11 @@ class AIAssistant: ObservableObject {
             isInitialized = true
             updateStatus("AI Assistant ready")
             lastError = nil
+            
+            // Clear any focus locks that may have occurred during initialization
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                FocusCoordinator.shared.clearAllFocus()
+            }
             
             NSLog("✅ AI Assistant initialization completed successfully (OPTIMIZED)")
             
@@ -328,6 +346,7 @@ class AIAssistant: ObservableObject {
         // Bind download progress for status updates
         onDemandModelService.$downloadProgress
             .receive(on: DispatchQueue.main)
+            .removeDuplicates()
             .sink { [weak self] progress in
                 if progress > 0 && progress < 1.0 {
                     self?.updateStatus("Downloading AI model: \(Int(progress * 100))%")
