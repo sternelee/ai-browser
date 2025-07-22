@@ -68,8 +68,13 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
         let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
         let modelsCache = cacheDir.appendingPathComponent("Web/AI/Models")
         
-        // Ensure directory exists
-        try? fileManager.createDirectory(at: modelsCache, withIntermediateDirectories: true)
+        // Ensure directory exists with proper error handling
+        do {
+            try fileManager.createDirectory(at: modelsCache, withIntermediateDirectories: true, attributes: nil)
+            NSLog("📁 Ensured models cache directory exists: \(modelsCache.path)")
+        } catch {
+            NSLog("⚠️ Warning: Could not create models cache directory: \(error)")
+        }
         
         return modelsCache
     }
@@ -258,8 +263,25 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
             }
             
             NSLog("📁 Moving downloaded model to final location...")
+            
+            // Ensure destination directory exists
+            let destinationDir = modelPath.deletingLastPathComponent()
+            try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true, attributes: nil)
+            
+            // Verify temp file still exists before moving
+            guard fileManager.fileExists(atPath: tempURL.path) else {
+                throw ModelError.downloadFailed("Temporary download file was removed before move operation")
+            }
+            
+            // Remove any existing file at destination
+            if fileManager.fileExists(atPath: modelPath.path) {
+                try fileManager.removeItem(at: modelPath)
+                NSLog("🗑️ Removed existing model file before moving new download")
+            }
+            
             // Move to final location
             try fileManager.moveItem(at: tempURL, to: modelPath)
+            NSLog("✅ Successfully moved model to: \(modelPath.path)")
             
             // Validate downloaded model
             let isValid = try await validateExistingModel(at: modelPath, expected: model)
@@ -343,6 +365,21 @@ class OnDemandModelService: NSObject, ObservableObject, URLSessionDownloadDelega
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         NSLog("✅ AI model download completed, validating...")
+        NSLog("📍 Temporary download location: \(location.path)")
+        
+        // Verify the temporary file exists and has the expected size
+        if fileManager.fileExists(atPath: location.path) {
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: location.path)
+                let fileSize = attributes[.size] as? Int64 ?? 0
+                NSLog("📏 Downloaded file size: \(formatBytes(fileSize))")
+            } catch {
+                NSLog("⚠️ Could not read downloaded file attributes: \(error)")
+            }
+        } else {
+            NSLog("❌ Warning: Temporary download file does not exist at expected location")
+        }
+        
         downloadContinuation?.resume(returning: location)
         downloadContinuation = nil
     }
