@@ -13,3 +13,5 @@
 [ ] AI follow up messages return a 0 token
 [ ] Streaming messages like chatgpt doesn't work, or at least have a loading animation message
 [ ] AI sidebar is a fine line visible when its collapsed
+[ ] Can't move window, but I still want it to be borderless
+[ ] Bookmarks don't show in the bookmarks menu
