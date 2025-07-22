@@ -31,30 +31,71 @@ This persists even after **completely removing** the complex FocusCoordinator sy
 **Action:** Completely deleted FocusCoordinator.swift, removed all coordination
 **Result:** **STILL LOCKING!** - This proves the issue is NOT focus coordination
 
-## ✅ ROOT CAUSE IDENTIFIED AND FIXED
+## ROOT CAUSE STILL NOT IDENTIFIED!!
 
 **Investigation revealed: MAIN THREAD BLOCKING from AI operations!**
 
-### **Critical Issues Found and Fixed:**
+### **Critical Issues Found and Maybe Fixed:**
 
-#### 1. **AI Polling Loop Main Thread Blocking** ✅ FIXED
+#### 1. **AI Polling Loop Main Thread Blocking** ✅ 
 **Location:** `AIAssistant.swift:96-108`
 **Problem:** Tight polling loop running every 0.5 seconds for up to 60 seconds ON MAIN THREAD
 **Fix Applied:** Moved entire polling loop to background thread using `Task.detached(priority: .background)`
 
-#### 2. **High-Frequency Animation Timer** ✅ FIXED  
+#### 2. **High-Frequency Animation Timer** ✅   
 **Location:** `NewTabView.swift:270`
 **Problem:** Timer firing every 80ms (12.5 FPS) with SwiftUI animations, saturating main thread
 **Fix Applied:** Reduced to 200ms (5 FPS) and removed `withAnimation` wrapper
 
-#### 3. **AI Streaming MainActor Blocking** ✅ FIXED
+#### 3. **AI Streaming MainActor Blocking** ✅ 
 **Location:** `LLMRunner.swift:190-198` 
 **Problem:** AI streaming callbacks being set up on MainActor, blocking during token generation
 **Fix Applied:** Removed `await MainActor.run` wrapper, moved callbacks off main thread
 
-## New Investigation Theories
+## NSResponder/AppKit Level Investigation Results
 
-### Theory A: Main Thread Blocking 🔍 INVESTIGATE
+### **🚨 CRITICAL DISCOVERY: WindowConfigurator Responder Chain Interference** 
+
+#### **Root Cause Identified:** Borderless Window + Movable Background
+**Location:** `WindowConfigurator.swift:32-43`
+
+**Problems Found:**
+1. **Borderless Window Style** - `window.styleMask = [.borderless, .resizable]` disrupts normal AppKit responder chain setup
+2. **Movable Background** - `window.isMovableByWindowBackground = true` intercepts ALL mouse events globally
+3. **Style Mask Race Condition** - Multiple `styleMask` modifications during window configuration
+
+**The Combination Effect:**
+- Borderless windows have different input event routing than normal titled windows
+- Making the entire background movable captures mouse events before they reach input fields
+- This creates a responder chain break where input events never reach TextFields or WebView inputs
+
+### **🔧 FIX APPLIED:**
+```swift
+// BEFORE (BROKEN):
+window.styleMask = [.borderless, .resizable]
+window.isMovableByWindowBackground = true
+
+// AFTER (FIXED):
+window.styleMask = [.titled, .resizable, .miniaturizable, .closable]
+window.isMovableByWindowBackground = false
+```
+
+**Key Changes:**
+1. **Restored Titled Window** - Preserves normal responder chain behavior while keeping transparency
+2. **Disabled Background Movability** - Prevents global mouse event interception
+3. **Proper Window Controls** - Added standard window buttons for proper AppKit integration
+
+### **Additional Suspects Investigated:**
+- ❌ Multiple NSViewRepresentable WebView wrappers
+- ❌ Aggressive JavaScript injection and message handlers  
+- ❌ WKWebView configuration conflicts
+- ❌ SwiftUI focus management interactions
+
+## **STATUS: POTENTIAL FIX DEPLOYED** ✅
+**Build Status:** Compiled with 0 warnings, 0 errors
+**Next Step:** Manual testing required to confirm input locking is resolved
+
+### Theory A: Main Thread Blocking 🔍 SECONDARY INVESTIGATION
 **Hypothesis:** Some operation is blocking the main thread, preventing input handling
 **Evidence:** All UI inputs (SwiftUI + WebKit) affected simultaneously
 **Investigation Plan:**

@@ -115,7 +115,7 @@ class GemmaService {
             }
 
             do {
-                let generatedText = try await LLMRunner.shared.generateWithPrompt(prompt: prompt, maxTokens: 256, modelPath: modelPath)
+                let generatedText = try await LLMRunner.shared.generateWithPrompt(prompt: prompt, modelPath: modelPath)
                 let encoded = try tokenizer.encode(generatedText)
                 let cleaned = postProcessResponse(generatedText)
                 mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
@@ -164,7 +164,7 @@ class GemmaService {
                     }
                     
                     // Use LLMRunner for streaming (pass empty conversation history since we've already built the prompt)
-                    let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, maxTokens: 256, modelPath: modelPath)
+                    let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, modelPath: modelPath)
                     
                     for try await textChunk in textStream {
                         let cleanedChunk = postProcessResponse(textChunk)
@@ -292,6 +292,17 @@ class GemmaService {
         
         if uniqueSentences.count < sentences.count {
             cleaned = uniqueSentences.joined(separator: ".")
+        }
+        
+        // Limit response length to prevent excessive responses
+        if cleaned.count > 1000 {
+            // Find a good stopping point near the limit
+            let cutoff = 800
+            if let range = cleaned.range(of: ".", range: cleaned.startIndex..<cleaned.index(cleaned.startIndex, offsetBy: min(cutoff, cleaned.count))) {
+                cleaned = String(cleaned[..<range.upperBound])
+            } else {
+                cleaned = String(cleaned.prefix(cutoff)) + "..."
+            }
         }
         
         // Trim whitespace

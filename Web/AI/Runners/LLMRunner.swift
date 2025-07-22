@@ -117,7 +117,7 @@ final class LLMRunner {
     }
 
     /// Generate a complete response with raw prompt (bypasses conversation preprocessing)
-    func generateWithPrompt(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) async throws -> String {
+    func generateWithPrompt(prompt: String, modelPath: URL) async throws -> String {
         try await ensureLoaded(modelPath: modelPath)
         
         guard let bot = bot else { 
@@ -211,7 +211,7 @@ final class LLMRunner {
     }
 
     /// Generate a streaming response with raw prompt (bypasses conversation preprocessing)
-    nonisolated func generateStreamWithPrompt(prompt: String, maxTokens: Int = 512, temperature: Float = 0.7, modelPath: URL) -> AsyncThrowingStream<String, Error> {
+    nonisolated func generateStreamWithPrompt(prompt: String, modelPath: URL) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
