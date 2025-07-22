@@ -1,21 +1,36 @@
 import Foundation
 import LLM
 
+// Role is imported directly from LLM package as a top-level enum
+
 /// Local LLM runner using LLM.swift for direct GGUF model inference
 /// Replaces MLXGemmaRunner with proven local inference capabilities
-@globalActor
-struct LLMActor {
-    actor Shared {}
-    static let shared = Shared()
-}
-
-@LLMActor
+// SIMPLIFIED: Remove global actor to fix runtime crash
 final class LLMRunner {
     static let shared = LLMRunner()
+    
+    // OPTIMIZATION: Persistent model caching to avoid 4.5GB reloads
     private var bot: LLM?
     private var isLoading = false
     private var loadContinuation: [CheckedContinuation<Void, Error>] = []
     private var currentModelPath: URL?
+    
+    // OPTIMIZATION: Conversation state management for multi-turn chat
+    // Thread-safe with proper synchronization
+    private let queue = DispatchQueue(label: "com.web.llmrunner", qos: .userInitiated)
+    private var _conversationHistory: [(role: Role, content: String)] = []
+    private var _conversationTokenCount: Int = 0
+    private let maxConversationTokens: Int = 1800
+    
+    private var conversationHistory: [(role: Role, content: String)] {
+        get { queue.sync { _conversationHistory } }
+        set { queue.sync { _conversationHistory = newValue } }
+    }
+    
+    private var conversationTokenCount: Int {
+        get { queue.sync { _conversationTokenCount } }
+        set { queue.sync { _conversationTokenCount = newValue } }
+    }
 
     private init() {}
 
@@ -58,7 +73,7 @@ final class LLMRunner {
         NSLog("✅ GGUF model loaded successfully: \(modelPath.lastPathComponent)")
     }
 
-    /// Generate a complete response for the given prompt
+    /// Generate a complete response for the given prompt with conversation history
     func generate(prompt: String, maxTokens: Int = 256, temperature: Float = 0.7, modelPath: URL) async throws -> String {
         try await ensureLoaded(modelPath: modelPath)
         
@@ -68,17 +83,35 @@ final class LLMRunner {
         
         NSLog("🤖 Generating response with LLM.swift...")
         
-        // Preprocess prompt with conversation history
-        let processedPrompt = bot.preprocess(prompt, [])
+        // OPTIMIZATION: Use conversation history for context
+        let userChat: (role: Role, content: String) = (.user, prompt)
         
-        // Generate completion
-        let response = await bot.getCompletion(from: processedPrompt)
+        // Check if we need to reset conversation due to token limit
+        let estimatedNewTokens = prompt.count / 4 // Rough token estimation
+        if conversationTokenCount + estimatedNewTokens > maxConversationTokens {
+            NSLog("🔄 Resetting conversation context due to token limit")
+            conversationHistory.removeAll()
+            conversationTokenCount = 0
+        }
         
-        NSLog("✅ LLM response generated: \(response.count) characters")
+        // Add user message to conversation history
+        conversationHistory.append(userChat)
+        
+        // Use LLM.swift's built-in conversation management
+        let response = await bot.getCompletion(from: bot.preprocess(prompt, conversationHistory))
+        
+        // Add assistant response to conversation history
+        let assistantChat: (role: Role, content: String) = (.bot, response)
+        conversationHistory.append(assistantChat)
+        
+        // Update token count (rough estimation)
+        conversationTokenCount += estimatedNewTokens + (response.count / 4)
+        
+        NSLog("✅ LLM response generated: \(response.count) characters (conversation: \(conversationHistory.count/2) turns)")
         return response
     }
 
-    /// Generate a streaming response for the given prompt  
+    /// Generate a streaming response - SIMPLIFIED to work with Swift 6
     nonisolated func generateStream(prompt: String, maxTokens: Int = 256, temperature: Float = 0.7, modelPath: URL) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -95,15 +128,12 @@ final class LLMRunner {
                     // Get bot instance for processing
                     let botInstance = await bot!
                     
-                    // Preprocess prompt
-                    let processedPrompt = botInstance.preprocess(prompt, [])
+                    // SIMPLIFIED: Use basic generation for now (can improve later)
+                    // This avoids complex actor isolation issues
+                    let response = await botInstance.getCompletion(from: botInstance.preprocess(prompt, await conversationHistory))
                     
-                    // For now, get complete response and stream it in chunks
-                    // TODO: Implement true streaming when LLM.swift adds streaming API
-                    let response = await botInstance.getCompletion(from: processedPrompt)
-                    
-                    // Stream response in chunks for better UX
-                    let chunkSize = max(1, response.count / 20) // Stream in ~20 chunks
+                    // Stream the response in chunks for better UX than original fake streaming
+                    let chunkSize = max(1, response.count / 50) // Smaller chunks = smoother streaming
                     var currentIndex = response.startIndex
                     
                     while currentIndex < response.endIndex {
@@ -113,12 +143,15 @@ final class LLMRunner {
                         continuation.yield(chunk)
                         currentIndex = endIndex
                         
-                        // Small delay for streaming effect
-                        try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                        // Faster streaming than original (10ms vs 50ms)
+                        try await Task.sleep(nanoseconds: 10_000_000) // 10ms for smoother streaming
                     }
                     
+                    // Update conversation history
+                    await self.addToConversationHistory(userPrompt: prompt, response: response)
+                    
                     continuation.finish()
-                    NSLog("✅ Streaming response completed")
+                    NSLog("✅ Streaming response completed: \(response.count) characters")
                     
                 } catch {
                     NSLog("❌ Streaming failed: \(error)")
@@ -128,11 +161,40 @@ final class LLMRunner {
         }
     }
     
+    /// Helper method to safely update conversation history
+    private func addToConversationHistory(userPrompt: String, response: String) async {
+        let userChat: (role: Role, content: String) = (.user, userPrompt)
+        let assistantChat: (role: Role, content: String) = (.bot, response)
+        
+        let estimatedTokens = (userPrompt.count + response.count) / 4
+        
+        queue.sync {
+            if _conversationTokenCount + estimatedTokens > maxConversationTokens {
+                NSLog("🔄 Resetting conversation context due to token limit")
+                _conversationHistory.removeAll()
+                _conversationTokenCount = 0
+            }
+            
+            _conversationHistory.append(userChat)
+            _conversationHistory.append(assistantChat)
+            _conversationTokenCount += estimatedTokens
+        }
+    }
+    
     /// Clear loaded model to free memory
     func clearModel() async {
         self.bot = nil
         self.currentModelPath = nil
+        self.conversationHistory.removeAll()
+        self.conversationTokenCount = 0
         NSLog("🗑️ LLM model cleared from memory")
+    }
+    
+    /// Reset conversation history (useful for new chat sessions)
+    func resetConversation() async {
+        self.conversationHistory.removeAll()
+        self.conversationTokenCount = 0
+        NSLog("🔄 Conversation history reset")
     }
 }
 

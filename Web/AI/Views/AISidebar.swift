@@ -11,6 +11,9 @@ struct AISidebar: View {
     @State private var autoCollapseTimer: Timer?
     @FocusState private var isChatInputFocused: Bool
     
+    // OPTIMIZATION: Fix initialization spinner animation
+    @State private var initSpinnerRotation: Double = 0
+    
     // Configuration
     private let collapsedWidth: CGFloat = 4
     private let expandedWidth: CGFloat = 320
@@ -194,11 +197,25 @@ struct AISidebar: View {
                                         ),
                                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                                     )
-                                    .rotationEffect(.degrees(aiAssistant.isInitialized ? 0 : 360))
-                                    .animation(
-                                        .linear(duration: 1.2).repeatForever(autoreverses: false),
-                                        value: aiAssistant.isInitialized
-                                    )
+                                    .rotationEffect(.degrees(initSpinnerRotation))
+                                    .onAppear {
+                                        if !aiAssistant.isInitialized {
+                                            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                                initSpinnerRotation = 360
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: aiAssistant.isInitialized) { _, isInitialized in
+                                        if !isInitialized {
+                                            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                                initSpinnerRotation = 360
+                                            }
+                                        } else {
+                                            withAnimation(.easeOut(duration: 0.5)) {
+                                                initSpinnerRotation = 0
+                                            }
+                                        }
+                                    }
                             )
                     }
                 }
@@ -551,6 +568,9 @@ struct AIStatusIndicator: View {
     let isProcessing: Bool
     let status: String
     
+    // OPTIMIZATION: Fix spinner animation with proper state management
+    @State private var rotationAngle: Double = 0
+    
     var body: some View {
         HStack(spacing: 8) {
             // Modern status indicator
@@ -562,7 +582,7 @@ struct AIStatusIndicator: View {
                 
                 // Status dot or processing indicator
                 if isProcessing {
-                    // Elegant processing animation
+                    // FIXED: Elegant processing animation with proper state binding
                     Circle()
                         .trim(from: 0, to: 0.6)
                         .stroke(
@@ -575,11 +595,26 @@ struct AIStatusIndicator: View {
                             style: StrokeStyle(lineWidth: 2, lineCap: .round)
                         )
                         .frame(width: 12, height: 12)
-                        .rotationEffect(.degrees(isProcessing ? 360 : 0))
-                        .animation(
-                            .linear(duration: 1.5).repeatForever(autoreverses: false),
-                            value: isProcessing
-                        )
+                        .rotationEffect(.degrees(rotationAngle))
+                        .onAppear {
+                            // Start continuous rotation when processing begins
+                            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                                rotationAngle = 360
+                            }
+                        }
+                        .onChange(of: isProcessing) { _, newValue in
+                            if newValue {
+                                // Start spinning when processing begins
+                                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                                    rotationAngle = 360
+                                }
+                            } else {
+                                // Stop spinning when processing ends
+                                withAnimation(.easeOut(duration: 0.5)) {
+                                    rotationAngle = 0
+                                }
+                            }
+                        }
                 } else {
                     // Solid status dot
                     Circle()
@@ -634,7 +669,7 @@ struct AIStatusIndicator: View {
     
     private var statusText: String {
         if isProcessing {
-            return "Processing"
+            return "Thinking..."  // OPTIMIZATION: Better user feedback
         } else if isInitialized {
             return "AI Ready"
         } else {
