@@ -97,6 +97,12 @@ struct URLBar: View {
                 .onSubmit {
                     navigateToURL()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .clearFocusForID)) { notification in
+                    if let notificationID = notification.userInfo?["id"] as? String, notificationID == barID {
+                        NSLog("🎯 TEXTFIELD FIX: Clearing focus for URL bar \(barID) due to coordinator request")
+                        isURLBarFocused = false
+                    }
+                }
                 .onChange(of: isURLBarFocused) { _, focused in
                     if focused {
                         // Simplified focus acquisition - removed race condition causing asyncAfter + forceFocus
@@ -104,8 +110,9 @@ struct URLBar: View {
                             focusCoordinator.setFocusedURLBar(barID, focused: true)
                             editingText = urlString
                         } else {
-                            // If focus denied, simply release the SwiftUI focus without competing timers
-                            isURLBarFocused = false
+                            // CRITICAL FIX: Don't modify isURLBarFocused inside its observer - let coordinator handle it
+                            // Removed: isURLBarFocused = false - this was causing infinite SwiftUI update loops
+                            editingText = urlString
                         }
                     } else {
                         // Release global focus lock when focus is lost

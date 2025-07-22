@@ -4,7 +4,8 @@ import Combine
 /// AI Assistant sidebar with collapsible right panel interface
 /// Provides context-aware chat with glass morphism styling
 struct AISidebar: View {
-    @StateObject private var aiAssistant = AIAssistant()
+    let tabManager: TabManager
+    @StateObject private var aiAssistant: AIAssistant
     @State private var isExpanded: Bool = false
     @State private var chatInput: String = ""
     @State private var isHovering: Bool = false
@@ -19,6 +20,12 @@ struct AISidebar: View {
     private let expandedWidth: CGFloat = 320
     private let maxExpandedWidth: CGFloat = 480
     private let autoCollapseDelay: TimeInterval = 30.0
+    
+    // Initializer
+    init(tabManager: TabManager) {
+        self.tabManager = tabManager
+        self._aiAssistant = StateObject(wrappedValue: AIAssistant(tabManager: tabManager))
+    }
     
     var body: some View {
         HStack(spacing: 0) {
@@ -84,6 +91,9 @@ struct AISidebar: View {
             // Header with AI status
             sidebarHeader()
             
+            // Context status indicator
+            contextStatusView()
+            
             Divider()
                 .opacity(0.3)
             
@@ -98,6 +108,40 @@ struct AISidebar: View {
     }
     
     // MARK: - Header
+    
+    @ViewBuilder
+    private func contextStatusView() -> some View {
+        let contextManager = ContextManager.shared
+        
+        if contextManager.canExtractContext(from: tabManager) {
+            HStack(spacing: 6) {
+                // Context available indicator
+                Image(systemName: contextManager.isExtracting ? "doc.text.magnifyingglass" : "doc.text")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(contextManager.isExtracting ? .blue : .green)
+                
+                Text(contextManager.isExtracting ? "Reading page..." : "Page context available")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if let context = contextManager.lastExtractedContext {
+                    Text("\(context.wordCount) words")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.ultraThinMaterial.opacity(0.5))
+            )
+            .padding(.horizontal, 4)
+            .padding(.bottom, 8)
+        }
+    }
     
     @ViewBuilder
     private func sidebarHeader() -> some View {
@@ -726,7 +770,7 @@ struct AIStatusIndicator: View {
             .fill(.gray.opacity(0.3))
             .frame(maxWidth: .infinity)
         
-        AISidebar()
+        AISidebar(tabManager: TabManager())
     }
     .frame(width: 800, height: 600)
 }

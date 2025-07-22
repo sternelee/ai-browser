@@ -19,6 +19,8 @@ class AIAssistant: ObservableObject {
     private let privacyManager: PrivacyManager
     private let conversationHistory: ConversationHistory
     private let gemmaService: GemmaService
+    private let contextManager: ContextManager
+    private weak var tabManager: TabManager?
     
     // MARK: - Configuration
     
@@ -27,12 +29,14 @@ class AIAssistant: ObservableObject {
     
     // MARK: - Initialization
     
-    init() {
+    init(tabManager: TabManager? = nil) {
         // Initialize dependencies
         self.mlxWrapper = MLXWrapper()
         self.onDemandModelService = OnDemandModelService()
         self.privacyManager = PrivacyManager()
         self.conversationHistory = ConversationHistory()
+        self.contextManager = ContextManager.shared
+        self.tabManager = tabManager
         
         // Get optimal configuration for current hardware
         self.aiConfiguration = HardwareDetector.getOptimalAIConfiguration()
@@ -169,8 +173,9 @@ class AIAssistant: ObservableObject {
         defer { Task { @MainActor in isProcessing = false } }
         
         do {
-            // Context extraction will be implemented in Phase 11
-            let context: String? = nil
+            // Extract context from current webpage
+            let webpageContext = await extractCurrentContext()
+            let context = contextManager.getFormattedContext(from: webpageContext)
             
             // Create conversation entry
             let userMessage = ConversationMessage(
@@ -222,8 +227,9 @@ class AIAssistant: ObservableObject {
                     Task { @MainActor in isProcessing = true }
                     defer { Task { @MainActor in isProcessing = false } }
                     
-                    // Context extraction will be implemented in Phase 11
-                    let context: String? = nil
+                    // Extract context from current webpage
+                    let webpageContext = await self.extractCurrentContext()
+                    let context = self.contextManager.getFormattedContext(from: webpageContext)
                     
                     // Process with streaming
                     let stream = try await gemmaService.generateStreamingResponse(
@@ -298,6 +304,15 @@ class AIAssistant: ObservableObject {
     }
     
     // MARK: - Private Methods
+    
+    private func extractCurrentContext() async -> WebpageContext? {
+        guard let tabManager = tabManager else {
+            NSLog("⚠️ TabManager not available for context extraction")
+            return nil
+        }
+        
+        return await contextManager.extractCurrentPageContext(from: tabManager)
+    }
     
     private func validateHardware() throws {
         switch aiConfiguration.framework {

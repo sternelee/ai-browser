@@ -219,6 +219,7 @@ extension Notification.Name {
     static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
+    static let clearFocusForID = Notification.Name("clearFocusForID")
     
     // Phase 2: Next-Gen UI shortcuts
     static let toggleTabDisplay = Notification.Name("toggleTabDisplay")

@@ -116,18 +116,23 @@ struct HoverableURLBar: View {
                             .onSubmit {
                                 navigateToURL()
                             }
+                            .onReceive(NotificationCenter.default.publisher(for: .clearFocusForID)) { notification in
+                                if let notificationID = notification.userInfo?["id"] as? String, notificationID == barID {
+                                    NSLog("🎯 TEXTFIELD FIX: Clearing focus for hoverable URL bar \(barID) due to coordinator request")
+                                    isURLBarFocused = false
+                                }
+                            }
                             .onChange(of: isURLBarFocused) { _, focused in
                                 if focused {
-                                    // Always attempt to acquire focus - if denied, force it after a short delay
+                                    // Always attempt to acquire focus - if denied, defer to coordinator without modifying state
                                     if focusCoordinator.canFocus(barID) {
                                         focusCoordinator.setFocusedURLBar(barID, focused: true)
                                         editingText = urlString
                                         // Keep visible when focused
                                         cancelHideTimer()
                                     } else {
-                                        // If focus is denied, clear focus immediately instead of forcing it
-                                        // This prevents race conditions with panel operations
-                                        isURLBarFocused = false
+                                        // CRITICAL FIX: Don't modify isURLBarFocused inside its observer - let coordinator handle it
+                                        // Instead, just update editing state and schedule hide
                                         editingText = urlString
                                         scheduleHide()
                                     }

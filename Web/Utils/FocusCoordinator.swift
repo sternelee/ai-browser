@@ -75,13 +75,13 @@ class FocusCoordinator: ObservableObject {
         }
     }
     
-    // Auto-recovery mechanism - runs periodically
+    // Auto-recovery mechanism - runs periodically with much longer timeout to avoid interfering with web content
     private func setupAutoRecovery() {
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            // If focus has been locked for more than 3 times the normal timeout, force clear
-            if let timestamp = self.lastFocusUpdate, Date().timeIntervalSince(timestamp) > (self.focusTimeout * 3) {
+            // Only clear if focus has been locked for more than 30 seconds (much longer to avoid web content interference)
+            if let timestamp = self.lastFocusUpdate, Date().timeIntervalSince(timestamp) > 30.0 {
                 NSLog("🚨 FOCUS AUTO-RECOVERY: Detected stuck focus for \(Date().timeIntervalSince(timestamp))s - force clearing")
                 self.emergencyResetAllFocusState()
             }
@@ -120,9 +120,9 @@ class FocusCoordinator: ObservableObject {
             return canFocusResult
         }
         
-        // If the current focus lock has been active for longer than the timeout, clear it automatically.
-        if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > focusTimeout {
-            NSLog("🎯 FOCUS DEBUG: Timeout detected (\(Date().timeIntervalSince(timestamp))s) - clearing focus")
+        // Only clear focus if it's been locked for much longer to avoid interfering with web content
+        if let timestamp = lastFocusUpdate, Date().timeIntervalSince(timestamp) > 10.0 {
+            NSLog("🎯 FOCUS DEBUG: Long timeout detected (\(Date().timeIntervalSince(timestamp))s) - clearing focus")
             clearAllFocus()
         }
 
@@ -132,8 +132,15 @@ class FocusCoordinator: ObservableObject {
             return true
         }
         
-        // Emergency recovery: if focus has been stuck for too long, clear it
-        NSLog("🎯 FOCUS DEBUG: Focus DENIED - conflict with active: \(_activeURLBarID ?? "nil")")
+        // CRITICAL FIX: When denying focus, proactively clear the denied TextField's focus
+        // This prevents SwiftUI state inconsistencies since TextField components no longer modify their own state
+        NSLog("🎯 FOCUS DEBUG: Focus DENIED - conflict with active: \(_activeURLBarID ?? "nil") - will post notification to clear")
+        
+        // Post notification to clear the conflicting TextField's focus state
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .clearFocusForID, object: nil, userInfo: ["id": id])
+        }
+        
         return false
     }
     
@@ -163,10 +170,14 @@ class FocusCoordinator: ObservableObject {
             self?.isAISidebarOpen = isOpen
             self?.updateOverallPanelState()
             if isOpen {
-                // When AI sidebar opens, clear any existing focus to prevent conflicts
-                NSLog("🎯 FOCUS DEBUG: AI Sidebar opening - clearing all focus")
-                self?.clearAllFocus()
-                print("⚗️ AI Sidebar opened - cleared URL bar focus to prevent conflicts")
+                // Only clear URL bar focus, don't interfere with web content
+                NSLog("🎯 FOCUS DEBUG: AI Sidebar opening - clearing only URL bar focus")
+                if let activeID = self?._activeURLBarID {
+                    self?._activeURLBarID = nil
+                    self?._isAnyURLBarFocused = false
+                    NotificationCenter.default.post(name: .clearFocusForID, object: nil, userInfo: ["id": activeID])
+                }
+                print("⚗️ AI Sidebar opened - cleared only URL bar focus, web content unaffected")
             } else {
                 NSLog("🎯 FOCUS DEBUG: AI Sidebar closing")
             }
@@ -178,9 +189,13 @@ class FocusCoordinator: ObservableObject {
             self?.isOtherPanelOpen = isOpen
             self?.updateOverallPanelState()
             if isOpen {
-                // When a panel opens, clear any existing focus to prevent conflicts
-                self?.clearAllFocus()
-                print("⚗️ Panel opened - cleared URL bar focus to prevent conflicts")
+                // Only clear URL bar focus, don't interfere with web content
+                if let activeID = self?._activeURLBarID {
+                    self?._activeURLBarID = nil
+                    self?._isAnyURLBarFocused = false
+                    NotificationCenter.default.post(name: .clearFocusForID, object: nil, userInfo: ["id": activeID])
+                }
+                print("⚗️ Panel opened - cleared only URL bar focus, web content unaffected")
             }
         }
     }

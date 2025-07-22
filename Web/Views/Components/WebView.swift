@@ -281,9 +281,9 @@ struct WebView: NSViewRepresentable {
                 }
             };
             
-            // Auto-cleanup on page unload
+            // Only cleanup on actual navigation away from page, not visibility changes
             window.addEventListener('beforeunload', window.cleanupAllTimers);
-            window.addEventListener('pagehide', window.cleanupAllTimers);
+            // Removed 'pagehide' event - too aggressive and interferes with focus management
             
         })();
         """

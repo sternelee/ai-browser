@@ -51,7 +51,7 @@ struct TabDisplayView: View {
                             .clipped()
                         
                         // AI Assistant sidebar (right side)
-                        AISidebar()
+                        AISidebar(tabManager: tabManager)
                     }
                 }
                 
