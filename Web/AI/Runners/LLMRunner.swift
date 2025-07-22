@@ -210,7 +210,7 @@ final class LLMRunner {
         return response
     }
 
-    /// Generate a streaming response with raw prompt (bypasses conversation preprocessing)
+    /// Generate a streaming response with raw prompt (with proper conversation state management)
     nonisolated func generateStreamWithPrompt(prompt: String, modelPath: URL) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -222,44 +222,41 @@ final class LLMRunner {
                         return
                     }
                     
-                    NSLog("🌊 Starting streaming with RAW prompt (no conversation preprocessing)...")
+                    NSLog("🌊 Starting streaming with RAW prompt and conversation state management...")
                     
                     // Get bot instance for processing
                     let botInstance = await bot!
                     
-                    // Since LLM.swift callback-based streaming isn't working properly,
-                    // implement chunked streaming as fallback for better UX
-                    NSLog("🌊 Starting chunked streaming (LLM.swift callback fallback)...")
+                    // CRITICAL FIX: Reset conversation context to prevent KV cache position errors
+                    // This resolves the "tokens of sequence 0 have inconsistent sequence positions" error
+                    await self.resetConversation()
+                    NSLog("🔄 Conversation state reset to prevent KV cache position mismatch")
                     
-                    // Generate response (this will be blocking)
+                    // IMPROVED: Implement proper token-by-token streaming using LLM.swift callbacks
+                    NSLog("🌊 Starting REAL token-by-token streaming (ChatGPT-style)...")
+                    
+                    var hasStreamedTokens = false
+                    let streamLock = NSLock()
+                    
+                    // Set up streaming callback - this is the key to real-time streaming
+                    botInstance.update = { outputDelta in
+                        streamLock.lock()
+                        defer { streamLock.unlock() }
+                        
+                        if let delta = outputDelta, !delta.isEmpty {
+                            hasStreamedTokens = true
+                            continuation.yield(delta)
+                            NSLog("🌊 Received token chunk: \(delta)")
+                        }
+                    }
+                    
+                    // Start generation with callback streaming
                     let finalResponse = await botInstance.getCompletion(from: prompt)
-                    NSLog("🔧 Generated response: \(finalResponse.count) chars, streaming in chunks...")
                     
-                    // Stream the response in chunks for better UX
-                    if !finalResponse.isEmpty {
-                        let chunkSize = 15 // Stream in small chunks 
-                        let words = finalResponse.split(separator: " ", omittingEmptySubsequences: true)
-                        var currentChunk = ""
-                        var wordCount = 0
-                        
-                        for word in words {
-                            currentChunk += String(word) + " "
-                            wordCount += 1
-                            
-                            if wordCount >= chunkSize {
-                                continuation.yield(currentChunk)
-                                currentChunk = ""
-                                wordCount = 0
-                                
-                                // Small delay between chunks for streaming effect
-                                try? await Task.sleep(nanoseconds: 25_000_000) // 25ms
-                            }
-                        }
-                        
-                        // Send any remaining chunk
-                        if !currentChunk.isEmpty {
-                            continuation.yield(currentChunk)
-                        }
+                    // Fallback: If callback streaming didn't work, send complete response
+                    if !hasStreamedTokens && !finalResponse.isEmpty {
+                        NSLog("⚠️ Callback streaming failed, falling back to complete response")
+                        continuation.yield(finalResponse)
                     }
                     
                     continuation.finish()

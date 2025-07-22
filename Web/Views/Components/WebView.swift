@@ -455,6 +455,25 @@ struct WebView: NSViewRepresentable {
                     }
                 }
             }
+            
+            // AUTO-READ: Automatically extract page content for AI context
+            // This provides comprehensive page content without user intervention
+            if let currentURL = webView.url, 
+               let scheme = currentURL.scheme?.lowercased(),
+               (scheme == "http" || scheme == "https") {
+                
+                // Delay extraction to ensure page content is fully rendered
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    Task {
+                        if let tab = self.parent.tab {
+                            let context = await ContextManager.shared.extractPageContext(from: webView, tab: tab)
+                            if let context = context {
+                                NSLog("📖 Auto-read completed: \(context.text.count) characters from \(context.title)")
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Guard-rail: if the WebContent process crashes (common on heavy WebGL

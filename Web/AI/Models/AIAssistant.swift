@@ -20,6 +20,7 @@ class AIAssistant: ObservableObject {
     private let conversationHistory: ConversationHistory
     private let gemmaService: GemmaService
     private let contextManager: ContextManager
+    private let memoryMonitor: SystemMemoryMonitor
     private weak var tabManager: TabManager?
     
     // MARK: - Configuration
@@ -36,6 +37,7 @@ class AIAssistant: ObservableObject {
         self.privacyManager = PrivacyManager()
         self.conversationHistory = ConversationHistory()
         self.contextManager = ContextManager.shared
+        self.memoryMonitor = SystemMemoryMonitor.shared
         self.tabManager = tabManager
         
         // Get optimal configuration for current hardware
@@ -186,6 +188,12 @@ class AIAssistant: ObservableObject {
             throw AIError.notInitialized
         }
         
+        // MEMORY SAFETY: Check if AI operations are safe to perform
+        guard memoryMonitor.isAISafeToRun() else {
+            let memoryStatus = memoryMonitor.getCurrentMemoryStatus()
+            throw AIError.memoryPressure("AI operations suspended due to \(memoryStatus.pressureLevel.rawValue.lowercased()) memory pressure (\(String(format: "%.1f", memoryStatus.availableMemory))GB available)")
+        }
+        
         Task { @MainActor in isProcessing = true }
         defer { Task { @MainActor in isProcessing = false } }
         
@@ -228,6 +236,7 @@ class AIAssistant: ObservableObject {
             
         } catch {
             NSLog("❌ Query processing failed: \(error)")
+            await handleAIError(error)
             throw error
         }
     }
@@ -282,6 +291,7 @@ class AIAssistant: ObservableObject {
                     continuation.finish()
                     
                 } catch {
+                    await self.handleAIError(error)
                     continuation.finish(throwing: error)
                 }
             }
@@ -304,6 +314,54 @@ class AIAssistant: ObservableObject {
         }
         
         NSLog("🗑️ Conversation cleared")
+    }
+    
+    /// Reset AI conversation state to recover from errors
+    func resetConversationState() async {
+        // Clear conversation history
+        conversationHistory.clear()
+        
+        // Reset LLM conversation state to prevent KV cache issues
+        await gemmaService.resetConversation()
+        
+        await MainActor.run {
+            lastError = nil
+            isProcessing = false
+        }
+        
+        NSLog("🔄 AI conversation state fully reset for error recovery")
+    }
+    
+    /// Handle AI errors with automatic recovery
+    private func handleAIError(_ error: Error) async {
+        let errorMessage = error.localizedDescription
+        NSLog("❌ AI Error occurred: \(errorMessage)")
+        
+        await MainActor.run {
+            lastError = errorMessage
+            isProcessing = false
+        }
+        
+        // Auto-recovery for common errors
+        if errorMessage.contains("inconsistent sequence positions") ||
+           errorMessage.contains("KV cache") ||
+           errorMessage.contains("decode") {
+            NSLog("🔄 Detected conversation state error, attempting auto-recovery...")
+            await resetConversationState()
+        }
+    }
+    
+    /// Check if AI system is in a healthy state
+    func performHealthCheck() async -> Bool {
+        do {
+            // Test if the AI system can handle a simple query
+            let testQuery = "Hello"
+            let _ = try await processQuery(testQuery, includeContext: false)
+            return true
+        } catch {
+            NSLog("⚠️ AI Health check failed: \(error.localizedDescription)")
+            return false
+        }
     }
     
     /// Get current system status
@@ -425,6 +483,7 @@ enum AIError: LocalizedError {
     case notInitialized
     case unsupportedHardware(String)
     case insufficientMemory(String)
+    case memoryPressure(String)
     case modelNotAvailable
     case contextProcessingFailed(String)
     case inferenceError(String)
@@ -437,6 +496,8 @@ enum AIError: LocalizedError {
             return "Unsupported Hardware: \(message)"
         case .insufficientMemory(let message):
             return "Insufficient Memory: \(message)"
+        case .memoryPressure(let message):
+            return "Memory Pressure: \(message)"
         case .modelNotAvailable:
             return "AI model not available"
         case .contextProcessingFailed(let message):
