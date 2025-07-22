@@ -38,6 +38,7 @@ class FocusCoordinator: ObservableObject {
             self?._activeURLBarID = nil
             self?._isAnyURLBarFocused = false
             self?.lastFocusUpdate = nil
+            print("⚗️ Focus coordinator cleared all focus locks")
         }
     }
     
@@ -82,6 +83,16 @@ class FocusCoordinator: ObservableObject {
             self?._activeURLBarID = id
             self?._isAnyURLBarFocused = true
             self?.lastFocusUpdate = Date()
+            print("⚗️ Force focus applied to URL bar: \(id)")
+        }
+    }
+    
+    // Special handling for Google.com to prevent focus conflicts
+    func handleGoogleNavigation() {
+        // Clear focus locks when navigating to Google to prevent conflicts with their search input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.clearAllFocus()
+            print("⚗️ Google navigation detected - focus cleared to prevent conflicts")
         }
     }
     

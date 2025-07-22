@@ -20,15 +20,7 @@ class WebKitManager: ObservableObject {
     lazy var incognitoDataStore = WKWebsiteDataStore.nonPersistent()
     
     // MARK: - Configuration
-
-    // Dynamically resolve the system Safari user-agent one time and cache it.
-    private lazy var defaultSafariUserAgent: String = {
-        let webView = WKWebView(frame: .zero)
-        // WKWebView exposes its UA via KVC. This is safe and fast for a throw-away instance.
-        let ua = (try? webView.value(forKey: "userAgent") as? String) ?? "Mozilla/5.0"
-        return ua
-    }()
-
+    
     private init() {
         setupWebKitOptimizations()
     }
@@ -90,10 +82,9 @@ class WebKitManager: ObservableObject {
     }
     
     private func applyStandardSettings(to webView: WKWebView) {
-        // Use the full default Safari UA and append app identifier so sites receive modern markup.
-        let fullUA = defaultSafariUserAgent + " Web/1.0"
-        webView.customUserAgent = fullUA
-
+        // Custom user agent for proper site compatibility
+        webView.customUserAgent = "Web/1.0 Safari/605.1.15"
+        
         // Enable developer tools and inspection
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
