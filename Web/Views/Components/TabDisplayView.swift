@@ -305,9 +305,9 @@ struct WebContentArea: View {
     
     // Computed property to determine if URL bar should be shown
     private var shouldShowURLBar: Bool {
-        // Hide URL bar when showing new tab (when activeTab.url is nil)
-        guard let activeTab = tabManager.activeTab else { return false }
-        return activeTab.url != nil
+        // Always show URL bar if we have an active tab, regardless of whether it has a URL
+        // This ensures URL bar remains visible for new tabs and during navigation
+        return tabManager.activeTab != nil
     }
     
     // Computed property to get current URL string from active tab - NO SHARED STATE

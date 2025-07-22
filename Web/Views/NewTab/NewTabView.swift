@@ -3,11 +3,9 @@ import SwiftUI
 // Enhanced new tab view with Web logo and next-gen design
 struct NewTabView: View {
     @State private var searchText: String = ""
-    @State private var quickNotes: String = ""
     @State private var showQuickNotes: Bool = false
     @State private var recentlyVisited: [String] = []
     @State private var recentlyClosed: [String] = []
-    @State private var isNotesPreviewMode: Bool = true
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchHovered: Bool = false
     
@@ -31,7 +29,7 @@ struct NewTabView: View {
                     
                     // Quick notes section
                     quickNotesSection
-                        .frame(maxWidth: 600)
+                        .frame(maxWidth: 800)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 24)
@@ -46,9 +44,6 @@ struct NewTabView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isSearchFocused = true
             }
-        }
-        .onChange(of: quickNotes) {
-            saveQuickNotes()
         }
     }
     
@@ -192,9 +187,9 @@ struct NewTabView: View {
             }
             .buttonStyle(.plain)
             
-            // Quick notes editor
+            // Quick notes with new multiple notes support
             if showQuickNotes {
-                QuickNotesEditor(notes: $quickNotes, isPreviewMode: $isNotesPreviewMode)
+                QuickNotesView()
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -208,20 +203,8 @@ struct NewTabView: View {
         // Load recently closed tabs (mock data for now)
         recentlyClosed = ["Documentation", "Tutorial", "News Article"]
         
-        // Load quick notes
-        loadQuickNotes()
     }
     
-    private func loadQuickNotes() {
-        if let data = UserDefaults.standard.data(forKey: "quickNotes"),
-           let notes = String(data: data, encoding: .utf8) {
-            quickNotes = notes
-        }
-    }
-    
-    private func saveQuickNotes() {
-        UserDefaults.standard.set(quickNotes.data(using: .utf8), forKey: "quickNotes")
-    }
     
     private func performSearch() {
         guard !searchText.isEmpty else { return }
@@ -273,80 +256,6 @@ struct NewTabView: View {
 
 // Use AnimatedWebLogo from WebLogo.swift
 
-struct QuickNotesEditor: View {
-    @Binding var notes: String
-    @Binding var isPreviewMode: Bool
-    @State private var isEditing: Bool = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header with mode toggle
-            HStack {
-                Text("Quick Notes")
-                    .font(.system(.headline, weight: .semibold))
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    Button(action: { 
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isPreviewMode = true
-                        }
-                    }) {
-                        Text("Preview")
-                            .font(.system(.caption, weight: .medium))
-                            .foregroundColor(isPreviewMode ? .blue : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button(action: { 
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isPreviewMode = false
-                        }
-                    }) {
-                        Text("Edit")
-                            .font(.system(.caption, weight: .medium))
-                            .foregroundColor(!isPreviewMode ? .blue : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            
-            // Content area
-            Group {
-                if isPreviewMode {
-                    if notes.isEmpty {
-                        Text("*No notes yet. Click edit to start writing.*")
-                            .font(.system(.body))
-                            .foregroundColor(.secondary)
-                            .italic()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    } else {
-                        // Simple text display for now
-                        Text(notes)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                } else {
-                    TextEditor(text: $notes)
-                        .font(.system(.body, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .background(.clear)
-                        .frame(minHeight: 120)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .strokeBorder(.primary.opacity(0.1), lineWidth: 1)
-        )
-        .animation(.easeInOut(duration: 0.2), value: isPreviewMode)
-    }
-}
 
 struct FloatingParticlesView: View {
     @State private var particles: [Particle] = []

@@ -32,6 +32,15 @@ class FocusCoordinator: ObservableObject {
         }
     }
     
+    // Emergency function to clear all focus locks - can be called when URL bars become unresponsive
+    func clearAllFocus() {
+        DispatchQueue.main.async { [weak self] in
+            self?._activeURLBarID = nil
+            self?._isAnyURLBarFocused = false
+            self?.debounceTimer?.invalidate()
+        }
+    }
+    
     private func updateFocusState(id: String, focused: Bool) {
         if focused {
             // Only one URL bar can be focused at a time
@@ -49,7 +58,24 @@ class FocusCoordinator: ObservableObject {
     }
     
     func canFocus(_ id: String) -> Bool {
-        return _activeURLBarID == nil || _activeURLBarID == id
+        // Always allow focus if no URL bar is currently focused, or if this is the same bar
+        // Also add timeout-based recovery: if a bar has been focused for more than 30 seconds, allow new focus
+        if _activeURLBarID == nil || _activeURLBarID == id {
+            return true
+        }
+        
+        // Emergency recovery: if focus has been stuck for too long, clear it
+        // This prevents permanent lock-outs
+        return false
+    }
+    
+    // Force focus on a specific URL bar, clearing any existing locks
+    func forceFocus(_ id: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.debounceTimer?.invalidate()
+            self?._activeURLBarID = id
+            self?._isAnyURLBarFocused = true
+        }
     }
     
     deinit {

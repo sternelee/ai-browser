@@ -118,14 +118,19 @@ struct HoverableURLBar: View {
                             }
                             .onChange(of: isURLBarFocused) { _, focused in
                                 if focused {
-                                    // Attempt to acquire global focus lock
+                                    // Always attempt to acquire focus - if denied, force it after a short delay
                                     if focusCoordinator.canFocus(barID) {
                                         focusCoordinator.setFocusedURLBar(barID, focused: true)
                                         editingText = urlString
                                         // Keep visible when focused
                                         cancelHideTimer()
                                     } else {
-                                        isURLBarFocused = false
+                                        // If focus is denied, try again with force after a brief delay
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                            focusCoordinator.forceFocus(barID)
+                                            editingText = urlString
+                                            cancelHideTimer()
+                                        }
                                     }
                                 } else {
                                     focusCoordinator.setFocusedURLBar(barID, focused: false)

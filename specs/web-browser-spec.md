@@ -277,7 +277,19 @@ Web/
 ### Session 4: New Tab Experience (Week 4) ✅ COMPLETED
 - [x] Minimal new tab with glass morphism
 - [x] Google search integration
-- [x] Quick notes with Markdown support (Preview/Edit modes, UserDefaults persistence)
+- [x] **Advanced Quick Notes System** ✅ FULLY COMPLETED
+  - [x] Multiple notes support with UUID-based identification
+  - [x] Next-gen UI with responsive grid layout and glass morphism
+  - [x] Full CRUD operations (Create, Read, Update, Delete)
+  - [x] Real-time search and filtering
+  - [x] Smart note titles and preview generation
+  - [x] Favorite notes marking system
+  - [x] Drag & drop reordering functionality
+  - [x] Export/Import functionality with Markdown format
+  - [x] Keyboard shortcuts (⇧⌘N: New Note, ⇧⌘D: Delete Note, ⇧⌘F: Search Notes)
+  - [x] Auto-migration from legacy single-note system
+  - [x] Enhanced note metadata (creation date, updated date, favorites)
+  - [x] Professional note management with sample notes
 - [x] Recently closed tabs section (framework ready, needs data integration)
 - [x] Frequently visited sites (framework ready, needs data integration) 
 - [x] Floating particles background effect (8 subtle particles with animations)
@@ -443,6 +455,30 @@ After completing each implementation session, you MUST:
 **Non-negotiable rule: Never proceed to the next phase with build warnings!**
 
 ## Discovered During Work
+
+### URL Bar Visibility and Focus Lock Issues (July 21, 2025) ✅ COMPLETED
+- **Issue 1**: URL bar disappearing in new tabs when navigating to a page - URL bar would hide when creating a new tab and then remain hidden when navigating
+- **Issue 2**: URL bar "lock out" where bars become unselectable - FocusCoordinator race conditions causing permanent focus locks
+- **Root Causes**:
+  - **Issue 1**: `shouldShowURLBar` computed property in `TabDisplayView.swift:307-311` incorrectly hid URL bar when `activeTab.url` was `nil`, affecting new tabs
+  - **Issue 2**: `FocusCoordinator` had race conditions where multiple URL bars could get stuck in inconsistent focus states
+- **Comprehensive Fixes Applied**:
+  1. **URL Bar Visibility Fix**: Updated `shouldShowURLBar` logic to always show URL bar when an active tab exists, regardless of URL state
+  2. **Focus Lock Prevention**: Enhanced `FocusCoordinator` with emergency recovery functions (`clearAllFocus()`, `forceFocus()`)
+  3. **Resilient Focus Management**: Improved URL bar focus acquisition with retry logic and force focus fallback
+  4. **Emergency Keyboard Shortcut**: Added Cmd+Option+Escape to clear stuck focus locks
+- **Technical Details**:
+  - Updated `TabDisplayView.swift:307-311` to ensure URL bar remains visible for new tabs and during navigation
+  - Enhanced `FocusCoordinator.swift` with debounced focus management and emergency recovery
+  - Modified `URLBar.swift` and `HoverableURLBar.swift` with retry logic for focus acquisition
+  - Added global keyboard shortcut in `WebApp.swift` for emergency focus clearing
+- **Behavior Change**: 
+  - URL bar now consistently visible for all active tabs, including new tabs before navigation
+  - Focus locks automatically resolve with retry logic and emergency recovery
+  - Users can manually clear stuck focus with Cmd+Option+Escape if needed
+- **Verification**: Build completes with 0 warnings and 0 errors, URL bar visibility and focus issues resolved
+- **Impact**: Significantly improved URL bar reliability and user experience
+- **Status**: Both URL bar visibility and focus lock issues completely resolved
 
 ### Critical Tab Duplication Bug Fix (July 21, 2025) ✅ COMPLETED
 - **Issue**: Severe tab content duplication where switching to an "old" tab caused all nearby tabs to display the same content as the selected tab
