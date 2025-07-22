@@ -1,12 +1,20 @@
 import SwiftUI
 import Combine
+import WebKit
+import os.log
 
 class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
     
+    private let logger = Logger(subsystem: "com.example.Web", category: "DownloadManager")
+    
     @Published var downloads: [Download] = []
     @Published var isVisible: Bool = false
     @Published var totalActiveDownloads: Int = 0
+    @Published var downloadHistory: [DownloadHistoryItem] = []
+    
+    // WKWebView integration
+    private var webViewDownloads: [String: WKDownload] = [:]
     
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -26,6 +34,7 @@ class DownloadManager: NSObject, ObservableObject {
     override init() {
         super.init()
         loadExistingDownloads()
+        loadDownloadHistory()
     }
     
     func startDownload(from url: URL, suggestedFilename: String? = nil) {
@@ -97,6 +106,111 @@ class DownloadManager: NSObject, ObservableObject {
     private func loadExistingDownloads() {
         // Load download history from UserDefaults if needed
     }
+    
+    private func loadDownloadHistory() {
+        // Load download history from UserDefaults
+        if let data = UserDefaults.standard.data(forKey: "downloadHistory"),
+           let history = try? JSONDecoder().decode([DownloadHistoryItem].self, from: data) {
+            downloadHistory = history
+        }
+    }
+    
+    private func saveDownloadHistory() {
+        if let data = try? JSONEncoder().encode(downloadHistory) {
+            UserDefaults.standard.set(data, forKey: "downloadHistory")
+        }
+    }
+    
+    // MARK: - WKWebView Integration
+    
+    /// Handle WKDownload from WKWebView
+    func handleWebViewDownload(_ download: WKDownload) {
+        guard let url = download.originalRequest?.url else { return }
+        
+        let downloadId = UUID().uuidString
+        webViewDownloads[downloadId] = download
+        
+        let webDownload = Download(
+            url: url,
+            destinationURL: downloadDirectory.appendingPathComponent(url.lastPathComponent),
+            filename: url.lastPathComponent
+        )
+        webDownload.webKitDownloadId = downloadId
+        
+        downloads.append(webDownload)
+        updateActiveDownloadsCount()
+        
+        logger.info("Started WKWebView download: \(url.lastPathComponent)")
+    }
+    
+    /// Check if navigation should trigger download based on MIME type
+    func shouldDownloadResponse(_ response: URLResponse) -> Bool {
+        guard let mimeType = response.mimeType else { return false }
+        
+        let downloadableMimeTypes = [
+            "application/pdf",
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/octet-stream",
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/svg+xml",
+            "video/mp4",
+            "video/quicktime",
+            "audio/mpeg",
+            "audio/wav"
+        ]
+        
+        return downloadableMimeTypes.contains { mimeType.hasPrefix($0) }
+    }
+    
+    /// Open file in default application
+    func openDownloadedFile(_ download: Download) {
+        guard download.status == .completed else { return }
+        
+        if FileManager.default.fileExists(atPath: download.destinationURL.path) {
+            NSWorkspace.shared.open(download.destinationURL)
+            logger.info("Opened downloaded file: \(download.filename)")
+        } else {
+            logger.error("Downloaded file not found: \(download.destinationURL.path)")
+        }
+    }
+    
+    /// Show file in Finder
+    func showInFinder(_ download: Download) {
+        guard download.status == .completed else { return }
+        
+        if FileManager.default.fileExists(atPath: download.destinationURL.path) {
+            NSWorkspace.shared.selectFile(download.destinationURL.path, inFileViewerRootedAtPath: downloadDirectory.path)
+            logger.info("Showed file in Finder: \(download.filename)")
+        }
+    }
+    
+    /// Get download progress for UI
+    func getOverallProgress() -> Double {
+        let activeDownloads = downloads.filter { $0.status == .downloading }
+        guard !activeDownloads.isEmpty else { return 0.0 }
+        
+        let totalProgress = activeDownloads.reduce(0.0) { $0 + $1.progress }
+        return totalProgress / Double(activeDownloads.count)
+    }
+    
+    /// Clear completed downloads
+    func clearCompletedDownloads() {
+        downloads.removeAll { $0.status == .completed || $0.status == .failed || $0.status == .cancelled }
+        updateActiveDownloadsCount()
+        logger.info("Cleared completed downloads")
+    }
+    
+    /// Get download by URL
+    func getDownload(for url: URL) -> Download? {
+        return downloads.first { $0.url == url }
+    }
 }
 
 // Download model
@@ -111,8 +225,10 @@ class Download: ObservableObject, Identifiable {
     @Published var totalBytes: Int64 = 0
     @Published var downloadedBytes: Int64 = 0
     @Published var speed: Double = 0 // bytes per second
+    @Published var completedDate: Date?
     
     var task: URLSessionDownloadTask?
+    var webKitDownloadId: String? // For WKDownload integration
     
     var progress: Double {
         guard totalBytes > 0 else { return 0 }
@@ -137,6 +253,63 @@ class Download: ObservableObject, Identifiable {
         self.destinationURL = destinationURL
         self.filename = filename
     }
+    
+    /// Get formatted file size
+    var formattedFileSize: String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        
+        if status == .completed || totalBytes > 0 {
+            return formatter.string(fromByteCount: totalBytes)
+        } else {
+            return "Unknown"
+        }
+    }
+    
+    /// Get formatted download speed
+    var formattedSpeed: String {
+        guard speed > 0 else { return "" }
+        
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        
+        return "\(formatter.string(fromByteCount: Int64(speed)))/s"
+    }
+    
+    /// Get estimated time remaining
+    var formattedTimeRemaining: String {
+        guard let remaining = remainingTime, remaining > 0 && remaining.isFinite else { return "" }
+        
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        
+        return formatter.string(from: remaining) ?? ""
+    }
+}
+
+// Download history item for persistence
+struct DownloadHistoryItem: Codable, Identifiable {
+    let id: UUID
+    let url: String
+    let filename: String
+    let filePath: String
+    let fileSize: Int64
+    let downloadDate: Date
+    let mimeType: String?
+    
+    var formattedFileSize: String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useAll]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: fileSize)
+    }
+    
+    var fileExists: Bool {
+        return FileManager.default.fileExists(atPath: filePath)
+    }
 }
 
 // Download manager URLSession delegate
@@ -149,12 +322,35 @@ extension DownloadManager: URLSessionDownloadDelegate {
             
             DispatchQueue.main.async {
                 download.status = .completed
+                download.completedDate = Date()
                 self.updateActiveDownloadsCount()
+                
+                // Add to download history
+                let historyItem = DownloadHistoryItem(
+                    id: UUID(),
+                    url: download.url.absoluteString,
+                    filename: download.filename,
+                    filePath: download.destinationURL.path,
+                    fileSize: download.totalBytes,
+                    downloadDate: Date(),
+                    mimeType: downloadTask.response?.mimeType
+                )
+                
+                self.downloadHistory.insert(historyItem, at: 0)
+                
+                // Keep only last 100 downloads in history
+                if self.downloadHistory.count > 100 {
+                    self.downloadHistory = Array(self.downloadHistory.prefix(100))
+                }
+                
+                self.saveDownloadHistory()
+                self.logger.info("Download completed: \(download.filename)")
             }
         } catch {
             DispatchQueue.main.async {
                 download.status = .failed
                 self.updateActiveDownloadsCount()
+                self.logger.error("Failed to move downloaded file: \(error.localizedDescription)")
             }
         }
     }

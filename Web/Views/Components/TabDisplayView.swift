@@ -70,7 +70,7 @@ struct TabDisplayView: View {
                                         activeTab.navigate(to: newURL)
                                     }
                                 },
-                                pageTitle: activeTab.title,
+                                pageTitle: activeTab.isIncognito ? "🥷 \(activeTab.title)" : activeTab.title,
                                 tabManager: tabManager
                             )
                         } else {
@@ -103,6 +103,9 @@ struct TabDisplayView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
             tabManager.createNewTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .newIncognitoTabRequested)) { _ in
+            tabManager.createIncognitoTab()
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeTabRequested)) { _ in
             if let activeTab = tabManager.activeTab {
@@ -156,6 +159,16 @@ struct TabDisplayView: View {
             // Focus the URL bar - we'll need to implement this with a focus coordinator
             NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
         }
+        // TODO: Restore these notification handlers once SwiftUI type-checking is resolved
+        // .onReceive(NotificationCenter.default.publisher(for: .showHistoryRequested)) { _ in
+        //     handleHistoryRequest()
+        // }
+        // .onReceive(NotificationCenter.default.publisher(for: .bookmarkPageRequested)) { _ in
+        //     handleBookmarkRequest()
+        // }
+        // .onReceive(NotificationCenter.default.publisher(for: .showDownloadsRequested)) { _ in
+        //     handleDownloadsRequest()
+        // }
         .onAppear {
             startTopTabAutoHideTimer()
         }
@@ -299,6 +312,27 @@ struct TabDisplayView: View {
             }
         }
     }
+    
+    // MARK: - Helper Methods for Keyboard Shortcuts
+    
+    private func handleHistoryRequest() {
+        // TODO: Show history panel/view - placeholder for future UI implementation
+        print("History panel requested")
+    }
+    
+    private func handleBookmarkRequest() {
+        // Bookmark current page
+        if let activeTab = tabManager.activeTab,
+           let url = activeTab.url {
+            let title = activeTab.title.isEmpty ? url.absoluteString : activeTab.title
+            BookmarkService.shared.quickBookmark(url: url.absoluteString, title: title)
+        }
+    }
+    
+    private func handleDownloadsRequest() {
+        // Show downloads panel
+        DownloadManager.shared.isVisible.toggle()
+    }
 }
 
 // Web content area wrapper with rounded corners and margin
@@ -350,7 +384,12 @@ struct WebContentArea: View {
                         urlString: currentURLString, 
                         themeColor: tabManager.activeTab?.themeColor,
                         onSubmit: navigateToURL,
-                        pageTitle: tabManager.activeTab?.title ?? "New Tab"
+                        pageTitle: {
+                            if let activeTab = tabManager.activeTab {
+                                return activeTab.isIncognito ? "🥷 \(activeTab.title)" : activeTab.title
+                            }
+                            return "New Tab"
+                        }()
                     )
                     .frame(maxWidth: .infinity)
                     

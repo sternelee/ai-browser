@@ -173,6 +173,19 @@ struct SidebarTabItem: View {
                 faviconView
                     .frame(width: 24, height: 24)
                 
+                // Incognito indicator (small icon in bottom-right of favicon)
+                if tab.isIncognito {
+                    HStack {
+                        Spacer()
+                        VStack {
+                            Spacer()
+                            incognitoIndicator
+                        }
+                    }
+                    .padding(.bottom, 8)
+                    .padding(.trailing, 8)
+                }
+                
                 // Close button positioned absolutely in top-right area
                 if showCloseButton && isHovered {
                     HStack {
@@ -274,6 +287,17 @@ struct SidebarTabItem: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
         }
+    }
+    
+    private var incognitoIndicator: some View {
+        Circle()
+            .fill(.purple.opacity(0.8))
+            .frame(width: 8, height: 8)
+            .overlay(
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1)
+            )
+            .shadow(color: .purple.opacity(0.3), radius: 2, x: 0, y: 1)
     }
     
     private var closeButton: some View {

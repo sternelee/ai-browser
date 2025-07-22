@@ -3,14 +3,20 @@ import os.log
 
 @main
 struct WebApp: App {
+    let coreDataStack = CoreDataStack.shared
+    let keyboardShortcutHandler = KeyboardShortcutHandler.shared
+    
     init() {
         configureLogging()
+        // Initialize keyboard shortcut handler
+        _ = keyboardShortcutHandler
     }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .background(WindowConfigurator())
+                .environment(\.managedObjectContext, coreDataStack.viewContext)
         }
         .windowStyle(.automatic)
         .defaultSize(width: 1200, height: 800)
@@ -56,7 +62,7 @@ struct BrowserCommands: Commands {
             Button("New Incognito Tab") {
                 NotificationCenter.default.post(name: .newIncognitoTabRequested, object: nil)
             }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .keyboardShortcut("n", modifiers: [.command, .shift])
         }
         
         CommandGroup(after: .toolbar) {
@@ -86,6 +92,16 @@ struct BrowserCommands: Commands {
         }
         
         CommandGroup(after: .windowArrangement) {
+            Button("History") {
+                NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
+            }
+            .keyboardShortcut("y", modifiers: .command)
+            
+            Button("Bookmark Page") {
+                NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            
             Button("Downloads") {
                 NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
             }
@@ -152,6 +168,8 @@ extension Notification.Name {
     static let reloadRequested = Notification.Name("reloadRequested")
     static let focusAddressBarRequested = Notification.Name("focusAddressBarRequested")
     static let findInPageRequested = Notification.Name("findInPageRequested")
+    static let showHistoryRequested = Notification.Name("showHistoryRequested")
+    static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
     

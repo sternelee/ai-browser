@@ -41,6 +41,10 @@ struct ContentView: View {
                 .background(Color.clear)
                 .padding(10)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+            
+            // Floating panels overlay
+            PanelManager()
+                .allowsHitTesting(true)
         }
         .onTapGesture(count: 2) {
             toggleExpanded()

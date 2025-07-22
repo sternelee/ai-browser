@@ -99,11 +99,15 @@ struct WebView: NSViewRepresentable {
         
         // Configure security services after webview creation
         AdBlockService.shared.configureWebView(webView)
-        PasswordManager.shared.configureAutofill(for: webView)
+        DNSOverHTTPSService.shared.configureForWebKit()
         
         // Configure incognito-specific settings if needed
         if let tab = tab, tab.isIncognito {
             IncognitoSession.shared.configureWebViewForIncognito(webView)
+            // Do NOT configure autofill for incognito tabs to maintain privacy
+        } else {
+            // Only configure autofill for regular (non-incognito) tabs
+            PasswordManager.shared.configureAutofill(for: webView)
         }
         
         // Configure for optimal web content including WebGL
@@ -268,10 +272,11 @@ struct WebView: NSViewRepresentable {
             parent.canGoForward = webView.canGoForward
             parent.tab?.notifyLoadingStateChanged()
             
-            // Record visit for Autofill history
-            if let url = webView.url {
+            // Record visit for Autofill history and browser history (only for non-incognito tabs)
+            if let url = webView.url, parent.tab?.isIncognito != true {
                 let title = webView.title ?? url.absoluteString
                 AutofillService.shared.recordVisit(url: url.absoluteString, title: title)
+                HistoryService.shared.recordVisit(url: url.absoluteString, title: webView.title)
             }
             
             // Only extract favicon if we don't have one for this domain
@@ -584,12 +589,15 @@ struct WebView: NSViewRepresentable {
         }
         
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-            // Check for downloads
-            if let mimeType = navigationResponse.response.mimeType,
-               !["text/html", "text/plain", "application/javascript", "text/css"].contains(mimeType) {
-                // This is a download
+            // Check for downloads using enhanced DownloadManager
+            if DownloadManager.shared.shouldDownloadResponse(navigationResponse.response) {
                 if let url = navigationResponse.response.url {
-                    let filename = navigationResponse.response.suggestedFilename
+                    let filename = navigationResponse.response.suggestedFilename ?? url.lastPathComponent
+                    
+                    // Start download using DownloadManager
+                    DownloadManager.shared.startDownload(from: url, suggestedFilename: filename)
+                    
+                    // Also call legacy callback if present
                     parent.onDownloadRequest?(url, filename)
                 }
                 decisionHandler(.cancel)
