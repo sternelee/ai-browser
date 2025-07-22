@@ -54,8 +54,15 @@ class GemmaService {
             // Load model weights
             modelWeights = try await mlxWrapper.loadModelWeights(from: modelPath)
             
-            // Initialize tokenizer
+            // Initialize tokenizer with automatic download
             tokenizer = try GemmaTokenizer(modelPath: modelPath)
+            
+            // Download tokenizer if not available
+            if case .tokenizerNotAvailable = tokenizer!.checkAvailability() {
+                NSLog("📁 Downloading tokenizer.model for Gemma model...")
+                try await tokenizer!.downloadTokenizerModel()
+                NSLog("✅ Tokenizer download completed")
+            }
             
             // Apply quantization if configured
             if case .int4 = configuration.quantization {
@@ -486,6 +493,14 @@ class GemmaTokenizer {
         #endif
     }
     
+    func checkAvailability() -> GemmaError? {
+        #if canImport(SentencepieceTokenizer)
+        return sentencePieceTokenizer != nil ? nil : .tokenizerNotAvailable
+        #else
+        return .tokenizerNotAvailable
+        #endif
+    }
+    
     private func loadSentencePieceTokenizer() throws {
         // Look for tokenizer.model file alongside the model
         let possiblePaths = [
@@ -514,7 +529,7 @@ class GemmaTokenizer {
     }
     
     /// Download tokenizer.model from Hugging Face for a given Gemma model
-    func downloadTokenizerModel(for modelName: String = "google/gemma-2-2b-it") async throws {
+    func downloadTokenizerModel(for modelName: String = "bartowski/gemma-3n-E2B-it-GGUF") async throws {
         let tokenizerURL = "https://huggingface.co/\(modelName)/resolve/main/tokenizer.model"
         let destinationPath = modelPath.deletingLastPathComponent().appendingPathComponent("tokenizer.model")
         
@@ -525,7 +540,15 @@ class GemmaTokenizer {
         }
         
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            // Check if the response is valid
+            if let httpResponse = response as? HTTPURLResponse {
+                guard httpResponse.statusCode == 200 else {
+                    throw GemmaError.initializationFailed("Failed to download tokenizer: HTTP \(httpResponse.statusCode)")
+                }
+            }
+            
             try data.write(to: destinationPath)
             
             // Now load the downloaded tokenizer
@@ -534,7 +557,33 @@ class GemmaTokenizer {
             NSLog("✅ Downloaded and loaded SentencePiece tokenizer (\(data.count / 1024)KB)")
             #endif
         } catch {
-            throw GemmaError.initializationFailed("Failed to download tokenizer: \(error)")
+            NSLog("⚠️ Failed to download from \(tokenizerURL), trying fallback...")
+            // Try fallback URL with Google's official model
+            try await downloadTokenizerFallback()
+        }
+    }
+    
+    private func downloadTokenizerFallback() async throws {
+        let fallbackURL = "https://huggingface.co/google/gemma-2-2b-it/resolve/main/tokenizer.model"
+        let destinationPath = modelPath.deletingLastPathComponent().appendingPathComponent("tokenizer.model")
+        
+        NSLog("📁 Trying fallback tokenizer from \(fallbackURL)...")
+        
+        guard let url = URL(string: fallbackURL) else {
+            throw GemmaError.initializationFailed("Invalid fallback tokenizer URL")
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            try data.write(to: destinationPath)
+            
+            // Now load the downloaded tokenizer
+            #if canImport(SentencepieceTokenizer)
+            sentencePieceTokenizer = try SentencepieceTokenizer(modelPath: destinationPath.path)
+            NSLog("✅ Downloaded and loaded fallback SentencePiece tokenizer (\(data.count / 1024)KB)")
+            #endif
+        } catch {
+            throw GemmaError.initializationFailed("Failed to download fallback tokenizer: \(error)")
         }
     }
     
