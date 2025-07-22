@@ -1,5 +1,70 @@
 import Foundation
 
+// MARK: - Token Estimation Utility
+
+/// Utility class for accurate token estimation
+class TokenEstimator {
+    
+    /// Estimate token count for given text using improved algorithms
+    static func estimateTokens(for text: String) -> Int {
+        if text.isEmpty { return 0 }
+        
+        // Try to use actual tokenizer if available
+        if let tokenizer = getAvailableTokenizer() {
+            do {
+                let tokens = try tokenizer.encode(text)
+                return tokens.count
+            } catch {
+                NSLog("⚠️ Tokenizer failed, using fallback estimation: \(error)")
+            }
+        }
+        
+        // Improved estimation based on actual language patterns
+        return improvedTokenEstimation(for: text)
+    }
+    
+    private static func getAvailableTokenizer() -> GemmaTokenizer? {
+        // For now, return nil - will be connected to actual tokenizer later
+        // when services are properly connected
+        return nil
+    }
+    
+    private static func improvedTokenEstimation(for text: String) -> Int {
+        if text.isEmpty { return 0 }
+        
+        // More accurate estimation based on language characteristics
+        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        var tokenCount = 0
+        
+        for word in words {
+            // Average English word is ~1.3 tokens based on empirical data
+            let wordLength = word.count
+            if wordLength <= 3 {
+                tokenCount += 1 // Short words are usually 1 token
+            } else if wordLength <= 8 {
+                tokenCount += 2 // Medium words are ~1-2 tokens  
+            } else {
+                tokenCount += 3 // Long words get split into more tokens
+            }
+        }
+        
+        // Add tokens for punctuation and special characters
+        let punctuationCount = text.filter { ".,!?;:'\"-()[]{}@#$%^&*+=|\\/<>~`".contains($0) }.count
+        tokenCount += punctuationCount
+        
+        // Add some tokens for whitespace/formatting (newlines, tabs, etc.)
+        let whitespaceTokens = max(1, words.count / 10)
+        tokenCount += whitespaceTokens
+        
+        // Special tokens for start/end if this looks like a conversation
+        if text.contains("user:") || text.contains("assistant:") {
+            tokenCount += 2 // BOS/EOS tokens
+        }
+        
+        return tokenCount
+    }
+}
+
 /// Conversation history manager for AI chat sessions
 /// Handles message storage, retrieval, and conversation threading with privacy protection
 class ConversationHistory: ObservableObject {
@@ -250,8 +315,9 @@ struct ConversationMessage: Identifiable {
     
     /// Estimated token count for this message
     var estimatedTokens: Int {
-        // Rough estimate: 1 token per 4 characters
-        return content.count / 4 + (metadata?.description.count ?? 0) / 4
+        // Use proper token counting when available, fallback to improved estimation
+        return TokenEstimator.estimateTokens(for: content) + 
+               TokenEstimator.estimateTokens(for: metadata?.description ?? "")
     }
 }
 

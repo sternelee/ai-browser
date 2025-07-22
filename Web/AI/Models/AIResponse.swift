@@ -268,7 +268,7 @@ class StreamingAIResponse: ObservableObject {
     }
     
     private func estimateTokens(_ text: String) -> Int {
-        return text.count / 4 // Rough estimate
+        return TokenEstimator.estimateTokens(for: text)
     }
 }
 
@@ -319,7 +319,7 @@ class AIResponseBuilder {
     
     func build() -> AIResponse {
         let processingTime = Date().timeIntervalSince(startTime)
-        let tokenCount = text.count / 4 // Rough estimate
+        let tokenCount = TokenEstimator.estimateTokens(for: text)
         
         let metadata = ResponseMetadata(
             contextUsed: contextUsed,
