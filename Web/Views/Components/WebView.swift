@@ -74,7 +74,7 @@ struct WebView: NSViewRepresentable {
         // User agent customization - Use standard Safari user agent to prevent Google's embedded browser detection
         config.applicationNameForUserAgent = ""
         
-        // Add link hover detection script to existing user content controller
+        // Add link hover detection and context menu script to existing user content controller
         let linkHoverScript = WKUserScript(
             source: linkHoverJavaScript,
             injectionTime: .atDocumentEnd,
@@ -82,6 +82,7 @@ struct WebView: NSViewRepresentable {
         )
         config.userContentController.addUserScript(linkHoverScript)
         config.userContentController.add(context.coordinator, name: "linkHover")
+        config.userContentController.add(context.coordinator, name: "linkContextMenu")
         
         // Add timer cleanup script to prevent memory leaks and CPU issues
         let timerCleanupScript = WKUserScript(
@@ -94,7 +95,7 @@ struct WebView: NSViewRepresentable {
         
         // Create WebView using WebKitManager for optimal memory usage
         let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
-        let webView = WKWebView(frame: safeFrame, configuration: config)
+        let webView = CustomWebView(frame: safeFrame, configuration: config, coordinator: context.coordinator)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         
@@ -289,11 +290,12 @@ struct WebView: NSViewRepresentable {
         """
     }
     
-    // JavaScript for link hover detection
+    // JavaScript for link hover detection and right-click context menu
     private var linkHoverJavaScript: String {
         """
         (function() {
             let statusTimeout;
+            let currentContextLink = null;
             
             // Add event listeners for link hover
             document.addEventListener('mouseover', function(e) {
@@ -316,6 +318,39 @@ struct WebView: NSViewRepresentable {
                 }
             });
             
+            // Handle right-click context menu on links
+            document.addEventListener('contextmenu', function(e) {
+                // Find if the clicked element or any parent is a link
+                let target = e.target;
+                let linkElement = null;
+                
+                // Traverse up the DOM to find a link element
+                while (target && target !== document) {
+                    if (target.tagName === 'A' && target.href) {
+                        linkElement = target;
+                        break;
+                    }
+                    target = target.parentElement;
+                }
+                
+                if (linkElement) {
+                    // Store current context link for potential actions
+                    currentContextLink = linkElement.href;
+                    
+                    // Send link context to native code
+                    window.webkit.messageHandlers.linkContextMenu.postMessage({
+                        type: 'rightClick',
+                        url: linkElement.href,
+                        text: linkElement.textContent || linkElement.innerText || '',
+                        x: e.clientX,
+                        y: e.clientY
+                    });
+                } else {
+                    // Clear context if not right-clicking on a link
+                    currentContextLink = null;
+                }
+            });
+            
             // Clear status bar when clicking on links
             document.addEventListener('click', function(e) {
                 if (e.target.tagName === 'A' && e.target.href) {
@@ -333,6 +368,11 @@ struct WebView: NSViewRepresentable {
                 });
             });
             
+            // Expose function for native code to get current context link
+            window.getCurrentContextLink = function() {
+                return currentContextLink;
+            };
+            
             // PERFORMANCE: Pause/resume expensive operations based on page visibility
             document.addEventListener('visibilitychange', function() {
                 if (document.hidden) {
@@ -347,6 +387,64 @@ struct WebView: NSViewRepresentable {
         """
     }
     
+    // MARK: - Custom WKWebView for Context Menu Support
+    class CustomWebView: WKWebView {
+        weak var coordinator: Coordinator?
+        
+        init(frame: CGRect, configuration: WKWebViewConfiguration, coordinator: Coordinator?) {
+            self.coordinator = coordinator
+            super.init(frame: frame, configuration: configuration)
+        }
+        
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+        
+        override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+            super.willOpenMenu(menu, with: event)
+            
+            // Check if we have a right-clicked link URL from JavaScript
+            guard let linkURL = coordinator?.rightClickedLinkURL,
+                  let url = URL(string: linkURL) else {
+                return // No link context, use default menu
+            }
+            
+            // Find the "Open Link" menu item and add our custom item after it
+            var insertIndex = 0
+            for (index, menuItem) in menu.items.enumerated() {
+                if menuItem.identifier?.rawValue == "WKMenuItemIdentifierOpenLink" {
+                    insertIndex = index + 1
+                    break
+                }
+            }
+            
+            // Create "Open in New Tab" menu item
+            let openInNewTabItem = NSMenuItem(
+                title: "Open in New Tab",
+                action: #selector(openInNewTab(_:)),
+                keyEquivalent: ""
+            )
+            openInNewTabItem.target = self
+            openInNewTabItem.representedObject = url
+            
+            // Insert our custom menu item
+            menu.insertItem(openInNewTabItem, at: insertIndex)
+        }
+        
+        @objc private func openInNewTab(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            
+            // Use the existing notification system to open in new background tab
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Notification.Name("newTabInBackgroundRequested"),
+                    object: nil,
+                    userInfo: ["url": url]
+                )
+            }
+        }
+    }
+    
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         let parent: WebView
         weak var webView: WKWebView?
@@ -355,6 +453,9 @@ struct WebView: NSViewRepresentable {
         private var urlObserver: NSKeyValueObservation?
         var lastLoadedURL: URL?
         var lastLoadTime: Date?
+        
+        // Context menu state
+        var rightClickedLinkURL: String?
         
         // Static shared cache to prevent duplicate downloads across all tabs
         private static var faviconCache: [String: NSImage] = [:]
@@ -783,6 +884,25 @@ struct WebView: NSViewRepresentable {
         
         // MARK: - Navigation policy handling
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // Check for CMD + click to open links in new background tabs
+            if navigationAction.navigationType == .linkActivated,
+               navigationAction.modifierFlags.contains(.command),
+               let targetURL = navigationAction.request.url {
+                
+                // Create new tab in background using NotificationCenter
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("newTabInBackgroundRequested"),
+                        object: nil,
+                        userInfo: ["url": targetURL]
+                    )
+                }
+                
+                // Cancel navigation in current tab
+                decisionHandler(.cancel)
+                return
+            }
+            
             if let customAction = parent.onNavigationAction {
                 let policy = customAction(navigationAction)
                 decisionHandler(policy)
@@ -831,6 +951,23 @@ struct WebView: NSViewRepresentable {
                     }
                 }
                 
+            case "linkContextMenu":
+                guard let body = message.body as? [String: Any] else { return }
+                
+                DispatchQueue.main.async {
+                    if let type = body["type"] as? String {
+                        switch type {
+                        case "rightClick":
+                            if let url = body["url"] as? String {
+                                self.rightClickedLinkURL = url
+                                // The context menu will be shown by WKUIDelegate method
+                            }
+                        default:
+                            break
+                        }
+                    }
+                }
+                
             case "timerCleanup":
                 guard let body = message.body as? [String: Any],
                       let type = body["type"] as? String else { return }
@@ -845,6 +982,9 @@ struct WebView: NSViewRepresentable {
                 break
             }
         }
+        
+        // MARK: - WKUIDelegate
+        // Note: Context menu customization is handled in CustomWebView subclass
         
         // MARK: - Public Methods for Timer Management
         func cleanupWebViewTimers() {
@@ -880,6 +1020,7 @@ struct WebView: NSViewRepresentable {
                 
                 // Remove script message handlers
                 webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkHover")
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkContextMenu")
                 webView.configuration.userContentController.removeScriptMessageHandler(forName: "timerCleanup")
                 webView.configuration.userContentController.removeScriptMessageHandler(forName: "adBlockHandler")
                 webView.configuration.userContentController.removeScriptMessageHandler(forName: "autofillHandler")

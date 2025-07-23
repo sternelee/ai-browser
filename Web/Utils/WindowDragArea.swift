@@ -1,18 +1,29 @@
 import SwiftUI
 import AppKit
 
-/// A custom drag area for borderless windows that allows dragging without intercepting all input events
+/// Enhanced drag area for borderless windows with improved hit testing and event handling
+/// Provides window dragging capabilities without interfering with interactive UI elements
 struct WindowDragArea: NSViewRepresentable {
+    let allowsHitTesting: Bool
+    
+    init(allowsHitTesting: Bool = true) {
+        self.allowsHitTesting = allowsHitTesting
+    }
+    
     func makeNSView(context: Context) -> WindowDragAreaView {
-        return WindowDragAreaView()
+        let view = WindowDragAreaView()
+        view.allowsHitTesting = allowsHitTesting
+        return view
     }
     
     func updateNSView(_ nsView: WindowDragAreaView, context: Context) {
-        // No updates needed
+        nsView.allowsHitTesting = allowsHitTesting
     }
 }
 
 class WindowDragAreaView: NSView {
+    var allowsHitTesting: Bool = true
+    private var isDragging: Bool = false
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -25,31 +36,117 @@ class WindowDragAreaView: NSView {
     }
     
     private func setupView() {
-        // Make the view transparent
+        // Configure for transparent background operation
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        
+        // Enable proper mouse event tracking
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        
+        // Remove existing tracking areas and add new one with updated bounds
+        trackingAreas.forEach { removeTrackingArea($0) }
+        
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
+    
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Allow hit testing control - some areas may want to be transparent to mouse events
+        if !allowsHitTesting {
+            return nil
+        }
+        
+        // Check if point is within bounds
+        guard bounds.contains(point) else {
+            return nil
+        }
+        
+        // Return self for drag handling
+        return self
     }
     
     override func mouseDown(with event: NSEvent) {
-        // Only handle primary mouse button for dragging
-        if event.type == .leftMouseDown {
-            window?.performDrag(with: event)
-        } else {
+        // Only handle left mouse button for window dragging
+        guard event.type == .leftMouseDown else {
             super.mouseDown(with: event)
+            return
         }
+        
+        // Ensure we have a valid window for dragging
+        guard let window = window else {
+            super.mouseDown(with: event)
+            return
+        }
+        
+        // Check if window is borderless (our target use case)
+        guard window.styleMask.contains(.borderless) else {
+            super.mouseDown(with: event)
+            return
+        }
+        
+        // Mark as starting to drag
+        isDragging = true
+        
+        // Begin window drag operation
+        window.performDrag(with: event)
     }
     
     override func mouseDragged(with event: NSEvent) {
-        // Let the window handle the drag
-        window?.performDrag(with: event)
+        // Only proceed if we initiated the drag and have a valid window
+        guard isDragging,
+              let window = window,
+              window.styleMask.contains(.borderless) else {
+            super.mouseDragged(with: event)
+            return
+        }
+        
+        // Continue the window drag operation
+        window.performDrag(with: event)
     }
     
-    // Ensure this view doesn't interfere with other mouse events
+    override func mouseUp(with event: NSEvent) {
+        // End dragging state
+        isDragging = false
+        super.mouseUp(with: event)
+    }
+    
+    // Preserve other mouse events for proper interaction
     override func rightMouseDown(with event: NSEvent) {
         super.rightMouseDown(with: event)
     }
     
     override func otherMouseDown(with event: NSEvent) {
         super.otherMouseDown(with: event)
+    }
+    
+    override func scrollWheel(with event: NSEvent) {
+        // Pass scroll events through to underlying views
+        super.scrollWheel(with: event)
+    }
+    
+    // Handle mouse enter/exit for potential visual feedback
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        // Optionally add visual feedback when hovering over drag areas
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        // Reset any visual feedback
     }
 }

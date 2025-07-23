@@ -32,7 +32,7 @@ final class LLMRunner {
     private let queue = DispatchQueue(label: "com.web.llmrunner", qos: .userInitiated)
     private var _conversationHistory: [(role: Role, content: String)] = []
     private var _conversationTokenCount: Int = 0
-    private let maxConversationTokens: Int = 1800
+    private let maxConversationTokens: Int = 2400 // ENHANCED: Increased for larger context windows
     
     private var conversationHistory: [(role: Role, content: String)] {
         get { queue.sync { _conversationHistory } }
@@ -128,7 +128,7 @@ final class LLMRunner {
         
         let response = await withTaskGroup(of: String?.self) { group in
             // Main generation task using raw prompt
-            group.addTask { [self] in
+            group.addTask {
                 return await bot.getCompletion(from: prompt)
             }
             
@@ -161,27 +161,13 @@ final class LLMRunner {
         
         NSLog("🤖 Generating response with LLM.swift...")
         
-        // OPTIMIZATION: Use conversation history for context
-        let userChat: (role: Role, content: String) = (.user, prompt)
-        
-        // Check if we need to reset conversation due to token limit
-        let estimatedNewTokens = prompt.count / 4 // Rough token estimation
-        if conversationTokenCount + estimatedNewTokens > maxConversationTokens {
-            NSLog("🔄 Resetting conversation context due to token limit")
-            conversationHistory.removeAll()
-            conversationTokenCount = 0
-        }
-        
-        // Add user message to conversation history
-        conversationHistory.append(userChat)
-        
-        // FIXED: Use timeout and better error handling for non-streaming generation
+        // Use raw prompt approach for consistency with streaming
         NSLog("🤖 Starting non-streaming generation with timeout...")
         
         let response = await withTaskGroup(of: String?.self) { group in
-            // Main generation task
-            group.addTask { [self] in
-                return await bot.getCompletion(from: bot.preprocess(prompt, self.conversationHistory))
+            // Main generation task - use raw prompt (caller should handle conversation context)
+            group.addTask {
+                return await bot.getCompletion(from: prompt)
             }
             
             // Timeout task (30 seconds for non-streaming)
@@ -199,14 +185,7 @@ final class LLMRunner {
             return "Unexpected error in response generation."
         }
         
-        // Add assistant response to conversation history
-        let assistantChat: (role: Role, content: String) = (.bot, response)
-        conversationHistory.append(assistantChat)
-        
-        // Update token count (rough estimation)
-        conversationTokenCount += estimatedNewTokens + (response.count / 4)
-        
-        NSLog("✅ LLM response generated: \(response.count) characters (conversation: \(conversationHistory.count/2) turns)")
+        NSLog("✅ LLM response generated: \(response.count) characters")
         return response
     }
 
@@ -222,20 +201,19 @@ final class LLMRunner {
                         return
                     }
                     
-                    NSLog("🌊 Starting streaming with RAW prompt and conversation state management...")
+                    NSLog("🌊 Starting streaming with RAW prompt (preserving conversation context)...")
                     
                     // Get bot instance for processing
                     let botInstance = await bot!
                     
-                    // CRITICAL FIX: Reset conversation context to prevent KV cache position errors
-                    // This resolves the "tokens of sequence 0 have inconsistent sequence positions" error
-                    await self.resetConversation()
-                    NSLog("🔄 Conversation state reset to prevent KV cache position mismatch")
+                    // FIXED: Do NOT reset conversation here - let the caller manage conversation state
+                    // The raw prompt should already include conversation context if needed
+                    NSLog("✅ Using raw prompt with embedded conversation context")
                     
                     // IMPROVED: Implement proper token-by-token streaming using LLM.swift callbacks
                     NSLog("🌊 Starting REAL token-by-token streaming (ChatGPT-style)...")
                     
-                    var hasStreamedTokens = false
+                    let streamedTokensBox = Box(false)
                     let streamLock = NSLock()
                     
                     // Set up streaming callback - this is the key to real-time streaming
@@ -244,7 +222,7 @@ final class LLMRunner {
                         defer { streamLock.unlock() }
                         
                         if let delta = outputDelta, !delta.isEmpty {
-                            hasStreamedTokens = true
+                            streamedTokensBox.value = true
                             continuation.yield(delta)
                             NSLog("🌊 Received token chunk: \(delta)")
                         }
@@ -254,7 +232,7 @@ final class LLMRunner {
                     let finalResponse = await botInstance.getCompletion(from: prompt)
                     
                     // Fallback: If callback streaming didn't work, send complete response
-                    if !hasStreamedTokens && !finalResponse.isEmpty {
+                    if !streamedTokensBox.value && !finalResponse.isEmpty {
                         NSLog("⚠️ Callback streaming failed, falling back to complete response")
                         continuation.yield(finalResponse)
                     }
@@ -332,7 +310,8 @@ final class LLMRunner {
         let userChat: (role: Role, content: String) = (.user, userPrompt)
         let assistantChat: (role: Role, content: String) = (.bot, response)
         
-        let estimatedTokens = (userPrompt.count + response.count) / 4
+        // ENHANCED: More accurate token estimation for larger contexts
+        let estimatedTokens = Int(Double(userPrompt.count + response.count) / 3.5) // Slightly more conservative estimation
         
         queue.sync {
             if _conversationTokenCount + estimatedTokens > maxConversationTokens {
@@ -423,6 +402,18 @@ final class LLMRunner {
         self.conversationHistory.removeAll()
         self.conversationTokenCount = 0
         NSLog("🔄 Conversation history reset")
+    }
+    
+    /// Clear KV cache without affecting conversation history (for error recovery)
+    private func clearKVCache() async {
+        // If KV cache errors occur, we need to clear the LLM's internal state
+        // without destroying our conversation tracking
+        if let _ = bot, let currentPath = currentModelPath {
+            // Force a model reload to clear KV cache
+            self.bot = nil
+            try? await ensureLoaded(modelPath: currentPath)
+            NSLog("🔧 KV cache cleared via model reload (conversation history preserved)")
+        }
     }
 }
 

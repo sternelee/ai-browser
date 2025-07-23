@@ -2,11 +2,18 @@ import SwiftUI
 
 // Enhanced new tab view with Web logo and next-gen design
 struct NewTabView: View {
+    let tab: Tab?
+    
     @State private var searchText: String = ""
     @State private var recentlyVisited: [String] = []
     @State private var recentlyClosed: [String] = []
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchHovered: Bool = false
+    
+    // Initialize with optional tab for incognito detection
+    init(tab: Tab? = nil) {
+        self.tab = tab
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -14,9 +21,16 @@ struct NewTabView: View {
                 Spacer()
                 
                 VStack(spacing: 32) {
-                    // App logo with subtle animation
-                    AnimatedWebLogo()
-                        .frame(width: 80, height: 80)
+                    VStack(spacing: 16) {
+                        // App logo with subtle animation
+                        AnimatedWebLogo()
+                            .frame(width: 80, height: 80)
+                        
+                        // Incognito indicator (only shown for incognito tabs)
+                        if tab?.isIncognito == true {
+                            incognitoIndicator
+                        }
+                    }
                     
                     // Main search bar
                     enhancedSearchBar
@@ -43,6 +57,27 @@ struct NewTabView: View {
     }
     
     // MARK: - View Components
+    private var incognitoIndicator: some View {
+        HStack(spacing: 8) {
+            // Small purple dot matching sidebar indicators
+            Circle()
+                .fill(.purple.opacity(0.8))
+                .frame(width: 6, height: 6)
+            
+            Text("Incognito")
+                .font(.system(.caption, weight: .medium))
+                .foregroundColor(.purple.opacity(0.8))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(.purple.opacity(0.1))
+                .stroke(.purple.opacity(0.2), lineWidth: 0.5)
+        )
+        .opacity(0.8)
+    }
+    
     private var adaptiveBackground: some View {
         ZStack {
             // Base background
@@ -129,28 +164,28 @@ struct NewTabView: View {
                 icon: "clock.arrow.circlepath",
                 title: "Recently Visited"
             ) {
-                // Handle recently visited tap
+                KeyboardShortcutHandler.shared.showHistoryPanel = true
             }
             
             MinimalActionCard(
                 icon: "arrow.uturn.left.circle",
                 title: "Recently Closed"
             ) {
-                // Handle recently closed tap
+                KeyboardShortcutHandler.shared.showHistoryPanel = true
             }
             
             MinimalActionCard(
                 icon: "star.fill",
                 title: "Bookmarks"
             ) {
-                // Handle bookmarks tap
+                KeyboardShortcutHandler.shared.showBookmarksPanel = true
             }
             
             MinimalActionCard(
                 icon: "arrow.down.circle.fill",
                 title: "Downloads"
             ) {
-                // Handle downloads tap
+                KeyboardShortcutHandler.shared.showDownloadsPanel = true
             }
         }
     }
@@ -320,6 +355,6 @@ struct MinimalActionCard: View {
 }
 
 #Preview {
-    NewTabView()
+    NewTabView(tab: nil)
         .frame(width: 1200, height: 800)
 }

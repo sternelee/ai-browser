@@ -15,6 +15,9 @@ struct AISidebar: View {
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
     
+    // TYPING INDICATOR STATE (streaming state now managed by AIAssistant)
+    @State private var isShowingTypingIndicator: Bool = false
+    
     // Configuration
     private let collapsedWidth: CGFloat = 4
     private let expandedWidth: CGFloat = 320
@@ -33,7 +36,7 @@ struct AISidebar: View {
             sidebarContent()
                 .frame(width: isExpanded ? expandedWidth : collapsedWidth)
                 .background(sidebarBackground())
-                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 12 : 2))
+                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 12 : 0))
                 .overlay(
                     // Right edge activation zone when collapsed
                     rightEdgeActivationZone()
@@ -70,18 +73,9 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func collapsedSidebarView() -> some View {
-        // Minimal collapsed state with subtle indicator
+        // Completely invisible collapsed state - only hover zone remains active
         Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.accentColor.opacity(0.1),
-                        Color.accentColor.opacity(0.05)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .fill(Color.clear)
             .frame(width: collapsedWidth)
     }
     
@@ -188,10 +182,19 @@ struct AISidebar: View {
                         // Show placeholder when no messages
                         chatMessagesPlaceholder()
                     } else {
-                        // Display actual chat messages
+                        // Display actual chat messages with streaming support
                         ForEach(aiAssistant.messages) { message in
-                            ChatBubbleView(message: message)
-                                .id(message.id)
+                            ChatBubbleView(
+                                message: message,
+                                isStreaming: aiAssistant.currentStreamingMessageId == message.id,
+                                streamingText: aiAssistant.currentStreamingMessageId == message.id ? aiAssistant.streamingText : ""
+                            )
+                            .id(message.id)
+                        }
+                        
+                        // Show typing indicator when AI is processing but no message created yet
+                        if isShowingTypingIndicator {
+                            typingIndicatorView()
                         }
                     }
                 }
@@ -404,6 +407,65 @@ struct AISidebar: View {
         }
     }
     
+    // MARK: - Typing Indicator
+    
+    @ViewBuilder
+    private func typingIndicatorView() -> some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            // AI avatar
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.green.opacity(0.2),
+                            Color.green.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Image(systemName: "brain")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.green)
+                )
+            
+            // Typing indicator bubble
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.6))
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(typingDotScale(for: index))
+                        .animation(
+                            .easeInOut(duration: 0.6)
+                                .repeatForever()
+                                .delay(Double(index) * 0.2),
+                            value: isShowingTypingIndicator
+                        )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.9)
+            )
+            
+            Spacer(minLength: 32)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+    }
+    
+    private func typingDotScale(for index: Int) -> CGFloat {
+        let time = Date().timeIntervalSince1970
+        let offset = Double(index) * 0.5
+        return isShowingTypingIndicator ? (0.8 + 0.4 * abs(sin(time * 3 + offset))) : 0.8
+    }
+    
     // MARK: - Chat Input Area
     
     @ViewBuilder
@@ -457,39 +519,44 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func sidebarBackground() -> some View {
-        ZStack {
-            // Base glass material
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.8)
-            
-            // Subtle gradient overlay
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.accentColor.opacity(0.02),
-                            Color.accentColor.opacity(0.01),
-                            Color.clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+        if isExpanded {
+            ZStack {
+                // Base glass material
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.8)
+                
+                // Subtle gradient overlay
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.02),
+                                Color.accentColor.opacity(0.01),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-            
-            // Inner glow
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.white.opacity(0.02),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
+                
+                // Inner glow
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                Color.white.opacity(0.02),
+                                Color.clear
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     )
-                )
+            }
+        } else {
+            // Completely transparent background when collapsed
+            Color.clear
         }
     }
     
@@ -520,6 +587,9 @@ struct AISidebar: View {
             isExpanded.toggle()
         }
         
+        // Broadcast state change for button synchronization
+        NotificationCenter.default.post(name: .aISidebarStateChanged, object: isExpanded)
+        
         if isExpanded {
             startAutoCollapseTimer()
             // Focus input after animation
@@ -539,6 +609,9 @@ struct AISidebar: View {
             isExpanded = true
         }
         
+        // Broadcast state change for button synchronization
+        NotificationCenter.default.post(name: .aISidebarStateChanged, object: true)
+        
         startAutoCollapseTimer()
         
         // Focus input after animation
@@ -553,6 +626,9 @@ struct AISidebar: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             isExpanded = false
         }
+        
+        // Broadcast state change for button synchronization
+        NotificationCenter.default.post(name: .aISidebarStateChanged, object: false)
         
         stopAutoCollapseTimer()
         isChatInputFocused = false
@@ -580,28 +656,42 @@ struct AISidebar: View {
         // Reset auto-collapse timer on interaction
         resetAutoCollapseTimer()
         
-        // Process message with AI Assistant using streaming for immediate response
+        // Show typing indicator immediately
+        isShowingTypingIndicator = true
+        
+        // Process message with AI Assistant using streaming for ChatGPT-like experience
         Task {
             do {
-                // Use streaming for immediate token-by-token response
+                // Start streaming response
                 let stream = aiAssistant.processStreamingQuery(message, includeContext: true)
                 
-                // Process streaming response
-                var streamedResponse = ""
-                for try await chunk in stream {
-                    streamedResponse += chunk
-                    // Tokens will appear immediately in the UI through the streaming mechanism
-                    NSLog("🌊 Received token chunk: \(chunk)")
+                // Hide typing indicator once streaming starts (AIAssistant will manage streaming state)
+                await MainActor.run {
+                    isShowingTypingIndicator = false
                 }
                 
-                NSLog("✅ Streaming response completed: \(streamedResponse.count) characters")
+                // Process streaming response
+                var fullResponse = ""
+                for try await chunk in stream {
+                    fullResponse += chunk
+                    NSLog("🌊 Streaming token: \(chunk) (total: \(fullResponse.count) chars)")
+                }
+                
+                NSLog("✅ Streaming completed: \(fullResponse.count) characters")
+                
             } catch {
-                NSLog("❌ Streaming chat message processing failed: \(error)")
-                // Fallback to non-streaming if streaming fails
+                NSLog("❌ Streaming failed: \(error)")
+                
+                // Hide typing indicator on error
+                await MainActor.run {
+                    isShowingTypingIndicator = false
+                }
+                
+                // Fallback to non-streaming
                 do {
                     let _ = try await aiAssistant.processQuery(message, includeContext: true)
                 } catch {
-                    NSLog("❌ Fallback non-streaming also failed: \(error)")
+                    NSLog("❌ Fallback also failed: \(error)")
                 }
             }
         }

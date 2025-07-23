@@ -39,7 +39,7 @@ struct WebContentView: View {
                             hasInitializedWebView = true
                         }
                 } else {
-                    NewTabView()
+                    NewTabView(tab: tab)
                         .onAppear {
                             hasInitializedWebView = false
                         }

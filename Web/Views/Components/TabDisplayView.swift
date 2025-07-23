@@ -102,6 +102,12 @@ struct TabDisplayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
             tabManager.createNewTab()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .newTabInBackgroundRequested)) { notification in
+            if let userInfo = notification.userInfo,
+               let url = userInfo["url"] as? URL {
+                tabManager.createNewTabInBackground(url: url)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .newIncognitoTabRequested)) { _ in
             tabManager.createIncognitoTab()
         }
@@ -156,6 +162,9 @@ struct TabDisplayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusAddressBarRequested)) { _ in
             // Focus the URL bar - we'll need to implement this with a focus coordinator
             NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .bookmarkCurrentPageRequested)) { _ in
+            handleBookmarkCurrentPage()
         }
         // TODO: Restore these notification handlers once SwiftUI type-checking is resolved
         // .onReceive(NotificationCenter.default.publisher(for: .showHistoryRequested)) { _ in
@@ -327,6 +336,15 @@ struct TabDisplayView: View {
         }
     }
     
+    private func handleBookmarkCurrentPage() {
+        // Bookmark current page when requested via notification
+        if let activeTab = tabManager.activeTab,
+           let url = activeTab.url {
+            let title = activeTab.title.isEmpty ? url.absoluteString : activeTab.title
+            BookmarkService.shared.quickBookmark(url: url.absoluteString, title: title)
+        }
+    }
+    
     private func handleDownloadsRequest() {
         // Show downloads panel
         DownloadManager.shared.isVisible.toggle()
@@ -393,10 +411,11 @@ struct WebContentArea: View {
                 .padding(.vertical, 6) // Further reduced for even more minimal height
                 .background(
                     ZStack {
-                        // Clean base with subtle material
+                        // Clean base with subtle material and window drag capability
                         Rectangle()
                             .fill(.ultraThinMaterial)
                             .opacity(0.3)
+                            .background(WindowDragArea())
                         
                         // Next-gen ambient gradient system
                         if let themeColor = tabManager.activeTab?.themeColor {
@@ -512,6 +531,11 @@ struct WebContentArea: View {
         }
         .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(
+            // Add drag area to the padding/margin area around web content
+            WindowDragArea(allowsHitTesting: false) // Don't interfere with content clicks
+                .background(Color.clear)
+        )
         .padding(2) // 2px margin as requested
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
             isEdgeToEdgeMode.toggle()

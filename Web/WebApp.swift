@@ -91,7 +91,7 @@ struct BrowserCommands: Commands {
         CommandMenu("Bookmarks") {
             Button("Bookmark This Page") {
                 NotificationCenter.default.post(
-                    name: Notification.Name("BookmarkCurrentPageRequested"),
+                    name: .bookmarkCurrentPageRequested,
                     object: nil
                 )
             }
@@ -135,6 +135,13 @@ struct BrowserCommands: Commands {
             Divider()
             
             DownloadsMenuContent()
+        }
+        
+        CommandMenu("Settings") {
+            Button("Preferences...") {
+                NotificationCenter.default.post(name: .showSettingsRequested, object: nil)
+            }
+            .keyboardShortcut(",", modifiers: .command)
         }
         
         CommandMenu("AI Assistant") {
@@ -215,7 +222,9 @@ extension Notification.Name {
     static let findInPageRequested = Notification.Name("findInPageRequested")
     static let showHistoryRequested = Notification.Name("showHistoryRequested")
     static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
+    static let bookmarkCurrentPageRequested = Notification.Name("bookmarkCurrentPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
+    static let showSettingsRequested = Notification.Name("showSettingsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
     static let dismissHoverableURLBar = Notification.Name("dismissHoverableURLBar")
     static let hoverableURLBarDismissed = Notification.Name("hoverableURLBarDismissed")

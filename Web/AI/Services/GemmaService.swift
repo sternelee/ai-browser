@@ -86,7 +86,7 @@ class GemmaService {
         
         do {
             // Step 1: Prepare the prompt
-            responseBuilder.addProcessingStep(ProcessingStep(
+            let _ = responseBuilder.addProcessingStep(ProcessingStep(
                 name: "prompt_preparation",
                 duration: 0.1,
                 description: "Preparing input prompt with context"
@@ -115,6 +115,7 @@ class GemmaService {
             }
 
             do {
+                // Use consistent prompt-based approach (conversation context already included in prompt)
                 let generatedText = try await LLMRunner.shared.generateWithPrompt(prompt: prompt, modelPath: modelPath)
                 let encoded = try tokenizer.encode(generatedText)
                 let cleaned = postProcessResponse(generatedText)
@@ -163,7 +164,7 @@ class GemmaService {
                         throw GemmaError.modelNotAvailable("AI model is still being prepared for streaming")
                     }
                     
-                    // Use LLMRunner for streaming (pass empty conversation history since we've already built the prompt)
+                    // Use LLMRunner for streaming with pre-built prompt that includes conversation context
                     let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, modelPath: modelPath)
                     
                     for try await textChunk in textStream {
@@ -220,7 +221,7 @@ class GemmaService {
         
         // Add context if available 
         if let context = context, !context.isEmpty {
-            let cleanContext = String(context.prefix(2000))  // Increased from 600 to 2000 for better content
+            let cleanContext = String(context.prefix(6000))  // ENHANCED: Increased from 2000 to 6000 for comprehensive content analysis
                 .replacingOccurrences(of: "\n\n+", with: "\n", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             promptParts.append("\nWebpage content:\n\(cleanContext)")

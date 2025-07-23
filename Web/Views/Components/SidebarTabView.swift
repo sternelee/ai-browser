@@ -96,7 +96,7 @@ struct SidebarTabView: View {
     
     private var settingsButton: some View {
         Button(action: { 
-            // Open settings 
+            KeyboardShortcutHandler.shared.showSettingsPanel.toggle()
         }) {
             Image(systemName: "gearshape")
                 .font(.system(size: 14, weight: .medium))

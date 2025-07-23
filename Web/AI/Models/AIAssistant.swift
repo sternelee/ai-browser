@@ -12,6 +12,10 @@ class AIAssistant: ObservableObject {
     @MainActor @Published var initializationStatus: String = "Not initialized"
     @MainActor @Published var lastError: String?
     
+    // STREAMING UI STATE
+    @MainActor @Published var currentStreamingMessageId: String?
+    @MainActor @Published var streamingText: String = ""
+    
     // MARK: - Dependencies
     
     private let mlxWrapper: MLXWrapper
@@ -264,33 +268,60 @@ class AIAssistant: ObservableObject {
                         conversationHistory: conversationHistory.getRecentMessages(limit: 10)
                     )
                     
-                    var fullResponse = ""
-                    
-                    for try await chunk in stream {
-                        fullResponse += chunk
-                        continuation.yield(chunk)
-                    }
-                    
-                    // Save complete conversation
+                    // Add user message first
                     let userMessage = ConversationMessage(
                         role: .user,
                         content: query,
                         timestamp: Date(),
                         contextData: context
                     )
+                    conversationHistory.addMessage(userMessage)
                     
+                    // Create empty AI message that will be filled during streaming
                     let aiMessage = ConversationMessage(
                         role: .assistant,
-                        content: fullResponse,
+                        content: "", // Start empty for streaming
                         timestamp: Date()
                     )
-                    
-                    conversationHistory.addMessage(userMessage)
                     conversationHistory.addMessage(aiMessage)
+                    
+                    // Set up streaming UI state
+                    await MainActor.run {
+                        currentStreamingMessageId = aiMessage.id
+                        streamingText = ""
+                    }
+                    
+                    var fullResponse = ""
+                    
+                    for try await chunk in stream {
+                        fullResponse += chunk
+                        
+                        // Update UI streaming text
+                        await MainActor.run {
+                            streamingText = fullResponse
+                        }
+                        
+                        continuation.yield(chunk)
+                    }
+                    
+                    // Clear streaming UI state when done
+                    await MainActor.run {
+                        currentStreamingMessageId = nil
+                        streamingText = ""
+                    }
+                    
+                    // The final message is already in conversation history
+                    // UI will update automatically when streaming state clears
                     
                     continuation.finish()
                     
                 } catch {
+                    // Clear streaming state on error
+                    await MainActor.run {
+                        currentStreamingMessageId = nil
+                        streamingText = ""
+                    }
+                    
                     await self.handleAIError(error)
                     continuation.finish(throwing: error)
                 }
