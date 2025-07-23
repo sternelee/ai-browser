@@ -8,6 +8,8 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 ![Swift](https://img.shields.io/badge/Swift-6-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
+*_Note: This is an experimental early access version, as AI models improve so will Web_*
+
 ## Features
 
 ### Core Browsing
