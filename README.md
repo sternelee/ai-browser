@@ -2,6 +2,8 @@
 
 A next-generation macOS browser built with SwiftUI that delivers minimal, progressive UX with integrated AI capabilities.
 
+<img width="4694" height="2379" alt="image" src="https://github.com/user-attachments/assets/b54a2937-09d5-480a-9ca6-eae7967af30c" />
+
 ![Web Browser](https://img.shields.io/badge/platform-macOS-blue.svg)
 ![Swift](https://img.shields.io/badge/Swift-6-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -10,8 +12,8 @@ A next-generation macOS browser built with SwiftUI that delivers minimal, progre
 
 ### Core Browsing
 - **WebKit Integration**: Native WebKit rendering with WKWebView
-- **Tab Management**: Smart tab hibernation for optimal performance
-- **Glass Design**: Beautiful glass morphism UI with ultraThinMaterial effects
+- **Tab Management**: Tab hibernation for optimal performance
+- **Glass Design**: Glass morphism UI with ultraThinMaterial effects
 - **Keyboard Shortcuts**: Comprehensive shortcuts (⌘T, ⌘W, ⌘R, etc.)
 - **Downloads**: Built-in download manager with progress tracking
 
@@ -46,7 +48,7 @@ A next-generation macOS browser built with SwiftUI that delivers minimal, progre
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/Web.git
+git clone https://github.com/nuance-dev/Web.git
 cd Web
 ```
 
@@ -105,7 +107,6 @@ xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=macOS'
 - Swift 6 with strict concurrency
 - Zero warnings/errors policy
 - Comprehensive keyboard shortcuts
-- Glass design system
 - Memory-efficient tab management
 
 ## Contributing
@@ -149,4 +150,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Built with ❤️ for macOS
+## 🔗 Links
+
+- Website: [Nuanc.me](https://nuanc.me)
+- Report issues: [GitHub Issues](https://github.com/nuance-dev/Uno/issues)
+- Follow updates: [@Nuanced](https://twitter.com/Nuancedev)
