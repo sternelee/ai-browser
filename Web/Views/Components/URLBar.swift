@@ -478,7 +478,7 @@ struct AIToggleButton: View {
     
     var body: some View {
         Button(action: toggleAISidebar) {
-            Image(systemName: "star")
+            Image(systemName: "sparkles")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isAISidebarExpanded ? .accentColor : (hovering ? .textPrimary : .textSecondary))
                 .frame(width: 20, height: 20)
