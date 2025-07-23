@@ -1,6 +1,6 @@
-# Web
+# Web - macOS AI Browser
 
-A next-generation macOS browser built with SwiftUI that delivers minimal, progressive UX with integrated AI capabilities.
+Built natively with SwiftUI to delivers a minimal, progressive browsing experience with integrated AI capabilities.
 
 <img width="4694" height="2379" alt="image" src="https://github.com/user-attachments/assets/b54a2937-09d5-480a-9ca6-eae7967af30c" />
 
