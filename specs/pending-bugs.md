@@ -14,6 +14,8 @@
 [x] Can't move the app window, but I still want it to be borderless
 [ ] Delete history item doesn't delete it
 [ ] Remove share button
+[ ] Change AI icon to stars
+[ ] 'Page content available' should update on every page change, right now as you change pages it doesn't change
 [x] Bookmarks don't show in the bookmarks menu ✅ COMPLETED
 
 --
