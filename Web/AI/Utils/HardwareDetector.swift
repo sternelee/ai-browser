@@ -87,6 +87,16 @@ class HardwareDetector {
         return Int(shared.physicalMemory / (1024 * 1024 * 1024))
     }
     
+    /// Get number of performance cores for Apple Silicon optimization
+    static var performanceCores: Int {
+        return shared.performanceCores
+    }
+    
+    /// Get number of efficiency cores
+    static var efficiencyCores: Int {
+        return shared.efficiencyCores
+    }
+    
     /// Get recommended memory limit for AI processing
     static var recommendedMemoryLimit: Int {
         let totalGB = totalMemoryGB
@@ -339,6 +349,18 @@ extension HardwareDetector.ProcessorType: CustomStringConvertible {
             return "Intel \(architecture) (\(cores) cores)"
         case .unknown:
             return "Unknown Processor"
+        }
+    }
+    
+    /// Get performance multiplier for AI optimization
+    var performanceMultiplier: Double {
+        switch self {
+        case .appleSilicon(let generation):
+            return generation.performanceMultiplier
+        case .intel:
+            return 0.6 // Intel Macs with llama.cpp fallback
+        case .unknown:
+            return 0.4 // Conservative fallback
         }
     }
 }

@@ -4,7 +4,6 @@ import WebKit
 // Web content view for displaying individual tabs
 struct WebContentView: View {
     @ObservedObject var tab: Tab
-    @Binding var urlString: String
     @State private var pulsingScale: CGFloat = 1.0
     @State private var hoveredLink: String? = nil
     @State private var hasInitializedWebView: Bool = false
@@ -33,7 +32,7 @@ struct WebContentView: View {
             } else {
                 // Active web view - only create WebView once per tab to maintain state
                 if tab.url != nil {
-                    PersistentWebView(tab: tab, urlString: $urlString, hoveredLink: $hoveredLink)
+                    PersistentWebView(tab: tab, hoveredLink: $hoveredLink)
                         .id(tab.id)
                         .onAppear {
                             hasInitializedWebView = true
@@ -178,7 +177,6 @@ struct WebContentView: View {
 // Persistent WebView that maintains state per tab
 struct PersistentWebView: View {
     @ObservedObject var tab: Tab
-    @Binding var urlString: String
     @Binding var hoveredLink: String?
     
     var body: some View {
@@ -221,20 +219,12 @@ struct PersistentWebView: View {
                     onDownloadRequest: nil
                 )
                 .id(tab.id)
-                .onChange(of: tab.url) { _, newURL in
-                    if let url = newURL {
-                        urlString = url.absoluteString
-                    }
-                }
+                // URL updates now handled by URLSynchronizer - no manual URL string updates needed
             } else {
                 // Use existing WebView wrapped in a NSViewRepresentable
                 ExistingWebView(tab: tab)
                     .id(tab.id)
-                    .onChange(of: tab.url) { _, newURL in
-                        if let url = newURL {
-                            urlString = url.absoluteString
-                        }
-                    }
+                    // URL updates now handled by URLSynchronizer - no manual URL string updates needed
             }
         }
     }
@@ -270,33 +260,13 @@ struct ExistingWebView: NSViewRepresentable {
             return // Prevent state updates from wrong WebView instance
         }
         
-        // CRITICAL FIX: Only navigate if WebView has no URL or is significantly different domain
-        // Don't interfere with WebKit's natural navigation flow (like Google search results)
-        if let tabURL = tab.url {
-            let webViewURL = webView.url?.absoluteString
-            let shouldNavigate: Bool
-            
-            if webViewURL == nil {
-                // WebView has no URL - safe to navigate
-                shouldNavigate = true
-            } else if let currentURL = webView.url {
-                // Only navigate if it's a completely different domain/host to avoid search result conflicts
-                let isSameDomain = currentURL.host == tabURL.host
-                let isWebViewLoading = webView.isLoading
-                
-                // Don't interfere if same domain and WebView is loading (e.g., Google search results)
-                shouldNavigate = !isSameDomain && !isWebViewLoading
-            } else {
-                shouldNavigate = false
-            }
-            
-            if shouldNavigate {
-                let request = URLRequest(url: tabURL)
-                webView.load(request)
-            }
+        // SIMPLIFIED: Only navigate if WebView has no URL to avoid interference with WebKit's navigation flow
+        if let tabURL = tab.url, webView.url == nil {
+            let request = URLRequest(url: tabURL)
+            webView.load(request)
         }
         
-        // Sync the tab's properties with webview state - ONLY for the correct WebView
+        // Simplified property sync - URLSynchronizer handles URL updates through WebView delegates
         DispatchQueue.main.async {
             // Double-check ownership before updating properties
             guard webView === self.tab.webView else { return }
@@ -307,10 +277,8 @@ struct ExistingWebView: NSViewRepresentable {
             self.tab.estimatedProgress = webView.estimatedProgress
             self.tab.title = webView.title ?? "New Tab"
             
-            // Update tab URL if webview URL changed (e.g., due to redirects)
-            if let webViewURL = webView.url, webViewURL != self.tab.url {
-                self.tab.url = webViewURL
-            }
+            // URL updates are now handled automatically by URLSynchronizer through WebView observers
+            // This prevents race conditions and ensures consistent URL state management
         }
     }
     

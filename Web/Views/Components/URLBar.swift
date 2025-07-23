@@ -2,17 +2,16 @@ import SwiftUI
 import AppKit
 
 struct URLBar: View {
-    @Binding var urlString: String
+    let tabID: UUID
     let themeColor: NSColor?
     let onSubmit: (String) -> Void
-    let pageTitle: String
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
     @State private var editingText: String = ""
-    @State private var displayString: String = ""
     @State private var suggestions: [AutofillSuggestion] = []
     
-    // Simplified - use native SwiftUI focus management
+    // Use centralized URL synchronizer for state management
+    @ObservedObject private var urlSynchronizer = URLSynchronizer.shared
     
     // Convert NSColor to SwiftUI Color
     private var swiftUIThemeColor: Color {
@@ -22,71 +21,44 @@ struct URLBar: View {
         return .clear
     }
     
-    // Simple binding for display text using state variable
-    private var displayText: Binding<String> {
+    // Show full URL when focused or hovering, cleaned version otherwise
+    private var displayText: String {
+        if isURLBarFocused {
+            return editingText.isEmpty ? urlSynchronizer.currentURL : editingText
+        } else if hovering {
+            return urlSynchronizer.currentURL
+        } else {
+            return urlSynchronizer.displayURL
+        }
+    }
+    
+    // Editable binding for input field
+    private var editableText: Binding<String> {
         Binding(
-            get: { 
-                if isURLBarFocused || hovering {
-                    return editingText
-                } else {
-                    return displayString
-                }
-            },
+            get: { self.displayText },
             set: { newValue in
-                if isURLBarFocused || hovering {
-                    editingText = newValue
-                } else {
-                    displayString = newValue
+                self.editingText = newValue
+                if self.isURLBarFocused {
+                    self.updateSuggestions(for: newValue)
                 }
             }
         )
     }
     
-    // Update display string based on current state
-    private func updateDisplayString() {
-        guard !isURLBarFocused && !hovering else { return }
-        
-        let hasValidTitle = !pageTitle.isEmpty && pageTitle != "New Tab"
-        if hasValidTitle && !urlString.isEmpty {
-            displayString = pageTitle
-        } else if !urlString.isEmpty {
-            displayString = cleanDisplayURL(urlString)
-        } else {
-            displayString = ""
+    private func syncWithURLSynchronizer() {
+        // Always initialize editing text with full URL when focus is gained
+        if isURLBarFocused {
+            editingText = urlSynchronizer.currentURL
         }
-    }
-    
-    // Clean URL for display (remove protocol, www, etc.)
-    private func cleanDisplayURL(_ url: String) -> String {
-        var cleanURL = url
-        
-        // Remove protocol
-        if cleanURL.hasPrefix("https://") {
-            cleanURL = String(cleanURL.dropFirst(8))
-        } else if cleanURL.hasPrefix("http://") {
-            cleanURL = String(cleanURL.dropFirst(7))
-        }
-        
-        // Remove www.
-        if cleanURL.hasPrefix("www.") {
-            cleanURL = String(cleanURL.dropFirst(4))
-        }
-        
-        // Remove trailing slash
-        if cleanURL.hasSuffix("/") {
-            cleanURL = String(cleanURL.dropLast())
-        }
-        
-        return cleanURL
     }
     
     var body: some View {
         HStack(spacing: 12) {
             // Security indicator with enhanced design
-            SecurityIndicator(urlString: urlString)
+            SecurityIndicator(urlString: urlSynchronizer.currentURL)
             
-            // Main input field with title-first display
-            TextField("Search or enter website", text: displayText)
+            // Main input field with simplified state management
+            TextField("Search or enter website", text: editableText)
                 .textFieldStyle(.plain)
                 .font(.webBody)
                 .foregroundColor(.textPrimary)
@@ -97,29 +69,16 @@ struct URLBar: View {
                 }
                 .onChange(of: isURLBarFocused) { _, focused in
                     if focused {
-                        editingText = urlString
+                        syncWithURLSynchronizer()
                     } else {
-                        updateDisplayString()
+                        // Clear suggestions and editing text when focus is lost
+                        suggestions = []
+                        editingText = ""
                     }
-                }
-                .onChange(of: urlString) { _, newURL in
-                    if !isURLBarFocused && editingText != newURL {
-                        editingText = newURL
-                    }
-                    updateDisplayString()
-                }
-                .onChange(of: pageTitle) { _, newTitle in
-                    updateDisplayString()
-                }
-                .onChange(of: editingText) { _, newValue in
-                    updateSuggestions(for: newValue)
                 }
                 .onHover { hovering in
                     withAnimation(.easeInOut(duration: 0.2)) {
                         self.hovering = hovering
-                    }
-                    if !hovering {
-                        updateDisplayString()
                     }
                 }
             
@@ -127,7 +86,7 @@ struct URLBar: View {
             HStack(spacing: 6) {
                 HistoryButton()
                 DownloadsButton()
-                BookmarkButton(urlString: urlString)
+                BookmarkButton()
                 AIToggleButton()
             }
         }
@@ -136,7 +95,7 @@ struct URLBar: View {
         .background(urlBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear {
-            updateDisplayString()
+            syncWithURLSynchronizer()
         }
         // Removed complex focus coordinator - using native SwiftUI focus
         .onReceive(NotificationCenter.default.publisher(for: .focusURLBarRequested)) { _ in
@@ -250,7 +209,7 @@ struct URLBar: View {
     }
     
     private func navigateToURL() {
-        let inputText = editingText.isEmpty ? urlString : editingText
+        let inputText = editingText.isEmpty ? urlSynchronizer.currentURL : editingText
         let finalURL: String
         
         // Determine if input is URL or search query
@@ -262,8 +221,12 @@ struct URLBar: View {
             finalURL = "https://www.google.com/search?q=\(searchQuery)"
         }
         
+        // Update URLSynchronizer with user input
+        urlSynchronizer.updateFromUserInput(urlString: finalURL, tabID: tabID)
+        
         onSubmit(finalURL)
         isURLBarFocused = false
+        editingText = ""
     }
     
     private func isValidURL(_ string: String) -> Bool {
@@ -333,7 +296,11 @@ struct URLBar: View {
     }
 
     private func navigateToURL(from suggestion: AutofillSuggestion) {
+        // Update URLSynchronizer with suggestion
+        urlSynchronizer.updateFromUserInput(urlString: suggestion.url, tabID: tabID)
         onSubmit(suggestion.url)
+        isURLBarFocused = false
+        editingText = ""
     }
     
 }
@@ -371,19 +338,23 @@ struct SecurityIndicator: View {
 
 // Bookmark button component
 struct BookmarkButton: View {
-    let urlString: String
+    @ObservedObject private var urlSynchronizer = URLSynchronizer.shared
     @State private var isBookmarked = false
     @State private var hovering: Bool = false
+    
+    private var hasURL: Bool {
+        !urlSynchronizer.currentURL.isEmpty
+    }
     
     var body: some View {
         Button(action: toggleBookmark) {
             Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isBookmarked ? Color.accentBeam : (urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary))
+                .foregroundColor(isBookmarked ? Color.accentBeam : (hasURL ? .textSecondary : .textSecondary.opacity(0.5)))
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
-        .disabled(urlString.isEmpty)
+        .disabled(!hasURL)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 self.hovering = hovering
@@ -392,8 +363,9 @@ struct BookmarkButton: View {
     }
     
     private func toggleBookmark() {
+        guard hasURL else { return }
         isBookmarked.toggle()
-        // TODO: Implement actual bookmark functionality
+        // TODO: Implement actual bookmark functionality with URLSynchronizer.currentURL
     }
 }
 
@@ -504,5 +476,5 @@ struct AIToggleButton: View {
 }
 
 #Preview {
-    URLBar(urlString: .constant("https://www.google.com"), themeColor: nil, onSubmit: { _ in }, pageTitle: "Google")
+    URLBar(tabID: UUID(), themeColor: nil, onSubmit: { _ in })
 }

@@ -457,6 +457,11 @@ struct WebView: NSViewRepresentable {
         // Context menu state
         var rightClickedLinkURL: String?
         
+        // Network error handling and circuit breaker
+        private let circuitBreaker = NetworkConnectivityMonitor.CircuitBreakerState()
+        private var currentNetworkError: Error?
+        private var isShowingNoInternetPage = false
+        
         // Static shared cache to prevent duplicate downloads across all tabs
         private static var faviconCache: [String: NSImage] = [:]
         private static var faviconDownloadTasks: Set<String> = []
@@ -475,12 +480,34 @@ struct WebView: NSViewRepresentable {
                     
                     // Use safe progress conversion to prevent crashes
                     self?.parent.estimatedProgress = SafeNumericConversions.safeProgress(progress)
+                    
+                    // Update URLSynchronizer with progress changes for consistent state
+                    if let tab = self?.parent.tab {
+                        URLSynchronizer.shared.updateFromWebViewNavigation(
+                            url: webView.url,
+                            title: webView.title,
+                            isLoading: webView.isLoading,
+                            progress: progress,
+                            tabID: tab.id
+                        )
+                    }
                 }
             }
             
             titleObserver = webView.observe(\.title, options: .new) { [weak self] webView, _ in
                 DispatchQueue.main.async {
                     self?.parent.title = webView.title
+                    
+                    // Update URLSynchronizer when title changes for better URL bar display
+                    if let tab = self?.parent.tab {
+                        URLSynchronizer.shared.updateFromWebViewNavigation(
+                            url: webView.url,
+                            title: webView.title,
+                            isLoading: webView.isLoading,
+                            progress: webView.estimatedProgress,
+                            tabID: tab.id
+                        )
+                    }
                 }
             }
             
@@ -490,6 +517,14 @@ struct WebView: NSViewRepresentable {
                         self?.parent.url = url
                         if let tab = self?.parent.tab {
                             tab.url = url
+                            // Update URLSynchronizer immediately for consistent URL display
+                            URLSynchronizer.shared.updateFromWebViewNavigation(
+                                url: url,
+                                title: webView.title,
+                                isLoading: webView.isLoading,
+                                progress: webView.estimatedProgress,
+                                tabID: tab.id
+                            )
                         }
                     }
                 }
@@ -499,15 +534,34 @@ struct WebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             parent.isLoading = true
             parent.tab?.notifyLoadingStateChanged()
+            
+            // Update URLSynchronizer with loading state
+            if let tab = parent.tab {
+                URLSynchronizer.shared.updateFromWebViewNavigation(
+                    url: webView.url,
+                    title: webView.title,
+                    isLoading: true,
+                    progress: webView.estimatedProgress,
+                    tabID: tab.id
+                )
+            }
         }
         
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            // Update URL immediately when navigation commits (before page finishes loading)
+            // CRITICAL: Update URL immediately when navigation commits (highest priority for URL bar updates)
             if let url = webView.url {
                 DispatchQueue.main.async {
                     self.parent.url = url
                     if let tab = self.parent.tab {
                         tab.url = url
+                        // Immediate URLSynchronizer update for instant URL bar display
+                        URLSynchronizer.shared.updateFromWebViewNavigation(
+                            url: url,
+                            title: webView.title,
+                            isLoading: webView.isLoading,
+                            progress: webView.estimatedProgress,
+                            tabID: tab.id
+                        )
                     }
                 }
             }
@@ -519,6 +573,22 @@ struct WebView: NSViewRepresentable {
             parent.canGoBack = webView.canGoBack
             parent.canGoForward = webView.canGoForward
             parent.tab?.notifyLoadingStateChanged()
+            
+            // Reset network error state on successful navigation
+            currentNetworkError = nil
+            isShowingNoInternetPage = false
+            circuitBreaker.recordSuccess()
+            
+            // Final URLSynchronizer update with completed navigation state
+            if let tab = parent.tab {
+                URLSynchronizer.shared.updateFromWebViewNavigation(
+                    url: webView.url,
+                    title: webView.title,
+                    isLoading: false,
+                    progress: 1.0,
+                    tabID: tab.id
+                )
+            }
             
             // Record visit for Autofill history and browser history (only for non-incognito tabs)
             if let url = webView.url, parent.tab?.isIncognito != true {
@@ -591,37 +661,165 @@ struct WebView: NSViewRepresentable {
             }
         }
 
-        // Guard-rail: if the WebContent process crashes (common on heavy WebGL
-        // pages or under memory pressure) the WKWebView turns blank and no
-        // page inputs work.  This delegate method lets us notice the crash
-        // immediately and attempt an automatic reload so the tab recovers
-        // without forcing the user to close/reopen it.
+        // CRITICAL FIX: Enhanced WebContent process termination handler with network awareness
+        // and circuit breaker pattern to prevent infinite reload loops when offline.
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            // Simple heuristic: if we have a URL attempt a normal reload.
-            if webView.url != nil {
-                NSLog("🔄 WebContent process terminated – reloading tab")
-                webView.reload()
-            } else {
+            NSLog("⚠️ WebContent process terminated")
+            
+            // Check if we have a URL to reload
+            guard webView.url != nil else {
                 NSLog("⚠️ WebContent process terminated but no URL to reload")
+                return
+            }
+            
+            // CRITICAL: Check network connectivity before attempting reload
+            let networkMonitor = NetworkConnectivityMonitor.shared
+            guard networkMonitor.hasInternetConnection else {
+                NSLog("🔴 WebContent process terminated but no internet connection - showing no internet page instead of reloading")
+                showNoInternetConnectionPage()
+                return
+            }
+            
+            // Check circuit breaker to prevent infinite reload loops
+            guard circuitBreaker.canAttemptRequest() else {
+                NSLog("🚫 Circuit breaker open - not attempting reload after process termination")
+                showNoInternetConnectionPage()
+                return
+            }
+            
+            // Only reload if we have connectivity and circuit breaker allows it
+            NSLog("🔄 WebContent process terminated – reloading tab (network available, circuit breaker closed)")
+            
+            // Add slight delay to prevent immediate re-termination
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                webView.reload()
+                
+                // Monitor the reload attempt
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                    // If still loading after 5 seconds and we have network issues, consider it a failure
+                    if webView.isLoading && !NetworkConnectivityMonitor.shared.hasInternetConnection {
+                        self?.circuitBreaker.recordFailure()
+                        self?.showNoInternetConnectionPage()
+                    }
+                }
+            }
+        }
+        
+        // Show the no internet connection page when network issues are detected
+        private func showNoInternetConnectionPage() {
+            guard !isShowingNoInternetPage else { return }
+            
+            isShowingNoInternetPage = true
+            circuitBreaker.recordFailure()
+            
+            DispatchQueue.main.async { [weak self] in
+                // Create and show the no internet page
+                NotificationCenter.default.post(
+                    name: .showNoInternetConnection,
+                    object: self?.parent.tab?.id,
+                    userInfo: [
+                        "error": self?.currentNetworkError as Any,
+                        "url": self?.parent.url as Any
+                    ]
+                )
             }
         }
         
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("❌ WebView navigation failed: \(error.localizedDescription) (code: \((error as NSError).code))")
+            let nsError = error as NSError
+            let networkMonitor = NetworkConnectivityMonitor.shared
+            
+            // Classify the error type for appropriate handling
+            let errorType = networkMonitor.classifyError(error)
+            let isNetworkError = networkMonitor.isNetworkError(error)
+            
+            NSLog("❌ WebView navigation failed: \(error.localizedDescription) (code: \(nsError.code), type: \(errorType))")
+            
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
+            currentNetworkError = error
+            
+            // Update URLSynchronizer with error state
+            if let tab = parent.tab {
+                URLSynchronizer.shared.updateFromWebViewNavigation(
+                    url: webView.url,
+                    title: webView.title,
+                    isLoading: false,
+                    progress: 0.0,
+                    tabID: tab.id
+                )
+            }
+            
+            // Handle network errors specifically
+            if isNetworkError {
+                circuitBreaker.recordFailure()
+                
+                // Show no internet page for network connectivity issues
+                if errorType == .networkUnavailable || !networkMonitor.hasInternetConnection {
+                    showNoInternetConnectionPage()
+                }
+            } else {
+                // For non-network errors, reset circuit breaker on successful connectivity
+                if networkMonitor.hasInternetConnection {
+                    circuitBreaker.recordSuccess()
+                    isShowingNoInternetPage = false
+                }
+            }
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            let errorCode = (error as NSError).code
+            let nsError = error as NSError
+            let errorCode = nsError.code
+            let networkMonitor = NetworkConnectivityMonitor.shared
             
-            // Don't log NSURLErrorCancelled (-999) as it's expected behavior
-            if errorCode != NSURLErrorCancelled {
-                print("❌ WebView provisional navigation failed: \(error.localizedDescription) (code: \(errorCode))")
+            // Don't process NSURLErrorCancelled (-999) as it's expected behavior
+            guard errorCode != NSURLErrorCancelled else {
+                parent.isLoading = false
+                parent.tab?.notifyLoadingStateChanged()
+                return
             }
+            
+            // Classify the error type for appropriate handling
+            let errorType = networkMonitor.classifyError(error)
+            let isNetworkError = networkMonitor.isNetworkError(error)
+            
+            NSLog("❌ WebView provisional navigation failed: \(error.localizedDescription) (code: \(errorCode), type: \(errorType))")
             
             parent.isLoading = false
             parent.tab?.notifyLoadingStateChanged()
+            currentNetworkError = error
+            
+            // Update URLSynchronizer with error state
+            if let tab = parent.tab {
+                URLSynchronizer.shared.updateFromWebViewNavigation(
+                    url: webView.url,
+                    title: webView.title,
+                    isLoading: false,
+                    progress: 0.0,
+                    tabID: tab.id
+                )
+            }
+            
+            // Handle network errors specifically - provisional navigation failures are often network-related
+            if isNetworkError {
+                circuitBreaker.recordFailure()
+                
+                // Show no internet page for network connectivity issues
+                if errorType == .networkUnavailable || !networkMonitor.hasInternetConnection {
+                    showNoInternetConnectionPage()
+                } else if errorType == .timeout || errorType == .dnsFailure {
+                    // For timeouts and DNS failures, show no internet page if we detect no connectivity
+                    if !networkMonitor.hasInternetConnection {
+                        showNoInternetConnectionPage()
+                    }
+                }
+            } else {
+                // For non-network errors, reset circuit breaker if we have good connectivity
+                if networkMonitor.hasInternetConnection {
+                    circuitBreaker.recordSuccess()
+                    isShowingNoInternetPage = false
+                }
+            }
         }
         
         private func extractFavicon(from webView: WKWebView, websiteHost: String) {

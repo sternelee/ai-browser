@@ -196,6 +196,7 @@ struct PanelManager: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showDownloadsPanel)
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showSettingsPanel)
             .focusable()
+            .focusEffectDisabled()
             .onKeyPress(.escape) {
                 handleEscapeKey()
                 return .handled
