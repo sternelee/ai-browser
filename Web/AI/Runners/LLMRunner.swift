@@ -221,55 +221,55 @@ final class LLMRunner {
                     let streamedTokensBox = Box(false)
                     streamLock = NSLock()
                     
-                    // Set up streaming callback - this is the key to real-time streaming
-                    // FIXED: Ensure callback is properly isolated and thread-safe
-                    botInstance?.update = { outputDelta in
-                        streamLock?.lock()
-                        defer { streamLock?.unlock() }
-                        
-                        // Prevent yielding after stream is completed
-                        guard !isStreamCompleted else {
-                            NSLog("⚠️ Ignoring callback after stream completion")
-                            return
-                        }
-                        
-                        if let delta = outputDelta, !delta.isEmpty {
-                            streamedTokensBox.value = true
-                            continuation.yield(delta)
-                            NSLog("🌊 Received token chunk: \(delta)")
-                        }
-                    }
+                    // DISABLED: LLM.swift callbacks are not working reliably
+                    // Let's focus on getting basic responses working first
+                    NSLog("🌊 Callback streaming disabled - using fallback approach")
                     
-                    // Start generation with callback streaming
-                    let finalResponse = await botInstance!.getCompletion(from: prompt)
+                    // SIMPLIFIED: Start generation without complex timeout handling
+                    // The issue is that LLM.swift callbacks aren't working correctly
+                    NSLog("🚀 Starting simplified generation...")
+                    let streamingResult = await botInstance!.getCompletion(from: prompt)
                     
                     // Mark stream as completed to prevent further callbacks
                     streamLock?.lock()
                     isStreamCompleted = true
                     streamLock?.unlock()
                     
-                    // Clear the callback to prevent any further calls
-                    botInstance?.update = { _ in }
+                    // No callback to clear since we disabled it
                     
-                    // Fallback: If callback streaming didn't work, send complete response
-                    if !streamedTokensBox.value && !finalResponse.isEmpty {
-                        NSLog("⚠️ Callback streaming failed, falling back to complete response")
+                    let finalResponse = streamingResult
+                    
+                    // SIMPLIFIED: Always send complete response since callbacks are disabled
+                    if !finalResponse.isEmpty {
+                        NSLog("✅ Sending complete response: \(finalResponse.count) characters")
                         continuation.yield(finalResponse)
+                    } else {
+                        NSLog("⚠️ No response generated")
+                        continuation.yield("I'm having trouble generating a response right now. Please try again.")
                     }
                     
                     continuation.finish()
                     NSLog("✅ RAW prompt streaming response completed: \(finalResponse.count) characters")
                     
                 } catch {
-                    // Clean up on error - now all variables are in scope
+                    // Clean up on error - simplified since callbacks are disabled
                     streamLock?.lock()
                     isStreamCompleted = true
                     streamLock?.unlock()
                     
-                    botInstance?.update = { _ in }
-                    
                     NSLog("❌ RAW prompt streaming failed: \(error)")
-                    continuation.finish(throwing: error)
+                    
+                    // Provide helpful error message based on error type
+                    let errorMessage: String
+                    if error.localizedDescription.contains("memory") {
+                        errorMessage = "AI response failed due to memory constraints. Try a shorter query or restart the app."
+                    } else if error.localizedDescription.contains("timeout") {
+                        errorMessage = "AI response timed out. Please try a shorter query."
+                    } else {
+                        errorMessage = "AI response failed: \(error.localizedDescription)"
+                    }
+                    
+                    continuation.finish(throwing: LLMError.inferenceError(errorMessage))
                 }
             }
         }
@@ -295,12 +295,13 @@ final class LLMRunner {
                     // FIXED: Use real token-by-token streaming with LLM.swift callback system
                     let fullResponse = Box("")  // Thread-safe wrapper
                     
-                    // CRITICAL FIX: Don't set up streaming callbacks on MainActor to prevent blocking
-                    // Move callback setup off main thread to prevent input blocking
-                    botInstance.update = { [fullResponse] outputDelta in
+                    // CRITICAL FIX: Use @MainActor for streaming callbacks per MLX Swift best practices
+                    // This ensures thread safety and prevents callback failures
+                    botInstance.update = { @MainActor [fullResponse] outputDelta in
                         if let delta = outputDelta {
                             fullResponse.value += delta
                             continuation.yield(delta)
+                            NSLog("🌊 Token streamed: \(delta.prefix(30))... (\(delta.count) chars)")
                         }
                     }
                     

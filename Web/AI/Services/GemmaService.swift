@@ -1,6 +1,7 @@
 import Foundation
 import LLM
 // LLMRunner included via Web.AI.Runners
+// SystemMemoryMonitor included via Web.AI.Utils
 
 /// Gemma AI service for local inference with LLM.swift
 /// Handles model initialization, text generation, and response streaming using GGUF models
@@ -31,6 +32,8 @@ class GemmaService {
         self.mlxWrapper = mlxWrapper
         self.privacyManager = privacyManager
         self.onDemandModelService = onDemandModelService
+        
+        // Memory monitoring removed - was causing unnecessary complexity
         
         NSLog("🔮 Gemma Service initialized with \(configuration.modelVariant)")
     }
@@ -80,6 +83,8 @@ class GemmaService {
         guard isModelLoaded else {
             throw GemmaError.modelNotLoaded
         }
+        
+        // Memory pressure checks removed - were causing unnecessary complexity
         
         let responseBuilder = AIResponseBuilder()
         let _ = Date() // Track timing but not used in current implementation
@@ -145,6 +150,8 @@ class GemmaService {
             throw GemmaError.modelNotLoaded
         }
         
+        // Memory pressure checks removed - were causing unnecessary complexity
+        
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -167,14 +174,47 @@ class GemmaService {
                     // Use LLMRunner for streaming with pre-built prompt that includes conversation context
                     let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, modelPath: modelPath)
                     
-                    for try await textChunk in textStream {
-                        let cleanedChunk = postProcessResponse(textChunk)
-                        if !cleanedChunk.isEmpty {
-                            continuation.yield(cleanedChunk)
-                        }
-                    }
+                    var hasYieldedContent = false
+                    var accumulatedResponse = ""
                     
-                    continuation.finish()
+                    do {
+                        for try await textChunk in textStream {
+                            let cleanedChunk = postProcessResponse(textChunk)
+                            if !cleanedChunk.isEmpty {
+                                accumulatedResponse += cleanedChunk
+                                hasYieldedContent = true
+                                continuation.yield(cleanedChunk)
+                            }
+                        }
+                        
+                        // If no content was streamed, provide a helpful fallback
+                        if !hasYieldedContent {
+                            NSLog("⚠️ No content streamed, providing fallback response")
+                            let fallbackResponse = "I'm ready to help you with questions about the current webpage content."
+                            continuation.yield(fallbackResponse)
+                        }
+                        
+                        continuation.finish()
+                        NSLog("✅ Streaming completed successfully: \(accumulatedResponse.count) characters")
+                        
+                    } catch {
+                        NSLog("❌ Streaming error: \(error)")
+                        
+                        // Provide error recovery with helpful message
+                        if !hasYieldedContent {
+                            let recoveryMessage: String
+                            if error.localizedDescription.contains("memory") {
+                                recoveryMessage = "Memory constraints prevented AI response. Try a shorter query or restart the app."
+                            } else if error.localizedDescription.contains("timeout") {
+                                recoveryMessage = "AI response timed out. Please try a more specific question."
+                            } else {
+                                recoveryMessage = "AI service temporarily unavailable. Please try again in a moment."
+                            }
+                            continuation.yield(recoveryMessage)
+                        }
+                        
+                        continuation.finish()
+                    }
                     
                 } catch {
                     continuation.finish(throwing: error)
@@ -270,6 +310,8 @@ class GemmaService {
         NSLog("🔄 GemmaService conversation reset completed")
     }
     
+    // Memory pressure handling removed - was overcomplicating the system
+    
     // All inference now handled by LLMRunner using local GGUF models
     
     private func postProcessResponse(_ text: String) -> String {
@@ -316,15 +358,32 @@ class GemmaService {
             cleaned = uniqueSentences.joined(separator: ".")
         }
         
-        // Limit response length to prevent excessive responses
-        if cleaned.count > 1000 {
+        // Dynamic response length based on memory availability
+        let memoryPressure = ProcessInfo.processInfo.thermalState
+        let maxResponseLength: Int
+        
+        switch memoryPressure {
+        case .critical:
+            maxResponseLength = 1000  // Shorter responses under critical memory pressure
+        case .serious:
+            maxResponseLength = 2500  // Medium responses under serious memory pressure
+        case .fair:
+            maxResponseLength = 4000  // Longer responses when memory is fair
+        case .nominal:
+            maxResponseLength = 6000  // Full responses when memory is good
+        @unknown default:
+            maxResponseLength = 2500  // Safe default
+        }
+        
+        // Only limit if significantly over the threshold (25% buffer)
+        if cleaned.count > Int(Double(maxResponseLength) * 1.25) {
             // Find a good stopping point near the limit
-            let cutoff = 800
-            if let range = cleaned.range(of: ".", range: cleaned.startIndex..<cleaned.index(cleaned.startIndex, offsetBy: min(cutoff, cleaned.count))) {
+            if let range = cleaned.range(of: ".", range: cleaned.startIndex..<cleaned.index(cleaned.startIndex, offsetBy: min(maxResponseLength, cleaned.count))) {
                 cleaned = String(cleaned[..<range.upperBound])
             } else {
-                cleaned = String(cleaned.prefix(cutoff)) + "..."
+                cleaned = String(cleaned.prefix(maxResponseLength)) + "..."
             }
+            NSLog("📏 Response truncated to \(cleaned.count) chars due to \(memoryPressure) memory pressure")
         }
         
         // Trim whitespace

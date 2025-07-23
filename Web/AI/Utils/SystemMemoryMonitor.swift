@@ -118,10 +118,20 @@ class SystemMemoryMonitor {
         
         let pageSize = vm_kernel_page_size
         let totalMemory = Double(stats.free_count + stats.active_count + stats.inactive_count + stats.wire_count) * Double(pageSize) / (1024 * 1024 * 1024)
-        let freeMemory = Double(stats.free_count) * Double(pageSize) / (1024 * 1024 * 1024)
-        let usedMemory = totalMemory - freeMemory
         
-        return (total: totalMemory, available: freeMemory, used: usedMemory)
+        // Available memory includes free + inactive pages (which can be reclaimed)
+        // This gives a more accurate picture of what's actually available for new processes
+        let availableMemory = Double(stats.free_count + stats.inactive_count) * Double(pageSize) / (1024 * 1024 * 1024)
+        let usedMemory = totalMemory - availableMemory
+        
+        // Safety bounds check - ensure reasonable values
+        let boundedTotal = max(totalMemory, 1.0)  // At least 1GB
+        let boundedAvailable = max(min(availableMemory, boundedTotal), 0.1)  // Between 0.1GB and total
+        let boundedUsed = boundedTotal - boundedAvailable
+        
+        logger.debug("🧠 Memory calculation: Total=\(String(format: "%.1f", boundedTotal))GB, Available=\(String(format: "%.1f", boundedAvailable))GB, Used=\(String(format: "%.1f", boundedUsed))GB")
+        
+        return (total: boundedTotal, available: boundedAvailable, used: boundedUsed)
     }
     
     private func determinePressureLevel(availableMemory: Double) -> MemoryPressureLevel {
