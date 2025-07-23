@@ -7,6 +7,8 @@
 [ ] Overlay panels like history, settings, etc show a weird square with blue accent border wrapping them
 [ ] If there is no internet connection the page gets reloaded in a loop forever, we need a page for internet connection missing.
 [ ] Let's ensure there are 0 warnings when building
+[ ] Show favicon in history panel, autofill, bookmarks panel
+[ ] Open in new tab or cmd + link click should selected the new tab automatically
 
 --
 
