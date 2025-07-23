@@ -30,12 +30,6 @@ A next-generation macOS browser built with SwiftUI that delivers minimal, progre
 - **Privacy-First**: AI processing happens locally on your device
 - **Smart Assistance**: Integrated AI sidebar for web content analysis
 
-### Advanced Features
-- **Bookmarks & History**: Full bookmark management and browsing history
-- **Autofill**: Smart form filling capabilities  
-- **Memory Management**: Intelligent tab hibernation
-- **Hardware Detection**: Optimized for Apple Silicon
-
 ## Requirements
 
 - macOS 14.0 or later
@@ -90,18 +84,6 @@ Web integrates local AI capabilities using the LLM.swift framework:
 - **Inference**: MLX-optimized for Apple Silicon
 - **Privacy**: All AI processing happens locally
 
-## Development
-
-### Building
-
-```bash
-# Build the project
-xcodebuild -project Web.xcodeproj -scheme Web build
-
-# Run tests
-xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=macOS'
-```
-
 ### Code Standards
 
 - Swift 6 with strict concurrency
@@ -153,5 +135,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Links
 
 - Website: [Nuanc.me](https://nuanc.me)
-- Report issues: [GitHub Issues](https://github.com/nuance-dev/Uno/issues)
-- Follow updates: [@Nuanced](https://twitter.com/Nuancedev)
+- Report issues: [GitHub Issues](https://github.com/nuance-dev/Web/issues)
+- Follow updates: [@Nuanced](https://x.com/Nuancedev)
