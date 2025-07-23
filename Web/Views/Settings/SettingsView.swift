@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// Main settings view with comprehensive browser configuration options
 /// Follows next-gen glass morphism design with category tabs
@@ -59,7 +60,7 @@ struct SettingsView: View {
             }
             .opacity(contentOpacity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: 600, idealWidth: 800, maxWidth: 1200, minHeight: 500, idealHeight: 600, maxHeight: 900)
         .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
         .onAppear {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
@@ -101,7 +102,7 @@ struct SettingsView: View {
         }
         .padding(.vertical, 20)
         .padding(.leading, 24)
-        .frame(width: 180)
+        .frame(minWidth: 160, idealWidth: 180, maxWidth: 220)
     }
     
     private func categoryButton(_ category: SettingsCategory) -> some View {
@@ -148,22 +149,25 @@ struct SettingsView: View {
     }
     
     private var settingsContent: some View {
-        Group {
-            switch selectedCategory {
-            case .general:
-                GeneralSettingsView()
-            case .privacy:
-                PrivacySettingsView()
-            case .security:
-                SecuritySettingsView()
-            case .appearance:
-                AppearanceSettingsView()
-            case .advanced:
-                AdvancedSettingsView()
+        ScrollView {
+            Group {
+                switch selectedCategory {
+                case .general:
+                    GeneralSettingsView()
+                case .privacy:
+                    PrivacySettingsView()
+                case .security:
+                    SecuritySettingsView()
+                case .appearance:
+                    AppearanceSettingsView()
+                case .advanced:
+                    AdvancedSettingsView()
+                }
             }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 400, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
     }
 }
 
@@ -244,7 +248,7 @@ struct SecuritySettingsView: View {
                         Text("Passwords are securely stored in your Keychain with biometric authentication.")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .padding(.leading, 20)
+                            .padding(.leading, 16)
                     }
                 }
                 
@@ -256,7 +260,7 @@ struct SecuritySettingsView: View {
                         Text("Blocks ads and trackers using optimized filter lists for better performance.")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                            .padding(.leading, 20)
+                            .padding(.leading, 16)
                     }
                 }
                 
@@ -279,12 +283,12 @@ struct SecuritySettingsView: View {
                                 .pickerStyle(MenuPickerStyle())
                                 .frame(maxWidth: 120)
                             }
-                            .padding(.leading, 20)
+                            .padding(.leading, 16)
                             
                             Text("Encrypts DNS queries to protect your browsing from eavesdropping.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .padding(.leading, 20)
+                                .padding(.leading, 16)
                         }
                     }
                 }
@@ -319,7 +323,7 @@ struct AppearanceSettingsView: View {
                 // Sidebar
                 settingsGroup("Sidebar") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Sidebar width: \(Int(sidebarWidth))px")
+                        Text("Sidebar width: \(Int(sidebarWidth)) pt")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         
@@ -340,6 +344,9 @@ struct AdvancedSettingsView: View {
     @AppStorage("enableDeveloperTools") private var enableDeveloperTools = true
     @AppStorage("enableExperimentalFeatures") private var enableExperimentalFeatures = false
     
+    @State private var showingResetSettingsAlert = false
+    @State private var showingClearAllDataAlert = false
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Advanced")
@@ -357,11 +364,11 @@ struct AdvancedSettingsView: View {
                             Text("Hibernation timeout: \(Int(hibernationTimeout / 60)) minutes")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                                .padding(.leading, 20)
+                                .padding(.leading, 16)
                             
                             Slider(value: $hibernationTimeout, in: 60...1800, step: 60)
                                 .frame(maxWidth: 200)
-                                .padding(.leading, 20)
+                                .padding(.leading, 16)
                         }
                     }
                 }
@@ -375,19 +382,19 @@ struct AdvancedSettingsView: View {
                         Text("⚠️ Experimental features may be unstable and could cause crashes.")
                             .font(.caption)
                             .foregroundColor(.orange)
-                            .padding(.leading, 20)
+                            .padding(.leading, 16)
                     }
                 }
                 
                 // Reset Options
                 settingsGroup("Reset") {
                     Button("Reset All Settings") {
-                        // Reset settings functionality would go here
+                        showingResetSettingsAlert = true
                     }
                     .foregroundColor(.red)
                     
                     Button("Clear All Data") {
-                        // Clear data functionality would go here
+                        showingClearAllDataAlert = true
                     }
                     .foregroundColor(.red)
                 }
@@ -395,6 +402,81 @@ struct AdvancedSettingsView: View {
             
             Spacer()
         }
+        .alert("Reset All Settings", isPresented: $showingResetSettingsAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                resetAllSettings()
+            }
+        } message: {
+            Text("This will reset all browser settings to their default values. Your browsing history and saved data will not be affected.")
+        }
+        .alert("Clear All Data", isPresented: $showingClearAllDataAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear All Data", role: .destructive) {
+                clearAllBrowserData()
+            }
+        } message: {
+            Text("This will permanently delete all browsing history, cookies, cached files, saved passwords, and website data. This action cannot be undone.")
+        }
+    }
+    
+    private func resetAllSettings() {
+        // Get all UserDefaults keys that are browser settings
+        let settingsKeys = [
+            // General settings
+            "defaultSearchEngine", "startupBehavior", "enableDownloadNotifications", "autoCheckForUpdates",
+            
+            // Privacy settings
+            "trackingProtectionEnabled", "blockThirdPartyCookies", "blockAllCookies", "httpsOnlyMode",
+            "preventFingerprinting", "blockCrossSiteTracking", "hideMacAddress", "enableDNSOverHTTPS",
+            "clearDataOnExit", "enableFraudProtection", "showPrivacyReport", "blockPopups",
+            "enableSmartTrackingPrevention", "blockAutoplay", "enableWebsiteIsolation",
+            
+            // Security settings
+            "enablePasswordManager", "enableAdBlocker", "enableDNSOverHTTPS", "dnsProvider",
+            
+            // Appearance settings
+            "enableGlassEffects", "enableSmoothAnimations", "enableFaviconColors", "sidebarWidth",
+            
+            // Advanced settings
+            "enableTabHibernation", "hibernationTimeout", "enableDeveloperTools", "enableExperimentalFeatures"
+        ]
+        
+        // Remove all settings keys to restore defaults
+        for key in settingsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        
+        print("All browser settings have been reset to defaults")
+        
+        // Post notification to update UI
+        NotificationCenter.default.post(name: NSNotification.Name("SettingsReset"), object: nil)
+    }
+    
+    private func clearAllBrowserData() {
+        // Clear WebKit website data
+        let dataStore = WKWebsiteDataStore.default()
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        
+        dataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast) {
+            print("All website data cleared successfully")
+        }
+        
+        // Clear additional browser data from UserDefaults
+        let dataKeys = [
+            "browsingHistory", "savedPasswords", "downloadHistory", 
+            "bookmarks", "searchHistory", "formData", "blockedRequestsCount",
+            "passwordMetadata", "adBlockSettings"
+        ]
+        
+        for key in dataKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        
+        print("All browser data has been cleared")
+        
+        // Post notification to update UI and other components
+        NotificationCenter.default.post(name: NSNotification.Name("AllDataCleared"), object: nil)
     }
 }
 
@@ -402,15 +484,16 @@ struct AdvancedSettingsView: View {
 
 extension View {
     func settingsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
             
             content()
-                .padding(.leading, 8)
+                .padding(.leading, 12)
         }
+        .padding(.vertical, 4)
     }
 }
 

@@ -408,9 +408,13 @@ struct HistoryView: View {
     }
     
     private func deleteHistoryItem(_ item: HistoryItem) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            historyService.deleteHistoryItem(item)
+        // Apply smooth animation for UI feedback
+        withAnimation(.easeOut(duration: 0.25)) {
+            hoveredItem = nil // Clear hover state
         }
+        
+        // Service handles immediate UI feedback and persistence
+        historyService.deleteHistoryItem(item)
     }
 }
 

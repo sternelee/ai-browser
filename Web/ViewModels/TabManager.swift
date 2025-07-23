@@ -89,6 +89,11 @@ class TabManager: ObservableObject {
                 setActiveTab(tabs[index - 1])
             } else {
                 activeTab = nil
+                // Notify that no active tab is available (context status should update)
+                NotificationCenter.default.post(
+                    name: .pageNavigationCompleted,
+                    object: nil
+                )
             }
         }
         
@@ -120,6 +125,12 @@ class TabManager: ObservableObject {
         activeTab = tab
         tab.isActive = true
         tab.wakeUp() // Wake up if hibernated
+        
+        // Notify that the active tab changed (for AI context status updates)
+        NotificationCenter.default.post(
+            name: .pageNavigationCompleted,
+            object: tab.id
+        )
         
         // Tab switched successfully
     }

@@ -184,7 +184,7 @@ struct HoverableURLBar: View {
                                 NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
                             })
                             
-                            ShareButton(urlString: urlString)
+                            AIToggleButton()
                             BookmarkButton(urlString: urlString)
                         }
                     }

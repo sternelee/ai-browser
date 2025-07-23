@@ -571,9 +571,23 @@ struct WebView: NSViewRepresentable {
                             if let context = context {
                                 NSLog("📖 Auto-read completed: \(context.text.count) characters from \(context.title)")
                             }
+                            
+                            // Notify that page navigation and context extraction has completed
+                            await MainActor.run {
+                                NotificationCenter.default.post(
+                                    name: .pageNavigationCompleted,
+                                    object: tab.id
+                                )
+                            }
                         }
                     }
                 }
+            } else {
+                // For non-HTTP/HTTPS pages, still notify navigation completion
+                NotificationCenter.default.post(
+                    name: .pageNavigationCompleted,
+                    object: parent.tab?.id
+                )
             }
         }
 

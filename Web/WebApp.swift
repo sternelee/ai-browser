@@ -249,6 +249,7 @@ extension Notification.Name {
     static let toggleAISidebar = Notification.Name("toggleAISidebar")
     static let focusAIInput = Notification.Name("focusAIInput")
     static let aISidebarStateChanged = Notification.Name("aISidebarStateChanged")
+    static let pageNavigationCompleted = Notification.Name("pageNavigationCompleted")
     
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift

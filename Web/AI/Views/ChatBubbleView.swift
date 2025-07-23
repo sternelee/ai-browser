@@ -7,6 +7,9 @@ struct ChatBubbleView: View {
     let isStreaming: Bool
     let streamingText: String
     
+    // Animation state for streaming indicator
+    @State private var animationPhase: Double = 0
+    
     // Computed properties
     private var isUserMessage: Bool {
         message.role == .user
@@ -43,6 +46,14 @@ struct ChatBubbleView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .animation(.easeInOut(duration: 0.2), value: displayText)
+        .onAppear {
+            startStreamingAnimation()
+        }
+        .onChange(of: isStreaming) { newValue in
+            if newValue {
+                startStreamingAnimation()
+            }
+        }
     }
     
     // MARK: - User Message Bubble
@@ -236,12 +247,6 @@ struct ChatBubbleView: View {
                                 .fill(Color.green.opacity(0.6))
                                 .frame(width: 4, height: 4)
                                 .scaleEffect(streamingDotScale(for: index))
-                                .animation(
-                                    .easeInOut(duration: 0.6)
-                                        .repeatForever()
-                                        .delay(Double(index) * 0.2),
-                                    value: isStreaming
-                                )
                         }
                     }
                     .padding(.trailing, 8)
@@ -252,7 +257,19 @@ struct ChatBubbleView: View {
     }
     
     private func streamingDotScale(for index: Int) -> CGFloat {
-        return isStreaming ? (1.0 + sin(Date().timeIntervalSince1970 * 3 + Double(index)) * 0.5) : 1.0
+        if !isStreaming { return 1.0 }
+        return 1.0 + sin(animationPhase + Double(index) * 0.8) * 0.5
+    }
+    
+    private func startStreamingAnimation() {
+        guard isStreaming else { return }
+        
+        withAnimation(
+            .linear(duration: 2.0)
+                .repeatForever(autoreverses: false)
+        ) {
+            animationPhase = .pi * 2
+        }
     }
     
     // MARK: - Context References

@@ -193,6 +193,11 @@ final class LLMRunner {
     nonisolated func generateStreamWithPrompt(prompt: String, modelPath: URL) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
+                // Declare cleanup variables at task scope
+                var streamLock: NSLock?
+                var isStreamCompleted = false
+                var botInstance: LLM?
+                
                 do {
                     try await ensureLoaded(modelPath: modelPath)
                     
@@ -204,7 +209,7 @@ final class LLMRunner {
                     NSLog("🌊 Starting streaming with RAW prompt (preserving conversation context)...")
                     
                     // Get bot instance for processing
-                    let botInstance = await bot!
+                    botInstance = await bot!
                     
                     // FIXED: Do NOT reset conversation here - let the caller manage conversation state
                     // The raw prompt should already include conversation context if needed
@@ -214,12 +219,19 @@ final class LLMRunner {
                     NSLog("🌊 Starting REAL token-by-token streaming (ChatGPT-style)...")
                     
                     let streamedTokensBox = Box(false)
-                    let streamLock = NSLock()
+                    streamLock = NSLock()
                     
                     // Set up streaming callback - this is the key to real-time streaming
-                    botInstance.update = { outputDelta in
-                        streamLock.lock()
-                        defer { streamLock.unlock() }
+                    // FIXED: Ensure callback is properly isolated and thread-safe
+                    botInstance?.update = { outputDelta in
+                        streamLock?.lock()
+                        defer { streamLock?.unlock() }
+                        
+                        // Prevent yielding after stream is completed
+                        guard !isStreamCompleted else {
+                            NSLog("⚠️ Ignoring callback after stream completion")
+                            return
+                        }
                         
                         if let delta = outputDelta, !delta.isEmpty {
                             streamedTokensBox.value = true
@@ -229,7 +241,15 @@ final class LLMRunner {
                     }
                     
                     // Start generation with callback streaming
-                    let finalResponse = await botInstance.getCompletion(from: prompt)
+                    let finalResponse = await botInstance!.getCompletion(from: prompt)
+                    
+                    // Mark stream as completed to prevent further callbacks
+                    streamLock?.lock()
+                    isStreamCompleted = true
+                    streamLock?.unlock()
+                    
+                    // Clear the callback to prevent any further calls
+                    botInstance?.update = { _ in }
                     
                     // Fallback: If callback streaming didn't work, send complete response
                     if !streamedTokensBox.value && !finalResponse.isEmpty {
@@ -241,6 +261,13 @@ final class LLMRunner {
                     NSLog("✅ RAW prompt streaming response completed: \(finalResponse.count) characters")
                     
                 } catch {
+                    // Clean up on error - now all variables are in scope
+                    streamLock?.lock()
+                    isStreamCompleted = true
+                    streamLock?.unlock()
+                    
+                    botInstance?.update = { _ in }
+                    
                     NSLog("❌ RAW prompt streaming failed: \(error)")
                     continuation.finish(throwing: error)
                 }

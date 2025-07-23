@@ -105,6 +105,37 @@ class ConversationHistory: ObservableObject {
         NSLog("💬 Added \(message.role.rawValue) message (\(message.estimatedTokens) tokens)")
     }
     
+    /// Update the content of an existing message (for streaming completion)
+    func updateMessage(id: String, newContent: String, metadata: ResponseMetadata? = nil) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else {
+            NSLog("⚠️ Cannot update message - message with ID \(id) not found")
+            return
+        }
+        
+        let oldMessage = messages[index]
+        let updatedMessage = ConversationMessage(
+            id: oldMessage.id, // Keep the same ID
+            role: oldMessage.role,
+            content: newContent,
+            timestamp: oldMessage.timestamp,
+            contextData: oldMessage.contextData,
+            metadata: metadata ?? oldMessage.metadata
+        )
+        
+        messages[index] = updatedMessage
+        
+        // Update metrics and trigger UI update
+        messageCount = messages.count
+        currentSessionTokens = calculateTotalTokens()
+        
+        // Trigger UI update for any observers
+        DispatchQueue.main.async { [weak self] in
+            self?.objectWillChange.send()
+        }
+        
+        NSLog("💬 Updated \(oldMessage.role.rawValue) message (\(updatedMessage.estimatedTokens) tokens)")
+    }
+    
     /// Get recent messages up to a specified limit
     func getRecentMessages(limit: Int = 20) -> [ConversationMessage] {
         let recentMessages = Array(messages.suffix(limit))
@@ -306,6 +337,23 @@ struct ConversationMessage: Identifiable {
         metadata: ResponseMetadata? = nil
     ) {
         self.id = UUID().uuidString
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+        self.contextData = contextData
+        self.metadata = metadata
+    }
+    
+    /// Internal initializer for updating existing messages while preserving ID
+    init(
+        id: String,
+        role: ConversationRole,
+        content: String,
+        timestamp: Date,
+        contextData: String? = nil,
+        metadata: ResponseMetadata? = nil
+    ) {
+        self.id = id
         self.role = role
         self.content = content
         self.timestamp = timestamp
