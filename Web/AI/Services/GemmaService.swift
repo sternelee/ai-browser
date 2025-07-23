@@ -1,10 +1,12 @@
 import Foundation
-import LLM
-// LLMRunner included via Web.AI.Runners
+import MLX
+import MLXLLM
+import MLXLMCommon
+// MLXRunner included via Web.AI.Runners
 // SystemMemoryMonitor included via Web.AI.Utils
 
-/// Gemma AI service for local inference with LLM.swift
-/// Handles model initialization, text generation, and response streaming using GGUF models
+/// Gemma AI service for local inference with MLX-Swift
+/// Handles model initialization, text generation, and response streaming using MLX models from Hugging Face
 class GemmaService {
     
     // MARK: - Properties
@@ -12,13 +14,13 @@ class GemmaService {
     private let configuration: AIConfiguration
     private let mlxWrapper: MLXWrapper
     private let privacyManager: PrivacyManager
-    private let onDemandModelService: OnDemandModelService
+    private let mlxModelService: MLXModelService
     
     private var isModelLoaded: Bool = false
-    private var modelWeights: [String: Any]? = nil
-    private var tokenizer: SimpleTokenizer?
+    // MLX handles model weights and tokenization internally
     
-    // No remote fallbacks - we use local GGUF models only
+    // No remote fallbacks - we use MLX models from Hugging Face community only
+    // Model download and management handled by MLXModelService
     
     // MARK: - Initialization
     
@@ -26,16 +28,16 @@ class GemmaService {
         configuration: AIConfiguration,
         mlxWrapper: MLXWrapper,
         privacyManager: PrivacyManager,
-        onDemandModelService: OnDemandModelService
+        mlxModelService: MLXModelService
     ) {
         self.configuration = configuration
         self.mlxWrapper = mlxWrapper
         self.privacyManager = privacyManager
-        self.onDemandModelService = onDemandModelService
+        self.mlxModelService = mlxModelService
         
         // Memory monitoring removed - was causing unnecessary complexity
         
-        NSLog("🔮 Gemma Service initialized with \(configuration.modelVariant)")
+        NSLog("🔮 Gemma Service initialized with MLX-Swift and \(configuration.modelVariant)")
     }
     
     // MARK: - Public Interface
@@ -48,24 +50,15 @@ class GemmaService {
         }
         
         do {
-            // Check for local GGUF model
-            guard let modelPath = onDemandModelService.getModelPath() else {
-                throw GemmaError.modelNotAvailable("AI model is being prepared. Please wait for the download to complete.")
+            // Initialize MLX model service and ensure model is available
+            try await mlxModelService.initializeAI()
+            
+            guard await mlxModelService.isAIReady() else {
+                throw GemmaError.modelNotAvailable("MLX model initialization did not complete successfully")
             }
             
-            NSLog("📂 Found GGUF model: \(modelPath.lastPathComponent)")
-            
-            // Validate model file exists
-            guard FileManager.default.fileExists(atPath: modelPath.path) else {
-                throw GemmaError.modelNotAvailable("GGUF model file not found at path: \(modelPath.path)")
-            }
-
-            // Initialize simple tokenizer
-            tokenizer = SimpleTokenizer()
-            NSLog("✅ Simple tokenizer initialized")
-
             isModelLoaded = true
-            NSLog("✅ Gemma model loaded successfully (tokenizer ready)")
+            NSLog("✅ MLX Gemma model loaded successfully")
             
         } catch {
             NSLog("❌ Failed to initialize Gemma model: \(error)")
@@ -107,31 +100,25 @@ class GemmaService {
                 let _ = responseBuilder.setContextUsed(true)
             }
             
-            guard let tokenizer = tokenizer else {
-                throw GemmaError.tokenizerNotAvailable
-            }
+            // MLX handles tokenization internally - no separate tokenizer needed
 
-            // Use LLM.swift for local GGUF inference
-            let _ = responseBuilder.addProcessingStep(ProcessingStep(name: "llm_inference", duration: 0, description: "Running LLM.swift GGUF inference"))
-
-            // Get local GGUF model path
-            guard let modelPath = onDemandModelService.getModelPath() else {
-                throw GemmaError.modelNotAvailable("AI model is being prepared for inference")
-            }
+            // Use MLX-Swift for local inference
+            let _ = responseBuilder.addProcessingStep(ProcessingStep(name: "mlx_inference", duration: 0, description: "Running MLX-Swift inference"))
 
             do {
                 // Use consistent prompt-based approach (conversation context already included in prompt)
-                let generatedText = try await LLMRunner.shared.generateWithPrompt(prompt: prompt, modelPath: modelPath)
-                let encoded = try tokenizer.encode(generatedText)
+                let generatedText = try await SimplifiedMLXRunner.shared.generateWithPrompt(prompt: prompt, modelId: "llama3_2_1B_4bit")
                 let cleaned = postProcessResponse(generatedText)
-                mlxWrapper.updateInferenceMetrics(tokensGenerated: encoded.count)
+                // Estimate token count for metrics (MLX handles tokenization internally)
+                let estimatedTokens = Int(Double(generatedText.count) / 3.5)
+                mlxWrapper.updateInferenceMetrics(tokensGenerated: estimatedTokens)
                 return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
             } catch {
-                NSLog("❌ LLM inference failed: \(error)")
-                throw GemmaError.inferenceError("LLM inference failed: \(error.localizedDescription)")
+                NSLog("❌ MLX inference failed: \(error)")
+                throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
             }
 
-            // All inference handled above by LLMRunner
+            // All inference handled above by MLXRunner
             
         } catch {
             NSLog("❌ Response generation failed: \(error)")
@@ -162,17 +149,10 @@ class GemmaService {
                         conversationHistory: conversationHistory
                     )
                     
-                    guard tokenizer != nil else {
-                        throw GemmaError.tokenizerNotAvailable
-                    }
+                    // MLX handles tokenization internally
                     
-                    // Get local GGUF model path
-                    guard let modelPath = onDemandModelService.getModelPath() else {
-                        throw GemmaError.modelNotAvailable("AI model is still being prepared for streaming")
-                    }
-                    
-                    // Use LLMRunner for streaming with pre-built prompt that includes conversation context
-                    let textStream = LLMRunner.shared.generateStreamWithPrompt(prompt: prompt, modelPath: modelPath)
+                    // Use MLXRunner for streaming with pre-built prompt that includes conversation context
+                    let textStream = await SimplifiedMLXRunner.shared.generateStreamWithPrompt(prompt: prompt, modelId: "llama3_2_1B_4bit")
                     
                     var hasYieldedContent = false
                     var accumulatedResponse = ""
@@ -298,21 +278,21 @@ class GemmaService {
         
         let fullPrompt = promptParts.joined(separator: "\n")
         
-        NSLog("📝 Built Gemma prompt (\(fullPrompt.count) chars): \(String(fullPrompt.prefix(300)))...")
+        NSLog("📝 Built MLX Gemma prompt (\(fullPrompt.count) chars): \(String(fullPrompt.prefix(300)))...")
         
         return fullPrompt
     }
     
     /// Reset conversation state to prevent KV cache issues
     func resetConversation() async {
-        // Reset the LLM runner's conversation state
-        await LLMRunner.shared.resetConversation()
+        // Reset the MLX runner's conversation state
+        await SimplifiedMLXRunner.shared.resetConversation()
         NSLog("🔄 GemmaService conversation reset completed")
     }
     
     // Memory pressure handling removed - was overcomplicating the system
     
-    // All inference now handled by LLMRunner using local GGUF models
+    // All inference now handled by MLXRunner using MLX models from Hugging Face
     
     private func postProcessResponse(_ text: String) -> String {
         // Clean up the response
@@ -395,93 +375,10 @@ class GemmaService {
     // Context reference processing will be added in Phase 11
 }
 
-// MARK: - Simple Tokenizer
+// MARK: - MLX Integration Notes
 
-/// Simple word-based tokenizer for local AI inference
-/// Provides basic tokenization without external dependencies
-class SimpleTokenizer {
-    
-    /// Get the special token IDs used by the tokenizer
-    struct SpecialTokens {
-        let pad: Int = 0
-        let eos: Int = 1
-        let bos: Int = 2
-        let unk: Int = 3
-    }
-    
-    let specialTokens = SpecialTokens()
-
-    // NEW: Bidirectional vocabulary maps so we can decode tokens back to human-readable words
-    // These are shared across all tokenizer instances for the lifetime of the app.
-    private static var tokenToWord: [Int: String] = [:]
-    private static var wordToToken: [String: Int] = [:]
-    private static var nextGeneratedToken: Int = 1000 // Start a bit above the special tokens
-    private static let vocabularyLock = NSLock()
-    
-    init() {
-        NSLog("🔧 Simple tokenizer initialized")
-    }
-    
-    func encode(_ text: String) throws -> [Int] {
-        // Split text into words and map to token IDs
-        let words = text.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-        
-        var tokens: [Int] = []
-        tokens.append(specialTokens.bos)
-
-        for word in words {
-            let token: Int
-            if let existing = Self.wordToToken[word] {
-                token = existing
-            } else {
-                // Acquire lock for thread-safe vocabulary updates
-                Self.vocabularyLock.lock()
-                // Re-check in case another thread already added it
-                if let existingAfterLock = Self.wordToToken[word] {
-                    token = existingAfterLock
-                } else {
-                    token = Self.nextGeneratedToken
-                    Self.nextGeneratedToken += 1
-                    Self.wordToToken[word] = token
-                    Self.tokenToWord[token] = word
-                }
-                Self.vocabularyLock.unlock()
-            }
-            tokens.append(token)
-        }
-
-        tokens.append(specialTokens.eos)
-        NSLog("📝 Encoded '\(text.prefix(50))...' to \(tokens.count) tokens")
-        return tokens
-    }
-    
-    func decode(_ tokens: [Int]) throws -> String {
-        var words: [String] = []
-        for token in tokens {
-            // Skip special tokens
-            if token == specialTokens.bos || token == specialTokens.eos || token == specialTokens.pad || token == specialTokens.unk {
-                continue
-            }
-            if let word = Self.tokenToWord[token] {
-                words.append(word)
-            } else {
-                // Fallback – represent unknown token numerically so we can still show something
-                words.append("<t\(token)>")
-            }
-        }
-
-        let reconstructed = words.joined(separator: " ")
-        NSLog("📝 Decoded \(tokens.count) tokens to text representation")
-        return reconstructed
-    }
-    
-    /// Get vocabulary size (dynamic)
-    var vocabularySize: Int {
-        return Self.tokenToWord.count + 4 // include special tokens
-    }
-}
+/// MLX-Swift handles tokenization internally through its model context
+/// No separate tokenizer class is needed as MLX provides this functionality
 
 // MARK: - Errors
 
@@ -489,7 +386,7 @@ enum GemmaError: LocalizedError {
     case modelNotAvailable(String)
     case modelNotLoaded
     case initializationFailed(String)
-    case tokenizerNotAvailable
+    case mlxNotAvailable
     case promptTooLong(String)
     case inferenceError(String)
     
@@ -501,8 +398,8 @@ enum GemmaError: LocalizedError {
             return "Model not loaded - call initialize() first"
         case .initializationFailed(let message):
             return "Initialization Failed: \(message)"
-        case .tokenizerNotAvailable:
-            return "Tokenizer not available"
+        case .mlxNotAvailable:
+            return "MLX runtime not available"
         case .promptTooLong(let message):
             return "Prompt Too Long: \(message)"
         case .inferenceError(let message):

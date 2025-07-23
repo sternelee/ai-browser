@@ -9,24 +9,17 @@ class TokenEstimator {
     static func estimateTokens(for text: String) -> Int {
         if text.isEmpty { return 0 }
         
-        // Try to use actual tokenizer if available
-        if let tokenizer = getAvailableTokenizer() {
-            do {
-                let tokens = try tokenizer.encode(text)
-                return tokens.count
-            } catch {
-                NSLog("⚠️ Tokenizer failed, using fallback estimation: \(error)")
-            }
-        }
+        // MLX handles tokenization internally, use improved estimation
+        // Tokenizer integration removed for MLX-Swift compatibility
         
         // Improved estimation based on actual language patterns
         return improvedTokenEstimation(for: text)
     }
     
-    private static func getAvailableTokenizer() -> SimpleTokenizer? {
-        // Try to get tokenizer from available service
-        // This would ideally be injected as a dependency
-        return nil // Will be connected when service architecture is updated
+    private static func getAvailableTokenizer() -> Any? {
+        // MLX-Swift handles tokenizers through ModelContext automatically
+        // No separate tokenizer instance needed
+        return nil
     }
     
     private static func improvedTokenEstimation(for text: String) -> Int {
