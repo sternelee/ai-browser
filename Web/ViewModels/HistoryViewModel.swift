@@ -136,13 +136,9 @@ class HistoryViewModel: ObservableObject {
     // MARK: - Public Methods
     
     func deleteHistoryItem(_ item: HistoryItem) {
+        // Service handles immediate UI feedback, just call it
         historyService.deleteHistoryItem(item)
         logger.info("Deleted history item: \(item.displayTitle)")
-        
-        // Animate removal
-        withAnimation(.easeOut(duration: 0.3)) {
-            updateFilteredHistory()
-        }
     }
     
     func clearHistoryForTimeRange() {
@@ -164,7 +160,7 @@ class HistoryViewModel: ObservableObject {
         }
         
         logger.info("Cleared history for time range: \(self.selectedTimeRange.rawValue)")
-        updateFilteredHistory()
+        // Service handles immediate UI feedback, no need to manually update
     }
     
     func openInCurrentTab(_ item: HistoryItem) {

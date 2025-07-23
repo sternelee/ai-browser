@@ -127,7 +127,6 @@ struct URLBar: View {
             HStack(spacing: 6) {
                 HistoryButton()
                 DownloadsButton()
-                ShareButton(urlString: urlString)
                 BookmarkButton(urlString: urlString)
                 AIToggleButton()
             }
@@ -369,37 +368,6 @@ struct SecurityIndicator: View {
     }
 }
 
-// Share button component
-struct ShareButton: View {
-    let urlString: String
-    @State private var hovering: Bool = false
-    
-    var body: some View {
-        Button(action: shareURL) {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(urlString.isEmpty ? .textSecondary.opacity(0.5) : .textSecondary)
-                .frame(width: 20, height: 20)
-        }
-        .buttonStyle(.plain)
-        .disabled(urlString.isEmpty)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                self.hovering = hovering
-            }
-        }
-    }
-    
-    private func shareURL() {
-        guard let url = URL(string: urlString) else { return }
-        
-        let sharingPicker = NSSharingServicePicker(items: [url])
-        if let window = NSApplication.shared.keyWindow,
-           let contentView = window.contentView {
-            sharingPicker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
-        }
-    }
-}
 
 // Bookmark button component
 struct BookmarkButton: View {
@@ -510,7 +478,7 @@ struct AIToggleButton: View {
     
     var body: some View {
         Button(action: toggleAISidebar) {
-            Image(systemName: "brain")
+            Image(systemName: "star")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isAISidebarExpanded ? .accentColor : (hovering ? .textPrimary : .textSecondary))
                 .frame(width: 20, height: 20)

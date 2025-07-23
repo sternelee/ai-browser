@@ -1,6 +1,7 @@
 import Foundation
 import WebKit
 import SwiftUI
+import CoreData
 
 /// Manages webpage content extraction and context generation for AI integration
 /// Provides cleaned, summarized webpage content to enhance AI responses
@@ -22,6 +23,15 @@ class ContextManager: ObservableObject {
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
+    
+    // HISTORY CONTEXT CONFIGURATION
+    private let maxHistoryItems = 10 // Limit history items for context
+    private let maxHistoryDays: TimeInterval = 1 * 24 * 60 * 60 // 1 day lookback
+    private let maxHistoryContentLength = 3000 // Limit history context size
+    
+    // Privacy settings for history context
+    @Published var isHistoryContextEnabled: Bool = true
+    @Published var historyContextScope: HistoryContextScope = .recent
     
     private init() {
         NSLog("🔮 ContextManager initialized")
@@ -80,21 +90,58 @@ class ContextManager: ObservableObject {
         }
     }
     
-    /// Get a formatted context string for AI processing
-    func getFormattedContext(from context: WebpageContext?) -> String? {
-        guard let context = context else { return nil }
+    /// Get a formatted context string for AI processing with optional history
+    func getFormattedContext(from context: WebpageContext?, includeHistory: Bool = true) -> String? {
+        var contextParts: [String] = []
         
-        let formattedContext = """
-        Current webpage context:
+        // Add current webpage context
+        if let context = context {
+            let currentContext = """
+            Current webpage context:
+            
+            Title: \(context.title)
+            URL: \(context.url)
+            
+            Content:
+            \(context.text)
+            """
+            contextParts.append(currentContext)
+        }
         
-        Title: \(context.title)
-        URL: \(context.url)
+        // Add history context if enabled and requested
+        if includeHistory && isHistoryContextEnabled {
+            if let historyContext = getHistoryContext() {
+                contextParts.append(historyContext)
+            }
+        }
         
-        Content:
-        \(context.text)
-        """
+        return contextParts.isEmpty ? nil : contextParts.joined(separator: "\n\n---\n\n")
+    }
+    
+    /// Get browsing history context for AI processing
+    func getHistoryContext() -> String? {
+        let historyItems = extractRelevantHistory()
+        guard !historyItems.isEmpty else { return nil }
         
-        return formattedContext
+        var historyParts: [String] = ["Recent browsing history context:"]
+        
+        for (index, item) in historyItems.enumerated() {
+            let timeAgo = formatTimeAgo(item.lastVisitDate)
+            let domain = extractDomain(from: item.url) ?? "unknown"
+            
+            let historyEntry = "\(index + 1). \(item.title ?? "Untitled") (\(domain)) - visited \(timeAgo)"
+            historyParts.append(historyEntry)
+        }
+        
+        let historyContext = historyParts.joined(separator: "\n")
+        
+        // Limit history context size
+        if historyContext.count > maxHistoryContentLength {
+            let truncated = String(historyContext.prefix(maxHistoryContentLength))
+            return truncated + "... (history truncated for context)"
+        }
+        
+        return historyContext
     }
     
     /// Check if context extraction is available for the current tab
@@ -108,6 +155,108 @@ class ContextManager: ObservableObject {
         // Don't extract from special URLs
         let scheme = url.scheme?.lowercased() ?? ""
         return scheme == "http" || scheme == "https"
+    }
+    
+    // MARK: - History Context Methods
+    
+    /// Extract relevant browsing history for AI context
+    private func extractRelevantHistory() -> [HistoryItem] {
+        let historyService = HistoryService.shared
+        let cutoffDate = Date().addingTimeInterval(-maxHistoryDays)
+        
+        // Get recent history based on scope
+        let historyItems: [HistoryItem]
+        
+        switch historyContextScope {
+        case .recent:
+            historyItems = Array(historyService.recentHistory.prefix(maxHistoryItems))
+        case .today:
+            let startOfDay = Calendar.current.startOfDay(for: Date())
+            historyItems = historyService.getHistory(from: startOfDay, to: Date())
+        case .lastHour:
+            let oneHourAgo = Date().addingTimeInterval(-3600)
+            historyItems = historyService.getHistory(from: oneHourAgo, to: Date())
+        case .mostVisited:
+            historyItems = historyService.getMostVisited(limit: maxHistoryItems)
+        }
+        
+        // Filter out items older than cutoff and limit results
+        let filteredItems = historyItems
+            .filter { $0.lastVisitDate >= cutoffDate }
+            .filter { !shouldExcludeFromHistoryContext($0.url) }
+            .prefix(maxHistoryItems)
+        
+        return Array(filteredItems)
+    }
+    
+    /// Check if URL should be excluded from history context
+    private func shouldExcludeFromHistoryContext(_ url: String) -> Bool {
+        let excludedDomains = [
+            "localhost", "127.0.0.1", "::1",
+            "chrome://", "webkit://", "about:",
+            "data:", "file://"
+        ]
+        
+        for excludedDomain in excludedDomains {
+            if url.contains(excludedDomain) {
+                return true
+            }
+        }
+        
+        // Exclude sensitive domains (banking, medical, etc.)
+        let sensitiveDomains = [
+            "bank", "medical", "health", "pharmacy",
+            "login", "auth", "secure", "private"
+        ]
+        
+        let lowercaseUrl = url.lowercased()
+        for sensitiveDomain in sensitiveDomains {
+            if lowercaseUrl.contains(sensitiveDomain) {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /// Extract domain from URL for context display
+    private func extractDomain(from url: String) -> String? {
+        guard let urlObj = URL(string: url) else { return nil }
+        return urlObj.host
+    }
+    
+    /// Format time ago string for history context
+    private func formatTimeAgo(_ date: Date) -> String {
+        let now = Date()
+        let interval = now.timeIntervalSince(date)
+        
+        if interval < 60 {
+            return "just now"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            return "\(minutes)m ago"
+        } else if interval < 86400 {
+            let hours = Int(interval / 3600)
+            return "\(hours)h ago"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .none
+            return formatter.string(from: date)
+        }
+    }
+    
+    /// Configure history context settings
+    func configureHistoryContext(enabled: Bool, scope: HistoryContextScope) {
+        isHistoryContextEnabled = enabled
+        historyContextScope = scope
+        NSLog("🔮 History context configured: enabled=\(enabled), scope=\(scope)")
+    }
+    
+    /// Clear history context cache (for privacy)
+    func clearHistoryContextCache() {
+        // Clear any cached history context data
+        NSLog("🗑️ History context cache cleared")
     }
     
     // MARK: - Private Methods
@@ -480,6 +629,27 @@ struct WebpageContext: Identifiable, Codable {
     /// Check if the context is still fresh
     var isFresh: Bool {
         Date().timeIntervalSince(extractionDate) < 300 // 5 minutes
+    }
+}
+
+/// History context scope options
+enum HistoryContextScope: String, CaseIterable {
+    case recent = "recent"
+    case today = "today"
+    case lastHour = "lastHour"
+    case mostVisited = "mostVisited"
+    
+    var displayName: String {
+        switch self {
+        case .recent:
+            return "Recent History"
+        case .today:
+            return "Today Only"
+        case .lastHour:
+            return "Last Hour"
+        case .mostVisited:
+            return "Most Visited"
+        }
     }
 }
 

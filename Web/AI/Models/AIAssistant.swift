@@ -186,8 +186,8 @@ class AIAssistant: ObservableObject {
         }
     }
     
-    /// Process a user query with current context
-    func processQuery(_ query: String, includeContext: Bool = true) async throws -> AIResponse {
+    /// Process a user query with current context and optional history
+    func processQuery(_ query: String, includeContext: Bool = true, includeHistory: Bool = true) async throws -> AIResponse {
         guard await isInitialized else {
             throw AIError.notInitialized
         }
@@ -202,9 +202,9 @@ class AIAssistant: ObservableObject {
         defer { Task { @MainActor in isProcessing = false } }
         
         do {
-            // Extract context from current webpage
+            // Extract context from current webpage with optional history
             let webpageContext = await extractCurrentContext()
-            let context = contextManager.getFormattedContext(from: webpageContext)
+            let context = contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
             
             // Create conversation entry
             let userMessage = ConversationMessage(
@@ -245,8 +245,8 @@ class AIAssistant: ObservableObject {
         }
     }
     
-    /// Process a streaming query with real-time responses
-    func processStreamingQuery(_ query: String, includeContext: Bool = true) -> AsyncThrowingStream<String, Error> {
+    /// Process a streaming query with real-time responses and optional history
+    func processStreamingQuery(_ query: String, includeContext: Bool = true, includeHistory: Bool = true) -> AsyncThrowingStream<String, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -257,9 +257,9 @@ class AIAssistant: ObservableObject {
                     Task { @MainActor in isProcessing = true }
                     defer { Task { @MainActor in isProcessing = false } }
                     
-                    // Extract context from current webpage
+                    // Extract context from current webpage with optional history
                     let webpageContext = await self.extractCurrentContext()
-                    let context = self.contextManager.getFormattedContext(from: webpageContext)
+                    let context = self.contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
                     
                     // Process with streaming
                     let stream = try await gemmaService.generateStreamingResponse(
@@ -304,22 +304,35 @@ class AIAssistant: ObservableObject {
                         continuation.yield(chunk)
                     }
                     
+                    // FIX: Update the empty message with the final streamed content
+                    conversationHistory.updateMessage(id: aiMessage.id, newContent: fullResponse)
+                    
                     // Clear streaming UI state when done
                     await MainActor.run {
                         currentStreamingMessageId = nil
                         streamingText = ""
                     }
                     
-                    // The final message is already in conversation history
-                    // UI will update automatically when streaming state clears
-                    
                     continuation.finish()
                     
                 } catch {
+                    NSLog("❌ Streaming error occurred: \(error)")
+                    
+                    // Get the message ID before clearing state
+                    let messageId = await currentStreamingMessageId
+                    
                     // Clear streaming state on error
                     await MainActor.run {
                         currentStreamingMessageId = nil
                         streamingText = ""
+                    }
+                    
+                    // If we have a partially complete message, update it with error info
+                    if let messageId = messageId {
+                        conversationHistory.updateMessage(
+                            id: messageId, 
+                            newContent: "Sorry, there was an error generating the response: \(error.localizedDescription)"
+                        )
                     }
                     
                     await self.handleAIError(error)
@@ -395,8 +408,27 @@ class AIAssistant: ObservableObject {
         }
     }
     
+    /// Configure history context settings
+    func configureHistoryContext(enabled: Bool, scope: HistoryContextScope) {
+        contextManager.configureHistoryContext(enabled: enabled, scope: scope)
+        NSLog("🔍 AI Assistant history context configured: enabled=\(enabled), scope=\(scope.displayName)")
+    }
+    
+    /// Get current history context status
+    func getHistoryContextStatus() -> (enabled: Bool, scope: HistoryContextScope) {
+        return (contextManager.isHistoryContextEnabled, contextManager.historyContextScope)
+    }
+    
+    /// Clear history context for privacy
+    func clearHistoryContext() {
+        contextManager.clearHistoryContextCache()
+        NSLog("🗑️ AI Assistant history context cleared")
+    }
+    
     /// Get current system status
     @MainActor func getSystemStatus() -> AISystemStatus {
+        let historyContextInfo = getHistoryContextStatus()
+        
         return AISystemStatus(
             isInitialized: isInitialized,
             framework: aiConfiguration.framework,
@@ -405,7 +437,9 @@ class AIAssistant: ObservableObject {
             inferenceSpeed: mlxWrapper.inferenceSpeed,
             contextTokenCount: 0, // Context processing will be added in Phase 11
             conversationLength: conversationHistory.messageCount,
-            hardwareInfo: HardwareDetector.processorType.description
+            hardwareInfo: HardwareDetector.processorType.description,
+            historyContextEnabled: historyContextInfo.enabled,
+            historyContextScope: historyContextInfo.scope.displayName
         )
     }
     
@@ -507,6 +541,8 @@ struct AISystemStatus {
     let contextTokenCount: Int
     let conversationLength: Int
     let hardwareInfo: String
+    let historyContextEnabled: Bool
+    let historyContextScope: String
 }
 
 /// AI specific errors

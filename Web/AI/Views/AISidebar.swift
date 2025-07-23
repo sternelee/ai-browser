@@ -4,19 +4,22 @@ import Combine
 /// AI Assistant sidebar with collapsible right panel interface
 /// Provides context-aware chat with glass morphism styling
 struct AISidebar: View {
-    let tabManager: TabManager
+    @ObservedObject var tabManager: TabManager
+    @ObservedObject private var contextManager = ContextManager.shared
     @StateObject private var aiAssistant: AIAssistant
     @State private var isExpanded: Bool = false
     @State private var chatInput: String = ""
-    @State private var isHovering: Bool = false
     @State private var autoCollapseTimer: Timer?
     @FocusState private var isChatInputFocused: Bool
+    @State private var showingPrivacySettings: Bool = false
+    @State private var includeHistoryContext: Bool = true
     
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
     
     // TYPING INDICATOR STATE (streaming state now managed by AIAssistant)
     @State private var isShowingTypingIndicator: Bool = false
+    @State private var typingAnimationPhase: Double = 0
     
     // Configuration
     private let collapsedWidth: CGFloat = 4
@@ -42,14 +45,18 @@ struct AISidebar: View {
                     rightEdgeActivationZone()
                 )
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
-                .onHover { hovering in
-                    handleHover(hovering)
-                }
                 .onReceive(NotificationCenter.default.publisher(for: .toggleAISidebar)) { _ in
                     toggleSidebar()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .focusAIInput)) { _ in
                     expandAndFocusInput()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .pageNavigationCompleted)) { _ in
+                    // Trigger context status update when any page navigation completes
+                    // The @ObservedObject tabManager will automatically refresh the context status view
+                }
+                .sheet(isPresented: $showingPrivacySettings) {
+                    AIPrivacySettings()
                 }
                 .onAppear {
                     // Initialize AI system on first appearance
@@ -105,9 +112,10 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func contextStatusView() -> some View {
-        let contextManager = ContextManager.shared
+        // Reactive check based on active tab - this will re-evaluate when tabManager.activeTab changes
+        let canExtractContext = tabManager.activeTab != nil && contextManager.canExtractContext(from: tabManager)
         
-        if contextManager.canExtractContext(from: tabManager) {
+        if canExtractContext {
             HStack(spacing: 6) {
                 // Context available indicator
                 Image(systemName: contextManager.isExtracting ? "doc.text.magnifyingglass" : "doc.text")
@@ -120,7 +128,10 @@ struct AISidebar: View {
                 
                 Spacer()
                 
-                if let context = contextManager.lastExtractedContext {
+                // Show word count only if context is from the current active tab
+                if let context = contextManager.lastExtractedContext,
+                   let activeTabId = tabManager.activeTab?.id,
+                   context.tabId == activeTabId {
                     Text("\(context.wordCount) words")
                         .font(.system(size: 9, weight: .regular))
                         .foregroundColor(.secondary.opacity(0.7))
@@ -134,6 +145,7 @@ struct AISidebar: View {
             )
             .padding(.horizontal, 4)
             .padding(.bottom, 8)
+            .id("\(tabManager.activeTab?.id.uuidString ?? "none")-\(tabManager.activeTab?.url?.absoluteString ?? "none")")
         }
     }
     
@@ -193,7 +205,8 @@ struct AISidebar: View {
                         }
                         
                         // Show typing indicator when AI is processing but no message created yet
-                        if isShowingTypingIndicator {
+                        // OR when we have a streaming message but the UI might need transition help
+                        if isShowingTypingIndicator || (aiAssistant.currentStreamingMessageId != nil && aiAssistant.streamingText.isEmpty) {
                             typingIndicatorView()
                         }
                     }
@@ -438,12 +451,6 @@ struct AISidebar: View {
                         .fill(Color.secondary.opacity(0.6))
                         .frame(width: 6, height: 6)
                         .scaleEffect(typingDotScale(for: index))
-                        .animation(
-                            .easeInOut(duration: 0.6)
-                                .repeatForever()
-                                .delay(Double(index) * 0.2),
-                            value: isShowingTypingIndicator
-                        )
                 }
             }
             .padding(.horizontal, 16)
@@ -453,6 +460,14 @@ struct AISidebar: View {
                     .fill(.ultraThinMaterial)
                     .opacity(0.9)
             )
+            .onAppear {
+                startTypingAnimation()
+            }
+            .onChange(of: isShowingTypingIndicator) { _, newValue in
+                if newValue {
+                    startTypingAnimation()
+                }
+            }
             
             Spacer(minLength: 32)
         }
@@ -461,51 +476,99 @@ struct AISidebar: View {
     }
     
     private func typingDotScale(for index: Int) -> CGFloat {
-        let time = Date().timeIntervalSince1970
-        let offset = Double(index) * 0.5
-        return isShowingTypingIndicator ? (0.8 + 0.4 * abs(sin(time * 3 + offset))) : 0.8
+        if !isShowingTypingIndicator { return 0.8 }
+        return 0.8 + 0.4 * abs(sin(typingAnimationPhase + Double(index) * 0.5))
+    }
+    
+    private func startTypingAnimation() {
+        guard isShowingTypingIndicator else { return }
+        
+        withAnimation(
+            .linear(duration: 1.5)
+                .repeatForever(autoreverses: false)
+        ) {
+            typingAnimationPhase = .pi * 2
+        }
     }
     
     // MARK: - Chat Input Area
     
     @ViewBuilder
     private func chatInputArea() -> some View {
-        HStack(spacing: 8) {
-            TextField("Ask about this page...", text: $chatInput, axis: .vertical)
-                .textFieldStyle(PlainTextFieldStyle())
-                .font(.system(size: 14))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.6)
-                )
-                .focused($isChatInputFocused)
-                .onSubmit {
-                    sendMessage()
-                }
-                .disabled(!aiAssistant.isInitialized)
-                .onChange(of: isChatInputFocused) { _, newValue in
-                    NSLog("🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)")
-                }
-                .onChange(of: aiAssistant.isInitialized) { _, newValue in
-                    NSLog("🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)")
-                    if !newValue && isChatInputFocused {
-                        NSLog("🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!")
+        VStack(spacing: 8) {
+            // Context controls
+            HStack(spacing: 8) {
+                // History context toggle
+                HStack(spacing: 4) {
+                    Button(action: {
+                        includeHistoryContext.toggle()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: includeHistoryContext ? "clock.fill" : "clock")
+                                .font(.system(size: 12))
+                            Text("History")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(includeHistoryContext ? .accentColor : .secondary)
                     }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Include browsing history in AI context")
                 }
-            
-            // Send button
-            Button(action: {
-                sendMessage()
-            }) {
-                Image(systemName: aiAssistant.isProcessing ? "stop.circle" : "arrow.up.circle.fill")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(chatInput.isEmpty ? .secondary : .accentColor)
+                
+                Spacer()
+                
+                // Privacy settings button
+                Button(action: {
+                    showingPrivacySettings = true
+                }) {
+                    Image(systemName: "shield.checkered")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Privacy settings")
             }
-            .buttonStyle(PlainButtonStyle())
-            .disabled(chatInput.isEmpty || !aiAssistant.isInitialized)
+            .padding(.horizontal, 4)
+            .opacity(0.8)
+            
+            // Input field row
+            HStack(spacing: 8) {
+                TextField("Ask about this page...", text: $chatInput, axis: .vertical)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.6)
+                    )
+                    .focused($isChatInputFocused)
+                    .onSubmit {
+                        sendMessage()
+                    }
+                    .disabled(!aiAssistant.isInitialized)
+                    .onChange(of: isChatInputFocused) { _, newValue in
+                        NSLog("🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)")
+                    }
+                    .onChange(of: aiAssistant.isInitialized) { _, newValue in
+                        NSLog("🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)")
+                        if !newValue && isChatInputFocused {
+                            NSLog("🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!")
+                        }
+                    }
+                
+                // Send button
+                Button(action: {
+                    sendMessage()
+                }) {
+                    Image(systemName: aiAssistant.isProcessing ? "stop.circle" : "arrow.up.circle.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(chatInput.isEmpty ? .secondary : .accentColor)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(chatInput.isEmpty || !aiAssistant.isInitialized)
+            }
         }
         .frame(minHeight: 44)
         .padding(.top, 12)
@@ -571,11 +634,6 @@ struct AISidebar: View {
                     .fill(Color.clear)
                     .frame(width: 20) // 20pt hover zone
                     .contentShape(Rectangle())
-                    .onHover { hovering in
-                        if hovering {
-                            expandSidebar()
-                        }
-                    }
             }
         }
     }
@@ -638,14 +696,6 @@ struct AISidebar: View {
         expandSidebar()
     }
     
-    private func handleHover(_ hovering: Bool) {
-        isHovering = hovering
-        
-        if hovering && isExpanded {
-            // Reset auto-collapse timer when hovering over expanded sidebar
-            resetAutoCollapseTimer()
-        }
-    }
     
     private func sendMessage() {
         guard !chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -662,18 +712,23 @@ struct AISidebar: View {
         // Process message with AI Assistant using streaming for ChatGPT-like experience
         Task {
             do {
-                // Start streaming response
-                let stream = aiAssistant.processStreamingQuery(message, includeContext: true)
-                
-                // Hide typing indicator once streaming starts (AIAssistant will manage streaming state)
-                await MainActor.run {
-                    isShowingTypingIndicator = false
-                }
+                // Start streaming response with history context option
+                let stream = aiAssistant.processStreamingQuery(message, includeContext: true, includeHistory: includeHistoryContext)
                 
                 // Process streaming response
                 var fullResponse = ""
+                var hasStartedStreaming = false
                 for try await chunk in stream {
                     fullResponse += chunk
+                    
+                    // Hide typing indicator after first chunk arrives
+                    if !hasStartedStreaming {
+                        await MainActor.run {
+                            isShowingTypingIndicator = false
+                        }
+                        hasStartedStreaming = true
+                    }
+                    
                     NSLog("🌊 Streaming token: \(chunk) (total: \(fullResponse.count) chars)")
                 }
                 
@@ -687,12 +742,9 @@ struct AISidebar: View {
                     isShowingTypingIndicator = false
                 }
                 
-                // Fallback to non-streaming
-                do {
-                    let _ = try await aiAssistant.processQuery(message, includeContext: true)
-                } catch {
-                    NSLog("❌ Fallback also failed: \(error)")
-                }
+                // Don't attempt fallback to avoid duplicate messages
+                // The AIAssistant error handling already updates the message
+                NSLog("ℹ️ Streaming error handled by AIAssistant - no fallback needed")
             }
         }
     }
@@ -703,8 +755,8 @@ struct AISidebar: View {
         NSLog("🎯 TIMER DEBUG: Starting auto-collapse timer (\(autoCollapseDelay)s)")
         stopAutoCollapseTimer()
         autoCollapseTimer = Timer.scheduledTimer(withTimeInterval: autoCollapseDelay, repeats: false) { _ in
-            NSLog("🎯 TIMER DEBUG: Auto-collapse timer fired - expanded: \(self.isExpanded), hovering: \(self.isHovering), focused: \(self.isChatInputFocused)")
-            if self.isExpanded && !self.isHovering && !self.isChatInputFocused {
+            NSLog("🎯 TIMER DEBUG: Auto-collapse timer fired - expanded: \(self.isExpanded), focused: \(self.isChatInputFocused)")
+            if self.isExpanded && !self.isChatInputFocused {
                 NSLog("🎯 TIMER DEBUG: Auto-collapsing sidebar due to timer")
                 self.collapseSidebar()
             } else {

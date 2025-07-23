@@ -18,9 +18,8 @@ class HistoryService: ObservableObject {
     private let maxHistoryItems = 10000
     private let maxHistoryDays = 365
     
-    // UI update debouncing
+    // UI update management
     private var uiUpdateTask: Task<Void, Never>?
-    private let uiUpdateDelay: TimeInterval = 2.0
     
     private init() {
         loadRecentHistory()
@@ -98,17 +97,13 @@ class HistoryService: ObservableObject {
         }
     }
     
-    /// Schedule a debounced UI update to prevent excessive reloads
+    /// Schedule an immediate UI update
     private func scheduleUIUpdate() {
         // Cancel existing update task
         uiUpdateTask?.cancel()
         
-        // Schedule new update with delay
+        // Update UI immediately
         uiUpdateTask = Task {
-            try? await Task.sleep(nanoseconds: UInt64(uiUpdateDelay * 1_000_000_000))
-            
-            guard !Task.isCancelled else { return }
-            
             await MainActor.run {
                 loadRecentHistory()
             }
@@ -183,10 +178,13 @@ class HistoryService: ObservableObject {
     
     // MARK: - Data Management
     
-    /// Delete a specific history item
+    /// Delete a specific history item with immediate UI feedback
     func deleteHistoryItem(_ item: HistoryItem) {
         let itemID = item.objectID
         let url = item.url
+        
+        // Immediate UI update - remove from published array first
+        recentHistory.removeAll { $0.objectID == itemID }
         
         Task {
             do {
@@ -195,46 +193,107 @@ class HistoryService: ObservableObject {
                     if let objectToDelete = try? context.existingObject(with: itemID) {
                         context.delete(objectToDelete)
                         self.logger.debug("Deleted history item: \(url)")
+                    } else {
+                        self.logger.warning("Could not find history item to delete: \(url)")
                     }
                 }
                 
-                // Update UI on main thread with debouncing
+                // Reload from database to ensure consistency
                 await MainActor.run {
-                    scheduleUIUpdate()
+                    loadRecentHistory()
                 }
             } catch {
                 logger.error("Failed to delete history item: \(error.localizedDescription)")
+                // Revert UI change on error
+                await MainActor.run {
+                    loadRecentHistory()
+                }
             }
         }
     }
     
-    /// Delete all history items from a specific date
+    /// Delete all history items from a specific date with immediate UI feedback
     func deleteHistory(from date: Date) {
         let startOfDay = Calendar.current.startOfDay(for: date)
         let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
         
-        let items = getHistory(from: startOfDay, to: endOfDay)
-        for item in items {
-            coreDataStack.viewContext.delete(item)
+        Task {
+            do {
+                let itemsToDelete = getHistory(from: startOfDay, to: endOfDay)
+                let itemIDs = itemsToDelete.map { $0.objectID }
+                
+                // Immediate UI update - remove from published array first
+                recentHistory.removeAll { item in
+                    itemIDs.contains(item.objectID)
+                }
+                
+                try await coreDataStack.performBackgroundTask { context in
+                    let request: NSFetchRequest<NSFetchRequestResult> = HistoryItem.fetchRequest()
+                    request.predicate = NSPredicate(format: "lastVisitDate >= %@ AND lastVisitDate <= %@", 
+                                                  startOfDay as NSDate, endOfDay as NSDate)
+                    
+                    let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
+                    deleteRequest.resultType = .resultTypeObjectIDs
+                    
+                    let result = try context.execute(deleteRequest) as? NSBatchDeleteResult
+                    let objectIDArray = result?.result as? [NSManagedObjectID] ?? []
+                    
+                    // Merge changes into view context
+                    let changes = [NSDeletedObjectsKey: objectIDArray]
+                    NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, 
+                                                      into: [self.coreDataStack.viewContext])
+                    
+                    self.logger.info("Deleted \(objectIDArray.count) history items from \(date)")
+                }
+                
+                // Reload to ensure consistency
+                await MainActor.run {
+                    loadRecentHistory()
+                }
+            } catch {
+                logger.error("Failed to delete history from date: \(error.localizedDescription)")
+                // Revert UI change on error
+                await MainActor.run {
+                    loadRecentHistory()
+                }
+            }
         }
-        
-        coreDataStack.save()
-        loadRecentHistory()
-        logger.info("Deleted \(items.count) history items from \(date)")
     }
     
-    /// Clear all history
+    /// Clear all history with immediate UI feedback
     func clearAllHistory() {
-        let request: NSFetchRequest<NSFetchRequestResult> = HistoryItem.fetchRequest()
-        let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
+        // Immediate UI update - clear published array first
+        recentHistory.removeAll()
         
-        do {
-            try coreDataStack.viewContext.execute(deleteRequest)
-            coreDataStack.save()
-            loadRecentHistory()
-            logger.info("Cleared all history")
-        } catch {
-            logger.error("Failed to clear history: \(error.localizedDescription)")
+        Task {
+            do {
+                try await coreDataStack.performBackgroundTask { context in
+                    let request: NSFetchRequest<NSFetchRequestResult> = HistoryItem.fetchRequest()
+                    let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
+                    deleteRequest.resultType = .resultTypeObjectIDs
+                    
+                    let result = try context.execute(deleteRequest) as? NSBatchDeleteResult
+                    let objectIDArray = result?.result as? [NSManagedObjectID] ?? []
+                    
+                    // Merge changes into view context for proper cleanup
+                    let changes = [NSDeletedObjectsKey: objectIDArray]
+                    NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, 
+                                                      into: [self.coreDataStack.viewContext])
+                    
+                    self.logger.info("Cleared \(objectIDArray.count) history items")
+                }
+                
+                // Reload to ensure consistency
+                await MainActor.run {
+                    loadRecentHistory()
+                }
+            } catch {
+                logger.error("Failed to clear history: \(error.localizedDescription)")
+                // Revert UI change on error
+                await MainActor.run {
+                    loadRecentHistory()
+                }
+            }
         }
     }
     
