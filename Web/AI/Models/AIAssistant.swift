@@ -94,26 +94,23 @@ class AIAssistant: ObservableObject {
             // Wait for MLX model to be ready
             updateStatus("Loading MLX AI model...")
             
-            // Simplified waiting since MLX handles downloads internally
-            let timeout = 180.0 // 3 minute timeout for model downloads
-            let startTime = Date()
-            
+            // Wait without timeout since MLX handles downloads internally
             while !(await mlxModelService.isAIReady()) {
-                // Check for timeout
-                if Date().timeIntervalSince(startTime) > timeout {
-                    throw MLXModelError.downloadFailed("MLX model loading timed out after \(timeout) seconds")
-                }
-                
                 // Check if download failed
                 if case .failed(let error) = await mlxModelService.downloadState {
                     throw MLXModelError.downloadFailed("MLX model download failed: \(error)")
                 }
                 
                 // Update UI with progress
-                updateStatus("Loading MLX AI model... (\(Int(Date().timeIntervalSince(startTime)))s)")
+                let progress = await mlxModelService.downloadProgress
+                if progress > 0 {
+                    updateStatus("Loading MLX AI model... (\(Int(progress * 100))%)")
+                } else {
+                    updateStatus("Loading MLX AI model...")
+                }
                 
-                // Brief wait - check every 1 second
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                // Brief wait - check every 0.5 seconds for more responsive UI
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
             }
             NSLog("✅ AI model is ready")
             
