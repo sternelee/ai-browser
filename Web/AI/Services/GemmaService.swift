@@ -107,7 +107,7 @@ class GemmaService {
 
             do {
                 // Use consistent prompt-based approach (conversation context already included in prompt)
-                let generatedText = try await SimplifiedMLXRunner.shared.generateWithPrompt(prompt: prompt, modelId: "llama3_2_1B_4bit")
+                let generatedText = try await SimplifiedMLXRunner.shared.generateWithPrompt(prompt: prompt, modelId: "gemma3_2B_4bit")
                 let cleaned = postProcessResponse(generatedText)
                 // Estimate token count for metrics (MLX handles tokenization internally)
                 let estimatedTokens = Int(Double(generatedText.count) / 3.5)
@@ -152,7 +152,7 @@ class GemmaService {
                     // MLX handles tokenization internally
                     
                     // Use MLXRunner for streaming with pre-built prompt that includes conversation context
-                    let textStream = await SimplifiedMLXRunner.shared.generateStreamWithPrompt(prompt: prompt, modelId: "llama3_2_1B_4bit")
+                    let textStream = await SimplifiedMLXRunner.shared.generateStreamWithPrompt(prompt: prompt, modelId: "gemma3_2B_4bit")
                     
                     var hasYieldedContent = false
                     var accumulatedResponse = ""

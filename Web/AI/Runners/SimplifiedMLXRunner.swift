@@ -16,14 +16,14 @@ final class SimplifiedMLXRunner: ObservableObject {
     private var currentModelId: String?
     
     // Use ModelRegistry for predefined configurations
-    private let defaultModelId = "llama3_2_1B_4bit"
+    private let defaultModelId = "gemma3_2B_4bit"
     
     private init() {
         NSLog("🤖 SimplifiedMLXRunner initialized")
     }
     
     /// Ensure model is loaded using ModelRegistry ID
-    func ensureLoaded(modelId: String = "llama3_2_1B_4bit") async throws {
+    func ensureLoaded(modelId: String = "gemma3_2B_4bit") async throws {
         // If already loaded with same model, return immediately
         if modelContainer != nil && currentModelId == modelId {
             NSLog("♻️ MLX model already loaded: \(modelId)")
@@ -46,6 +46,10 @@ final class SimplifiedMLXRunner: ObservableObject {
                 modelConfig = LLMRegistry.llama3_2_1B_4bit
             case "llama3_2_3B_4bit":
                 modelConfig = LLMRegistry.llama3_2_3B_4bit
+            case "gemma3_2B_4bit":
+                modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-2b-it-4bit")
+            case "gemma3_9B_4bit":
+                modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-9b-it-4bit")
             default:
                 // Fallback to custom configuration
                 modelConfig = ModelConfiguration(id: modelId)
@@ -72,7 +76,7 @@ final class SimplifiedMLXRunner: ObservableObject {
     }
     
     /// Generate text with simple prompt
-    func generateWithPrompt(prompt: String, modelId: String = "llama3_2_1B_4bit") async throws -> String {
+    func generateWithPrompt(prompt: String, modelId: String = "gemma3_2B_4bit") async throws -> String {
         try await ensureLoaded(modelId: modelId)
         
         guard let context = modelContainer else {
@@ -91,17 +95,22 @@ final class SimplifiedMLXRunner: ObservableObject {
                     topP: 0.9
                 )
                 
-                var fullResponse = ""
+                var allTokens: [Int] = []
                 
                 let _ = try MLXLMCommon.generate(
                     input: input,
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    // Decode all tokens to get properly spaced text
-                    fullResponse = modelContext.tokenizer.decode(tokens: tokens)
+                    // Accumulate all tokens
+                    if let token = tokens.last {
+                        allTokens.append(token)
+                    }
                     return .more
                 }
+                
+                // Decode all accumulated tokens at the end
+                let fullResponse = modelContext.tokenizer.decode(tokens: allTokens)
                 
                 return fullResponse
             }
@@ -138,6 +147,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
+                        var allTokens: [Int] = []
                         var lastText = ""
                         
                         let _ = try MLXLMCommon.generate(
@@ -145,8 +155,13 @@ final class SimplifiedMLXRunner: ObservableObject {
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            // Decode all tokens to get properly spaced text
-                            let currentText = modelContext.tokenizer.decode(tokens: tokens)
+                            // Accumulate all tokens
+                            if let token = tokens.last {
+                                allTokens.append(token)
+                            }
+                            
+                            // Decode all accumulated tokens to get properly spaced text
+                            let currentText = modelContext.tokenizer.decode(tokens: allTokens)
                             
                             // Only yield the new part
                             if currentText.count > lastText.count {
