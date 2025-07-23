@@ -46,6 +46,10 @@ struct ContentView: View {
             // Floating panels overlay
             PanelManager()
                 .allowsHitTesting(true)
+            
+            // Strategic window drag areas overlay
+            // These areas allow dragging from empty spaces without interfering with interactive content
+            WindowDragOverlay()
         }
         // CRITICAL FIX: Temporarily disable double-tap gesture to test input locking fix
         // This window-wide gesture may be consuming single taps preventing input focus
@@ -80,6 +84,117 @@ struct ContentView: View {
     }
 }
 
+
+/// Strategic window drag overlay that provides draggable areas without interfering with interactive content
+struct WindowDragOverlay: View {
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Corner drag areas - small triangular zones at corners for dragging
+                VStack {
+                    HStack {
+                        // Top-left corner drag area
+                        Triangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 40, height: 40)
+                        
+                        Spacer()
+                        
+                        // Top-right corner drag area
+                        Triangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 40, height: 40)
+                            .rotationEffect(.degrees(90))
+                    }
+                    
+                    Spacer()
+                    
+                    HStack {
+                        // Bottom-left corner drag area
+                        Triangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 40, height: 40)
+                            .rotationEffect(.degrees(-90))
+                        
+                        Spacer()
+                        
+                        // Bottom-right corner drag area  
+                        Triangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 40, height: 40)
+                            .rotationEffect(.degrees(180))
+                    }
+                }
+                
+                // Edge drag strips - thin areas along edges for dragging
+                VStack {
+                    // Top edge drag strip (excluding corners)
+                    HStack {
+                        Spacer().frame(width: 60) // Avoid corner
+                        Rectangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(height: 8)
+                        Spacer().frame(width: 60) // Avoid corner
+                    }
+                    
+                    Spacer()
+                    
+                    // Bottom edge drag strip (excluding corners)
+                    HStack {
+                        Spacer().frame(width: 60) // Avoid corner
+                        Rectangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(height: 8)
+                        Spacer().frame(width: 60) // Avoid corner
+                    }
+                }
+                
+                HStack {
+                    // Left edge drag strip (excluding corners and tab areas)
+                    VStack {
+                        Spacer().frame(height: 100) // Avoid top corner and sidebar tabs
+                        Rectangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 8)
+                        Spacer().frame(height: 60) // Avoid bottom corner
+                    }
+                    
+                    Spacer()
+                    
+                    // Right edge drag strip (excluding corners)
+                    VStack {
+                        Spacer().frame(height: 60) // Avoid top corner
+                        Rectangle()
+                            .fill(Color.clear)
+                            .background(WindowDragArea())
+                            .frame(width: 8)
+                        Spacer().frame(height: 60) // Avoid bottom corner
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(true)
+    }
+}
+
+/// Simple triangle shape for corner drag areas
+struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
 
 #Preview {
     ContentView()

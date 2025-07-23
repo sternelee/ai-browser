@@ -18,7 +18,7 @@ class ContextManager: ObservableObject {
     
     // MARK: - Properties
     
-    private let maxContentLength = 8000 // Increased for comprehensive content extraction
+    private let maxContentLength = 12000 // ENHANCED: Further increased for comprehensive multi-post analysis
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
@@ -164,6 +164,16 @@ class ContextManager: ObservableObject {
         let headings = data["headings"] as? [String] ?? []
         let links = data["links"] as? [String] ?? []
         let wordCount = data["wordCount"] as? Int ?? 0
+        let extractionMethod = data["extractionMethod"] as? String ?? "unknown"
+        let postCount = data["postCount"] as? Int ?? 0
+        let isMultiPost = data["isMultiPost"] as? Bool ?? false
+        
+        // ENHANCED: Log multi-post extraction results
+        if isMultiPost {
+            NSLog("🔥 Multi-post extraction: \(postCount) posts from \(URL(string: url)?.host ?? "unknown site")")
+        }
+        
+        NSLog("📊 Extraction method: \(extractionMethod), Posts: \(postCount), Content length: \(truncatedText.count)")
         
         return WebpageContext(
             url: url,
@@ -225,42 +235,100 @@ class ContextManager: ObservableObject {
                     }
                 }
                 
-                // ENHANCED: Extract comprehensive article content with priority
-                var contentSelectors = [
-                    // Primary content selectors (highest priority)
-                    'article', 'main', '[role="main"]', '.main-content', '#main-content',
-                    '.article-content', '.post-content', '.entry-content', '.content-area',
-                    
-                    // Reddit-specific selectors
-                    '[data-testid="post-content"]', '.usertext-body', '.md', '.Post',
-                    '.thing .usertext .md', '[data-click-id="text"]', '.RichTextJSON-root',
-                    
-                    // News site selectors  
-                    '.article-body', '.story-body', '.entry-body', '.post-body',
-                    '.article-text', '.story-content', '.article-wrap',
-                    
-                    // Blog selectors
-                    '.post', '.entry', '#content', '.content', '#main',
-                    
-                    // Documentation selectors
-                    '.documentation', '.docs', '.doc-content', '.readme',
-                    
-                    // Forum selectors
-                    '.message-body', '.post-message', '.forum-post'
-                ];
-                
+                // ENHANCED: Multi-post extraction for Reddit and forum sites
                 var extractedContent = "";
                 var contentFound = false;
+                var postCount = 0;
                 
-                // Try each selector in priority order
-                for (var i = 0; i < contentSelectors.length && !contentFound; i++) {
-                    var elements = document.querySelectorAll(contentSelectors[i]);
-                    for (var j = 0; j < elements.length; j++) {
-                        var element = elements[j];
-                        if (element && element.textContent && element.textContent.trim().length > 200) {
-                            extractedContent += element.textContent.trim() + "\\n\\n";
+                // SPECIAL HANDLING: Reddit multi-post extraction
+                if (url.includes('reddit.com')) {
+                    var redditPosts = document.querySelectorAll('[data-testid="post-content"], .thing, .Post, [data-click-id="text"], .usertext-body');
+                    
+                    for (var i = 0; i < Math.min(redditPosts.length, 20); i++) {
+                        var post = redditPosts[i];
+                        var postText = post.textContent || post.innerText || "";
+                        
+                        // Filter out short posts (likely metadata)
+                        if (postText.trim().length > 50) {
+                            postCount++;
+                            extractedContent += "POST " + postCount + ": " + postText.trim() + "\\n\\n";
                             contentFound = true;
-                            break; // Found substantial content, break inner loop
+                        }
+                    }
+                    
+                    // Also try to get Reddit comments
+                    if (postCount > 0) {
+                        var comments = document.querySelectorAll('.Comment, [data-testid="comment"], .usertext .md');
+                        var commentCount = 0;
+                        
+                        for (var i = 0; i < Math.min(comments.length, 15); i++) {
+                            var comment = comments[i];
+                            var commentText = comment.textContent || comment.innerText || "";
+                            
+                            if (commentText.trim().length > 30 && commentCount < 10) {
+                                commentCount++;
+                                extractedContent += "COMMENT " + commentCount + ": " + commentText.trim() + "\\n\\n";
+                            }
+                        }
+                    }
+                }
+                
+                // GENERAL MULTI-POST EXTRACTION: For other forum sites
+                if (!contentFound) {
+                    var multiPostSelectors = [
+                        // Forum post selectors
+                        '.message-body', '.post-message', '.forum-post', '.bb-post',
+                        '.post-content', '.message-content', '.topic-post',
+                        
+                        // General post selectors
+                        '.post', '.entry', '.article-item', '.content-item',
+                        '[class*="post"]', '[class*="message"]', '[class*="comment"]'
+                    ];
+                    
+                    for (var s = 0; s < multiPostSelectors.length && postCount < 15; s++) {
+                        var posts = document.querySelectorAll(multiPostSelectors[s]);
+                        
+                        for (var p = 0; p < posts.length && postCount < 15; p++) {
+                            var post = posts[p];
+                            var postText = post.textContent || post.innerText || "";
+                            
+                            if (postText.trim().length > 100) {
+                                postCount++;
+                                extractedContent += "POST " + postCount + ": " + postText.trim() + "\\n\\n";
+                                contentFound = true;
+                            }
+                        }
+                    }
+                }
+                
+                // FALLBACK: Single content extraction for traditional articles
+                if (!contentFound) {
+                    var singleContentSelectors = [
+                        // Primary content selectors (highest priority)
+                        'article', 'main', '[role="main"]', '.main-content', '#main-content',
+                        '.article-content', '.entry-content', '.content-area',
+                        
+                        // News site selectors  
+                        '.article-body', '.story-body', '.entry-body', '.post-body',
+                        '.article-text', '.story-content', '.article-wrap',
+                        
+                        // Blog selectors
+                        '#content', '.content', '#main',
+                        
+                        // Documentation selectors
+                        '.documentation', '.docs', '.doc-content', '.readme'
+                    ];
+                    
+                    // Try each selector in priority order
+                    for (var i = 0; i < singleContentSelectors.length && !contentFound; i++) {
+                        var elements = document.querySelectorAll(singleContentSelectors[i]);
+                        for (var j = 0; j < elements.length; j++) {
+                            var element = elements[j];
+                            if (element && element.textContent && element.textContent.trim().length > 200) {
+                                extractedContent += element.textContent.trim() + "\\n\\n";
+                                contentFound = true;
+                                break; // Found substantial content, break inner loop
+                            }
                         }
                     }
                 }
@@ -279,19 +347,26 @@ class ContextManager: ObservableObject {
                 // FINAL FALLBACK: Use body text if nothing else worked
                 var finalText = extractedContent.trim() || bodyText;
                 
-                // ENHANCED: Smart content cleaning and structuring
+                // ENHANCED: Smart content cleaning while preserving POST structure
                 finalText = finalText
-                    // Normalize whitespace but preserve paragraph breaks
+                    // Normalize whitespace but preserve paragraph breaks and POST markers
                     .replace(/[ \\t]+/g, ' ')
                     .replace(/\\n\\s*\\n/g, '\\n\\n')
-                    // Remove excessive line breaks (more than 2)
-                    .replace(/\\n{3,}/g, '\\n\\n')
+                    // Remove excessive line breaks (more than 2) but preserve POST boundaries
+                    .replace(/\\n{3,}(?!POST|COMMENT)/g, '\\n\\n')
                     // Clean up common web artifacts
                     .replace(/Share\\s*Copy link\\s*/gi, '')
                     .replace(/Advertisement\\s*/gi, '')
                     .replace(/Skip to content\\s*/gi, '')
                     .replace(/Continue reading\\s*/gi, '')
                     .replace(/Read more\\s*/gi, '')
+                    .replace(/Vote\\s*/gi, '')
+                    .replace(/Reply\\s*/gi, '')
+                    .replace(/permalink\\s*/gi, '')
+                    .replace(/embed\\s*/gi, '')
+                    .replace(/save\\s*/gi, '')
+                    .replace(/context\\s*/gi, '')
+                    .replace(/full comments\\s*/gi, '')
                     .trim();
                 
                 // Extract structured links for context
@@ -350,7 +425,9 @@ class ContextManager: ObservableObject {
                     wordCount: wordCount,
                     extractionTime: new Date().toISOString(),
                     contentLength: finalText.length,
-                    extractionMethod: contentFound ? 'structured' : 'fallback'
+                    extractionMethod: contentFound ? (postCount > 1 ? 'multi-post' : 'structured') : 'fallback',
+                    postCount: postCount, // NEW: Track how many posts were extracted
+                    isMultiPost: postCount > 1 // NEW: Flag for multi-post content
                 };
                 
             } catch (error) {

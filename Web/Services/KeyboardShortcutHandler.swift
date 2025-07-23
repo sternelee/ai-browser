@@ -14,11 +14,13 @@ class KeyboardShortcutHandler: ObservableObject {
     @Published var showHistoryPanel = false
     @Published var showBookmarksPanel = false
     @Published var showDownloadsPanel = false
+    @Published var showSettingsPanel = false
     
     // UI positioning for panels - using center-based coordinates that will be made safe by PanelManager
     @Published var historyPanelPosition = CGPoint(x: 400, y: 300)
     @Published var bookmarksPanelPosition = CGPoint(x: 450, y: 320)
     @Published var downloadsPanelPosition = CGPoint(x: 500, y: 340)
+    @Published var settingsPanelPosition = CGPoint(x: 550, y: 360)
     
     // Dependencies
     private let historyService = HistoryService.shared
@@ -50,6 +52,13 @@ class KeyboardShortcutHandler: ObservableObject {
                 self?.handleShowDownloads()
             }
             .store(in: &cancellables)
+        
+        // Settings shortcut (Cmd+,)
+        NotificationCenter.default.publisher(for: .showSettingsRequested)
+            .sink { [weak self] _ in
+                self?.handleShowSettings()
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Handler Methods
@@ -75,7 +84,7 @@ class KeyboardShortcutHandler: ObservableObject {
         // If showing panel, try to bookmark current page as well
         if showBookmarksPanel {
             NotificationCenter.default.post(
-                name: Notification.Name("BookmarkCurrentPageRequested"),
+                name: .bookmarkCurrentPageRequested,
                 object: nil
             )
         }
@@ -90,6 +99,12 @@ class KeyboardShortcutHandler: ObservableObject {
         // Log current downloads
         logger.debug("Active downloads: \(self.downloadManager.totalActiveDownloads)")
         logger.debug("Total downloads in history: \(self.downloadManager.downloadHistory.count)")
+    }
+    
+    /// Handle Cmd+, - Show Settings
+    private func handleShowSettings() {
+        showSettingsPanel.toggle()
+        logger.info("Settings panel toggled: \(self.showSettingsPanel)")
     }
     
     // MARK: - Public Interface

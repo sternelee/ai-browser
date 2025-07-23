@@ -145,10 +145,56 @@ struct PanelManager: View {
                     )
                     .zIndex(1)
             }
+            
+                // Settings Panel
+                if keyboardHandler.showSettingsPanel {
+                    SettingsView()
+                        .frame(
+                            width: max(700, min(geometry.size.width * 0.55, 900)),
+                            height: max(500, geometry.size.height * 0.85)
+                        )
+                        .position(
+                            x: calculateSafePosition(
+                                preferred: keyboardHandler.settingsPanelPosition.x + dragOffset.width,
+                                panelWidth: max(700, min(geometry.size.width * 0.55, 900)),
+                                containerWidth: geometry.size.width
+                            ),
+                            y: calculateSafePosition(
+                                preferred: keyboardHandler.settingsPanelPosition.y + dragOffset.height,
+                                panelWidth: max(500, geometry.size.height * 0.85),
+                                containerWidth: geometry.size.height
+                            )
+                        )
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.8).combined(with: .opacity),
+                        removal: .scale(scale: 0.9).combined(with: .opacity)
+                    ))
+                    .scaleEffect(isDragging ? 1.02 : 1.0)
+                    .shadow(color: .black.opacity(0.2), radius: isDragging ? 30 : 20)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if !isDragging {
+                                    isDragging = true
+                                }
+                                dragOffset = value.translation
+                            }
+                            .onEnded { value in
+                                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                                    keyboardHandler.settingsPanelPosition.x += value.translation.width
+                                    keyboardHandler.settingsPanelPosition.y += value.translation.height
+                                    dragOffset = .zero
+                                    isDragging = false
+                                }
+                            }
+                    )
+                    .zIndex(4)
+            }
             }
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showHistoryPanel)
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showBookmarksPanel)
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showDownloadsPanel)
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showSettingsPanel)
             .focusable()
             .onKeyPress(.escape) {
                 handleEscapeKey()
@@ -165,7 +211,7 @@ struct PanelManager: View {
     }
     
     /// Handle ESCAPE key to close panels with priority system
-    /// Priority: HoverableURLBar → History → Downloads → Bookmarks
+    /// Priority: HoverableURLBar → Settings → History → Downloads → Bookmarks
     private func handleEscapeKey() {
         // Reset the URLBar handled flag before processing
         urlBarHandledEscape = false
@@ -179,8 +225,12 @@ struct PanelManager: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             // Only proceed with panel closure if URLBar didn't handle the escape
             if !self.urlBarHandledEscape {
-                // Check and close panels in priority order
-                if self.keyboardHandler.showHistoryPanel {
+                // Check and close panels in priority order (Settings has highest priority among panels)
+                if self.keyboardHandler.showSettingsPanel {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        self.keyboardHandler.showSettingsPanel = false
+                    }
+                } else if self.keyboardHandler.showHistoryPanel {
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                         self.keyboardHandler.showHistoryPanel = false
                     }

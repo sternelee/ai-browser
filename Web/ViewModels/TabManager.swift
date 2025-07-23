@@ -41,6 +41,26 @@ class TabManager: ObservableObject {
     }
     
     @discardableResult
+    func createNewTabInBackground(url: URL? = nil, isIncognito: Bool = false) -> Tab {
+        let tab: Tab
+        
+        if isIncognito {
+            // Create incognito tab through IncognitoSession
+            tab = IncognitoSession.shared.createIncognitoTab(url: url)
+        } else {
+            tab = Tab(url: url, isIncognito: isIncognito)
+        }
+        
+        tabs.append(tab)
+        // Note: We do NOT call setActiveTab(tab) for background tabs
+        
+        // Manage memory by hibernating old tabs
+        manageTabMemory()
+        
+        return tab
+    }
+    
+    @discardableResult
     func createIncognitoTab(url: URL? = nil) -> Tab {
         return createNewTab(url: url, isIncognito: true)
     }

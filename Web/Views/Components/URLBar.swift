@@ -129,6 +129,7 @@ struct URLBar: View {
                 DownloadsButton()
                 ShareButton(urlString: urlString)
                 BookmarkButton(urlString: urlString)
+                AIToggleButton()
             }
         }
         .padding(.horizontal, 14)
@@ -499,6 +500,38 @@ struct URLBarActionButtonStyle: ButtonStyle {
             )
             .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// AI Toggle button component
+struct AIToggleButton: View {
+    @State private var hovering: Bool = false
+    @State private var isAISidebarExpanded: Bool = false
+    
+    var body: some View {
+        Button(action: toggleAISidebar) {
+            Image(systemName: "brain")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isAISidebarExpanded ? .accentColor : (hovering ? .textPrimary : .textSecondary))
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.hovering = hovering
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aISidebarStateChanged)) { notification in
+            if let expanded = notification.object as? Bool {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isAISidebarExpanded = expanded
+                }
+            }
+        }
+    }
+    
+    private func toggleAISidebar() {
+        NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
     }
 }
 
