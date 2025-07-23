@@ -207,6 +207,7 @@ struct BrowserCommands: Commands {
 // Notification names for keyboard shortcuts
 extension Notification.Name {
     static let newTabRequested = Notification.Name("newTabRequested")
+    static let newTabInBackgroundRequested = Notification.Name("newTabInBackgroundRequested")
     static let closeTabRequested = Notification.Name("closeTabRequested")
     static let reopenTabRequested = Notification.Name("reopenTabRequested")
     static let reloadRequested = Notification.Name("reloadRequested")
@@ -216,6 +217,8 @@ extension Notification.Name {
     static let bookmarkPageRequested = Notification.Name("bookmarkPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
+    static let dismissHoverableURLBar = Notification.Name("dismissHoverableURLBar")
+    static let hoverableURLBarDismissed = Notification.Name("hoverableURLBarDismissed")
     // Removed clearFocusForID - no longer needed with simplified focus
     
     // Phase 2: Next-Gen UI shortcuts
@@ -236,6 +239,7 @@ extension Notification.Name {
     // AI Assistant shortcuts
     static let toggleAISidebar = Notification.Name("toggleAISidebar")
     static let focusAIInput = Notification.Name("focusAIInput")
+    static let aISidebarStateChanged = Notification.Name("aISidebarStateChanged")
     
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift

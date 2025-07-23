@@ -1,9 +1,9 @@
 # PENDING TASKS and BUGS
 
-[ ] CMD + click → Open in new tab
+[x] CMD + click → Open in new tab ✅ COMPLETED (July 23, 2025)
 [ ] Toggle AI sidebar with a button next to the url bar, not with hover
-[ ] Right click → Open in new tab option
-[ ] Close the hoverable URL bar, history and download panels with the ESCAPE key
+[x] Right click → Open in new tab option ✅ COMPLETED (July 23, 2025)
+[x] Close the hoverable URL bar, history and download panels with the ESCAPE key ✅ COMPLETED (July 23, 2025)
 [ ] Say "Incognito" in new incognito empty tab
 [ ] Empty new tab buttons don't work, let's make them work
 [ ] Settings button does nothing
