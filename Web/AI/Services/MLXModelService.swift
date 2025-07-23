@@ -218,9 +218,27 @@ class MLXModelService: ObservableObject {
         do {
             // Try to ensure the model is loaded - this will trigger MLX to download if needed
             downloadState = .downloading
-            downloadProgress = 0.5
+            downloadProgress = 0.0
+            
+            // Monitor progress during loading
+            let progressTask = Task {
+                while !Task.isCancelled {
+                    let progress = await SimplifiedMLXRunner.shared.loadProgress
+                    await MainActor.run {
+                        self.downloadProgress = Double(progress)
+                    }
+                    
+                    if progress >= 1.0 {
+                        break
+                    }
+                    
+                    try await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1 seconds
+                }
+            }
             
             try await SimplifiedMLXRunner.shared.ensureLoaded(modelId: model.modelId)
+            
+            progressTask.cancel()
             
             // If we got here, the model is ready
             isModelReady = true
@@ -251,29 +269,30 @@ class MLXModelService: ObservableObject {
         NSLog("💡 This is a one-time download - future app launches will be instant")
         
         do {
-            // Use MLXRunner to load the model - it will handle downloading automatically
+            // Connect to SimplifiedMLXRunner progress updates
             downloadTask = Task {
-                // Simulate progress updates while MLX handles the download
-                for progress in stride(from: 0.0, through: 0.9, by: 0.1) {
+                // Monitor SimplifiedMLXRunner's loadProgress
+                while !Task.isCancelled {
+                    let progress = await SimplifiedMLXRunner.shared.loadProgress
                     await MainActor.run {
-                        self.downloadProgress = progress
+                        self.downloadProgress = Double(progress)
                     }
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second intervals
+                    
+                    // Check if loading is complete
+                    if progress >= 1.0 {
+                        break
+                    }
+                    
+                    try await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1 seconds
                 }
             }
             
-            // Start the actual model loading
+            // Start the actual model loading - this will update loadProgress automatically
             try await SimplifiedMLXRunner.shared.ensureLoaded(modelId: model.modelId)
             
-            // Cancel the progress simulation
+            // Cancel the progress monitoring
             downloadTask?.cancel()
             downloadTask = nil
-            
-            downloadState = .validating
-            downloadProgress = 0.95
-            
-            // Brief validation pause
-            try await Task.sleep(nanoseconds: 500_000_000)
             
             isModelReady = true
             downloadState = .ready
