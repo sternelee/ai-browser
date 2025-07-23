@@ -62,6 +62,22 @@ class MLXModelService: ObservableObject {
             estimatedSizeGB: 1.9,
             modelKey: "llama3_2_3B_4bit"
         )
+        
+        // Gemma 2 2B 4-bit configuration (high quality, compact)
+        static let gemma3_2B_4bit = MLXModelConfiguration(
+            name: "Gemma 2 2B 4-bit (MLX)",
+            modelId: "gemma3_2B_4bit",
+            estimatedSizeGB: 1.4,
+            modelKey: "gemma3_2B_4bit"
+        )
+        
+        // Gemma 2 9B 4-bit configuration (highest quality)
+        static let gemma3_9B_4bit = MLXModelConfiguration(
+            name: "Gemma 2 9B 4-bit (MLX)", 
+            modelId: "gemma3_9B_4bit",
+            estimatedSizeGB: 5.2,
+            modelKey: "gemma3_9B_4bit"
+        )
     }
     
     // MARK: - Properties
@@ -74,7 +90,7 @@ class MLXModelService: ObservableObject {
     init() {
         // Set default model configuration  
         Task { @MainActor in
-            currentModel = MLXModelConfiguration.llama3_2_1B_4bit
+            currentModel = MLXModelConfiguration.gemma3_2B_4bit
         }
         
         // Immediately check for existing model on initialization
