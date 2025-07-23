@@ -1,13 +1,12 @@
 # PENDING TASKS and BUGS
 
-[ ] Change the AI sidebar icon from one star to many stars icon or similar
-[ ] 'Page content available' should update on every page change, right now as you change pages it doesn't change
+[ ] 'Page context available' im not sure if its taking all the text in the page correctly, please review, it doesnt seem like it, we need to do smart context engineering to optimize context but its important that we give all the important info to the model
 [ ] In the AI responses, before responding the 3 dots are duplicated, not animated properly, and badly layouted. Also after the AI responses the message flickers in a loop forever, and we still see one of the 3 dots moving up and down
-[ ] AI working bad
-[ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url
-[ ] Lets add the ai sidebar toggle in the new tab screen
-[ ] Overlay panels like history, settings, etc show a weird square with accent border wrapping them
+[ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url, should always show the current page, its critical that this is correct
+[ ] The AI is not utilizing well all resources, the app barely has any cpu and memory usage when i ask a question. Also we have the callback streaming disabled bc it doesnt work, but would be better to remove it alltogether. Let's make sure this is robust, research internet for references.
+[ ] Overlay panels like history, settings, etc show a weird square with blue accent border wrapping them
 [ ] If there is no internet connection the page gets reloaded in a loop forever, we need a page for internet connection missing.
+[ ] Let's ensure there are 0 warnings when building
 
 --
 
