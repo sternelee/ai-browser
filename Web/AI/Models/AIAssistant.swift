@@ -19,7 +19,7 @@ class AIAssistant: ObservableObject {
     // MARK: - Dependencies
     
     private let mlxWrapper: MLXWrapper
-    private let onDemandModelService: OnDemandModelService
+    private let mlxModelService: MLXModelService
     private let privacyManager: PrivacyManager
     private let conversationHistory: ConversationHistory
     private let gemmaService: GemmaService
@@ -37,7 +37,6 @@ class AIAssistant: ObservableObject {
     init(tabManager: TabManager? = nil) {
         // Initialize dependencies
         self.mlxWrapper = MLXWrapper()
-        self.onDemandModelService = OnDemandModelService()
         self.privacyManager = PrivacyManager()
         self.conversationHistory = ConversationHistory()
         self.contextManager = ContextManager.shared
@@ -47,17 +46,16 @@ class AIAssistant: ObservableObject {
         // Get optimal configuration for current hardware
         self.aiConfiguration = HardwareDetector.getOptimalAIConfiguration()
         
-        // Initialize Gemma service with configuration and shared services
+        // Initialize MLX service and Gemma service after super.init equivalent
+        self.mlxModelService = MLXModelService()
         self.gemmaService = GemmaService(
             configuration: aiConfiguration,
             mlxWrapper: mlxWrapper,
             privacyManager: privacyManager,
-            onDemandModelService: onDemandModelService
+            mlxModelService: mlxModelService
         )
         
-        // Set up bindings
-        setupBindings()
-        
+        // Set up bindings - will be called async in initialize
         NSLog("🤖 AI Assistant initialized with \(aiConfiguration.framework) framework")
     }
     
@@ -82,52 +80,40 @@ class AIAssistant: ObservableObject {
             updateStatus("Validating hardware compatibility...")
             try validateHardware()
             
-            // CRITICAL FIX: Model checking must be SEQUENTIAL to prevent race conditions
-            // Multiple parallel tasks were causing model deletion conflicts
-            updateStatus("Checking AI model availability...")
-            if !onDemandModelService.isAIReady() {
-                updateStatus("AI model not found - preparing download...")
+            // Model checking for MLX models
+            updateStatus("Checking MLX AI model availability...")
+            if !(await mlxModelService.isAIReady()) {
+                updateStatus("MLX AI model not found - preparing download...")
                 
-                let downloadInfo = onDemandModelService.getDownloadInfo()
-                NSLog("🔽 AI model needs to be downloaded: \(downloadInfo.formattedSize)")
+                let downloadInfo = await mlxModelService.getDownloadInfo()
+                NSLog("🔽 MLX AI model needs to be downloaded: \(downloadInfo.formattedSize)")
                 
-                try await onDemandModelService.initializeAI()
+                try await mlxModelService.initializeAI()
             }
             
-            // CRITICAL FIX: Move model checking OFF main thread to prevent input locking
-            updateStatus("Loading AI model...")
+            // Wait for MLX model to be ready
+            updateStatus("Loading MLX AI model...")
             
-            // Move the blocking polling loop to background thread
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                Task.detached(priority: .background) { [weak self] in
-                    let timeout = 60.0 // 60 second timeout
-                    let startTime = Date()
-                    
-                    while !(self?.onDemandModelService.isAIReady() ?? false) {
-                        // Check for timeout
-                        if Date().timeIntervalSince(startTime) > timeout {
-                            continuation.resume(throwing: ModelError.downloadFailed("Model loading timed out after \(timeout) seconds"))
-                            return
-                        }
-                        
-                        // Check if download failed
-                        if case .failed(let error) = self?.onDemandModelService.downloadState {
-                            continuation.resume(throwing: ModelError.downloadFailed("Model download failed: \(error)"))
-                            return
-                        }
-                        
-                        // Sleep in background thread - won't block main thread
-                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second polling
-                        
-                        // Update UI periodically from background
-                        await MainActor.run {
-                            self?.updateStatus("Loading AI model... (\(Int(Date().timeIntervalSince(startTime)))s)")
-                        }
-                    }
-                    
-                    // Model is ready - resume continuation
-                    continuation.resume()
+            // Simplified waiting since MLX handles downloads internally
+            let timeout = 180.0 // 3 minute timeout for model downloads
+            let startTime = Date()
+            
+            while !(await mlxModelService.isAIReady()) {
+                // Check for timeout
+                if Date().timeIntervalSince(startTime) > timeout {
+                    throw MLXModelError.downloadFailed("MLX model loading timed out after \(timeout) seconds")
                 }
+                
+                // Check if download failed
+                if case .failed(let error) = await mlxModelService.downloadState {
+                    throw MLXModelError.downloadFailed("MLX model download failed: \(error)")
+                }
+                
+                // Update UI with progress
+                updateStatus("Loading MLX AI model... (\(Int(Date().timeIntervalSince(startTime)))s)")
+                
+                // Brief wait - check every 1 second
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
             }
             NSLog("✅ AI model is ready")
             
@@ -139,7 +125,7 @@ class AIAssistant: ObservableObject {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
                         do {
-                            await self.updateStatus("Initializing MLX framework...")
+                            self.updateStatus("Initializing MLX framework...")
                             try await self.mlxWrapper.initialize()
                         } catch {
                             NSLog("❌ MLX initialization failed: \(error)")
@@ -151,7 +137,7 @@ class AIAssistant: ObservableObject {
                 group.addTask { [weak self] in
                     guard let self = self else { return }
                     do {
-                        await self.updateStatus("Setting up privacy protection...")
+                        self.updateStatus("Setting up privacy protection...")
                         try await self.privacyManager.initialize()
                     } catch {
                         NSLog("❌ Privacy manager initialization failed: \(error)")
@@ -164,6 +150,11 @@ class AIAssistant: ObservableObject {
             try await gemmaService.initialize()
             
             // Context processing will be added in Phase 11
+            
+            // Setup bindings now that everything is initialized
+            Task { @MainActor in
+                self.setupBindings()
+            }
             
             // Mark as initialized
             Task { @MainActor in
@@ -292,13 +283,15 @@ class AIAssistant: ObservableObject {
                     }
                     
                     var fullResponse = ""
+                    let fullResponseBox = Box("")
                     
                     for try await chunk in stream {
-                        fullResponse += chunk
+                        fullResponseBox.value += chunk
+                        fullResponse = fullResponseBox.value
                         
                         // Update UI streaming text
                         await MainActor.run {
-                            streamingText = fullResponse
+                            streamingText = fullResponseBox.value
                         }
                         
                         continuation.yield(chunk)
@@ -352,9 +345,9 @@ class AIAssistant: ObservableObject {
     func clearConversation() {
         conversationHistory.clear()
         
-        // OPTIMIZATION: Also reset LLMRunner conversation state
+        // OPTIMIZATION: Also reset MLXRunner conversation state
         Task {
-            await LLMRunner.shared.resetConversation()
+            await SimplifiedMLXRunner.shared.resetConversation()
         }
         
         NSLog("🗑️ Conversation cleared")
@@ -470,18 +463,19 @@ class AIAssistant: ObservableObject {
         }
     }
     
+    @MainActor
     private func setupBindings() {
         // Bind conversation history changes - SwiftUI automatically handles UI updates for @Published properties
         conversationHistory.$messageCount
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+            .sink { _ in
                 // SwiftUI automatically triggers UI updates when @Published properties change
                 // Removed manual objectWillChange.send() to prevent unnecessary re-renders
             }
             .store(in: &cancellables)
         
-        // Bind on-demand model status  
-        onDemandModelService.$isModelReady
+        // Bind MLX model status  
+        mlxModelService.$isModelReady
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isReady in
                 Task { @MainActor [weak self] in
@@ -489,18 +483,20 @@ class AIAssistant: ObservableObject {
                         self?.isInitialized = false
                     }
                 }
-                self?.updateStatus("AI model not available")
+                if !isReady {
+                    self?.updateStatus("MLX AI model not available")
+                }
             }
             .store(in: &cancellables)
         
         // Bind download progress for status updates
-        onDemandModelService.$downloadProgress
+        mlxModelService.$downloadProgress
             .receive(on: DispatchQueue.main)
             .removeDuplicates()
             .sink { [weak self] progress in
                 if progress > 0 && progress < 1.0 {
-                    NSLog("🎯 DOWNLOAD DEBUG: Model download progress: \(progress * 100)% - updating status")
-                    self?.updateStatus("Downloading AI model: \(Int(progress * 100))%")
+                    NSLog("🎯 MLX DOWNLOAD DEBUG: Model download progress: \(progress * 100)% - updating status")
+                    self?.updateStatus("Downloading MLX AI model: \(Int(progress * 100))%")
                 }
             }
             .store(in: &cancellables)
