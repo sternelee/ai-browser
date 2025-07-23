@@ -7,6 +7,7 @@
 [ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url
 [ ] Lets add the ai sidebar toggle in the new tab screen
 [ ] Overlay panels like history, settings, etc show a weird square with accent border wrapping them
+[ ] If there is no internet connection the page gets reloaded in a loop forever, we need a page for internet connection missing.
 
 --
 
