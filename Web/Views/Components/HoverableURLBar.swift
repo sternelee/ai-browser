@@ -231,6 +231,10 @@ struct HoverableURLBar: View {
         }
         .onAppear {
             updateDisplayString()
+            setupNotificationHandlers()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dismissHoverableURLBar)) { _ in
+            handleDismissRequest()
         }
         // Removed complex focus coordinator - using native SwiftUI focus
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isVisible)
@@ -324,6 +328,32 @@ struct HoverableURLBar: View {
             hideTimer = nil
             initialShowTimer?.invalidate()
             initialShowTimer = nil
+        }
+    }
+    
+    /// Setup notification handlers for ESCAPE key dismissal
+    private func setupNotificationHandlers() {
+        // Notification handlers are managed by onReceive in the body
+        // This function is kept for consistency and future expansion
+    }
+    
+    /// Handle dismiss request from ESCAPE key
+    private func handleDismissRequest() {
+        // Handle different states with priority: suggestions first, then URL bar
+        if !suggestions.isEmpty && isURLBarFocused {
+            // Clear suggestions first if they're visible
+            suggestions = []
+            // Post notification that HoverableURLBar handled the escape
+            NotificationCenter.default.post(name: .hoverableURLBarDismissed, object: nil)
+        } else if isVisible && isURLBarFocused {
+            // Then dismiss URL bar if focused
+            isURLBarFocused = false
+            suggestions = []
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                isVisible = false
+            }
+            // Post notification that HoverableURLBar handled the escape
+            NotificationCenter.default.post(name: .hoverableURLBarDismissed, object: nil)
         }
     }
     

@@ -6,6 +6,7 @@ struct PanelManager: View {
     @ObservedObject private var keyboardHandler = KeyboardShortcutHandler.shared
     @State private var dragOffset = CGSize.zero
     @State private var isDragging = false
+    @State private var urlBarHandledEscape = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -148,6 +149,51 @@ struct PanelManager: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showHistoryPanel)
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showBookmarksPanel)
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: keyboardHandler.showDownloadsPanel)
+            .focusable()
+            .onKeyPress(.escape) {
+                handleEscapeKey()
+                return .handled
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .hoverableURLBarDismissed)) { _ in
+                urlBarHandledEscape = true
+                // Reset after a short delay to ensure proper state management
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    urlBarHandledEscape = false
+                }
+            }
+        }
+    }
+    
+    /// Handle ESCAPE key to close panels with priority system
+    /// Priority: HoverableURLBar → History → Downloads → Bookmarks
+    private func handleEscapeKey() {
+        // Reset the URLBar handled flag before processing
+        urlBarHandledEscape = false
+        
+        // First, try to dismiss HoverableURLBar with notification
+        // This gives it highest priority
+        NotificationCenter.default.post(name: .dismissHoverableURLBar, object: nil)
+        
+        // Use a small delay to allow HoverableURLBar to handle the dismissal first
+        // and update the urlBarHandledEscape flag
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            // Only proceed with panel closure if URLBar didn't handle the escape
+            if !self.urlBarHandledEscape {
+                // Check and close panels in priority order
+                if self.keyboardHandler.showHistoryPanel {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        self.keyboardHandler.showHistoryPanel = false
+                    }
+                } else if self.keyboardHandler.showDownloadsPanel {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        self.keyboardHandler.showDownloadsPanel = false
+                    }
+                } else if self.keyboardHandler.showBookmarksPanel {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                        self.keyboardHandler.showBookmarksPanel = false
+                    }
+                }
+            }
         }
     }
     
