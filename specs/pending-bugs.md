@@ -2,8 +2,7 @@
 
 [ ] Change the AI sidebar icon from one star to many stars icon or similar
 [ ] 'Page content available' should update on every page change, right now as you change pages it doesn't change
-
-[ ] Before streaming the 3 dots are duplicated, not animated, and badly layouted.
+[ ] In the AI responses, before responding the 3 dots are duplicated, not animated properly, and badly layouted. Also after the AI responses the message flickers in a loop forever, and we still see one of the 3 dots moving up and down
 [ ] AI working bad
 [ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url
 [ ] Lets add the ai sidebar toggle in the new tab screen
