@@ -27,7 +27,7 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 - **Privacy Settings**: Granular privacy controls
 
 ### AI Integration
-- **Local AI Models**: On-device AI powered by [LLM.swift](https://github.com/eastriverlee/LLM.swift)
+- **Local AI Models**: On-device AI powered by [Apple MLX](https://github.com/ml-explore/mlx)
 - **MLX Framework**: Apple Silicon optimized inference
 - **Privacy-First**: AI processing happens locally on your device
 - **Smart Assistance**: Integrated AI sidebar for web content analysis
@@ -73,15 +73,15 @@ Web/
 
 - **TabManager**: Handles tab lifecycle and hibernation
 - **WebView**: SwiftUI wrapper around WKWebView
-- **LLMRunner**: Local AI model execution
+- **MLXRunner**: Local AI model execution
 - **DownloadManager**: File download handling
 - **BookmarkService**: Bookmark management
 
 ## AI Features
 
-Web integrates local AI capabilities using the LLM.swift framework:
+Web integrates local AI capabilities using Apple's MLX framework:
 
-- **Framework**: [LLM.swift v1.8.0](https://github.com/eastriverlee/LLM.swift)
+- **Framework**: [Apple MLX](https://github.com/ml-explore/mlx)
 - **Models**: Gemma and other compatible models
 - **Inference**: MLX-optimized for Apple Silicon
 - **Privacy**: All AI processing happens locally
@@ -117,7 +117,7 @@ Web integrates local AI capabilities using the LLM.swift framework:
 
 ## Dependencies
 
-- [LLM.swift](https://github.com/eastriverlee/LLM.swift) - Local language model inference for Apple platforms
+- [Apple MLX](https://github.com/ml-explore/mlx) - Machine learning framework for Apple Silicon
 - WebKit - Apple's web rendering engine
 - Core Data - Local data persistence
 - Combine - Reactive programming framework
@@ -128,7 +128,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- [LLM.swift](https://github.com/eastriverlee/LLM.swift) by eastriverlee for local AI capabilities
+- [Apple MLX](https://github.com/ml-explore/mlx) by Apple for optimized machine learning on Apple Silicon
 - Apple's WebKit team for the excellent web rendering engine
 - The Swift community for SwiftUI and modern iOS/macOS development patterns
 
