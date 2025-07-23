@@ -24,6 +24,6 @@ SOFTWARE.
 
 This project includes the following third-party dependencies:
 
-LLM.swift (https://github.com/eastriverlee/LLM.swift)
+Apple MLX (https://github.com/ml-explore/mlx)
 Licensed under the MIT License
-Copyright (c) 2023 eastriverlee
+Copyright (c) 2023 Apple Inc.

@@ -98,8 +98,8 @@ final class SimplifiedMLXRunner: ObservableObject {
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    let text = modelContext.tokenizer.decode(tokens: tokens)
-                    fullResponse = text
+                    // Decode all tokens to get properly spaced text
+                    fullResponse = modelContext.tokenizer.decode(tokens: tokens)
                     return .more
                 }
                 
@@ -138,17 +138,20 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
-                        var lastResponse = ""
+                        var lastText = ""
                         
                         let _ = try MLXLMCommon.generate(
                             input: input,
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            let currentResponse = modelContext.tokenizer.decode(tokens: tokens)
-                            if currentResponse.count > lastResponse.count {
-                                let newText = String(currentResponse.dropFirst(lastResponse.count))
-                                lastResponse = currentResponse
+                            // Decode all tokens to get properly spaced text
+                            let currentText = modelContext.tokenizer.decode(tokens: tokens)
+                            
+                            // Only yield the new part
+                            if currentText.count > lastText.count {
+                                let newText = String(currentText.dropFirst(lastText.count))
+                                lastText = currentText
                                 continuation.yield(newText)
                             }
                             return .more
