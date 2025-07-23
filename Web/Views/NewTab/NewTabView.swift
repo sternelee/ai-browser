@@ -9,6 +9,7 @@ struct NewTabView: View {
     @State private var recentlyClosed: [String] = []
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchHovered: Bool = false
+    @State private var isAISidebarExpanded: Bool = false
     
     // Initialize with optional tab for incognito detection
     init(tab: Tab? = nil) {
@@ -52,6 +53,13 @@ struct NewTabView: View {
             // Auto-focus search bar when new tab opens
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isSearchFocused = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aISidebarStateChanged)) { notification in
+            if let expanded = notification.object as? Bool {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isAISidebarExpanded = expanded
+                }
             }
         }
     }
@@ -186,6 +194,14 @@ struct NewTabView: View {
                 title: "Downloads"
             ) {
                 KeyboardShortcutHandler.shared.showDownloadsPanel = true
+            }
+            
+            MinimalActionCard(
+                icon: "sparkles",
+                title: "AI Assistant",
+                isActive: isAISidebarExpanded
+            ) {
+                NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
             }
         }
     }
@@ -325,19 +341,27 @@ struct MinimalActionCard: View {
     let icon: String
     let title: String
     let action: () -> Void
+    let isActive: Bool
     
     @State private var isHovered: Bool = false
+    
+    init(icon: String, title: String, isActive: Bool = false, action: @escaping () -> Void) {
+        self.icon = icon
+        self.title = title
+        self.action = action
+        self.isActive = isActive
+    }
     
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(isHovered ? .primary : .secondary)
+                    .foregroundColor(isActive ? .accentColor : (isHovered ? .primary : .secondary))
                 
                 Text(title)
                     .font(.system(.caption2, weight: .medium))
-                    .foregroundColor(isHovered ? .primary : .secondary)
+                    .foregroundColor(isActive ? .accentColor : (isHovered ? .primary : .secondary))
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
