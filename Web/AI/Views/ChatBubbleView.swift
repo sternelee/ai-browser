@@ -7,8 +7,7 @@ struct ChatBubbleView: View {
     let isStreaming: Bool
     let streamingText: String
     
-    // Animation state for streaming indicator
-    @State private var animationPhase: Double = 0
+    // REMOVED: Animation state - now using unified LoadingDotsView component
     
     // Computed properties
     private var isUserMessage: Bool {
@@ -45,15 +44,8 @@ struct ChatBubbleView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
-        .animation(.easeInOut(duration: 0.2), value: displayText)
-        .onAppear {
-            startStreamingAnimation()
-        }
-        .onChange(of: isStreaming) { newValue in
-            if newValue {
-                startStreamingAnimation()
-            }
-        }
+        // REMOVED: .animation(.easeInOut(duration: 0.2), value: displayText) - caused flickering on every character change
+        // REMOVED: Streaming animation management - now handled by unified LoadingDotsView
     }
     
     // MARK: - User Message Bubble
@@ -232,7 +224,7 @@ struct ChatBubbleView: View {
             )
     }
     
-    // MARK: - Streaming Indicator
+    // MARK: - Unified Streaming Indicator
     
     @ViewBuilder
     private func streamingIndicator() -> some View {
@@ -241,34 +233,11 @@ struct ChatBubbleView: View {
                 Spacer()
                 HStack {
                     Spacer()
-                    HStack(spacing: 3) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(Color.green.opacity(0.6))
-                                .frame(width: 4, height: 4)
-                                .scaleEffect(streamingDotScale(for: index))
-                        }
-                    }
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 6)
+                    LoadingDotsView(dotColor: .green.opacity(0.6), dotSize: 4, spacing: 3)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 6)
                 }
             }
-        }
-    }
-    
-    private func streamingDotScale(for index: Int) -> CGFloat {
-        if !isStreaming { return 1.0 }
-        return 1.0 + sin(animationPhase + Double(index) * 0.8) * 0.5
-    }
-    
-    private func startStreamingAnimation() {
-        guard isStreaming else { return }
-        
-        withAnimation(
-            .linear(duration: 2.0)
-                .repeatForever(autoreverses: false)
-        ) {
-            animationPhase = .pi * 2
         }
     }
     

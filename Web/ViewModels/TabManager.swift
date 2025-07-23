@@ -126,7 +126,22 @@ class TabManager: ObservableObject {
         tab.isActive = true
         tab.wakeUp() // Wake up if hibernated
         
+        // CRITICAL: Immediately update URLSynchronizer for instant URL bar updates
+        URLSynchronizer.shared.updateFromTabSwitch(
+            tabID: tab.id,
+            url: tab.url,
+            title: tab.title,
+            isLoading: tab.isLoading,
+            progress: tab.estimatedProgress,
+            isHibernated: tab.isHibernated
+        )
+        
         // Notify that the active tab changed (for AI context status updates)
+        NotificationCenter.default.post(
+            name: .tabDidBecomeActive,
+            object: tab
+        )
+        
         NotificationCenter.default.post(
             name: .pageNavigationCompleted,
             object: tab.id

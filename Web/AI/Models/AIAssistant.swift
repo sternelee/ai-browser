@@ -12,8 +12,8 @@ class AIAssistant: ObservableObject {
     @MainActor @Published var initializationStatus: String = "Not initialized"
     @MainActor @Published var lastError: String?
     
-    // STREAMING UI STATE
-    @MainActor @Published var currentStreamingMessageId: String?
+    // UNIFIED ANIMATION STATE - prevents conflicts between typing/streaming indicators
+    @MainActor @Published var animationState: AIAnimationState = .idle
     @MainActor @Published var streamingText: String = ""
     
     // MARK: - Dependencies
@@ -285,9 +285,9 @@ class AIAssistant: ObservableObject {
                     )
                     conversationHistory.addMessage(aiMessage)
                     
-                    // Set up streaming UI state
+                    // Set up unified streaming animation state
                     await MainActor.run {
-                        currentStreamingMessageId = aiMessage.id
+                        animationState = .streaming(messageId: aiMessage.id)
                         streamingText = ""
                     }
                     
@@ -307,9 +307,9 @@ class AIAssistant: ObservableObject {
                     // FIX: Update the empty message with the final streamed content
                     conversationHistory.updateMessage(id: aiMessage.id, newContent: fullResponse)
                     
-                    // Clear streaming UI state when done
+                    // Clear unified animation state when done
                     await MainActor.run {
-                        currentStreamingMessageId = nil
+                        animationState = .idle
                         streamingText = ""
                     }
                     
@@ -319,11 +319,11 @@ class AIAssistant: ObservableObject {
                     NSLog("❌ Streaming error occurred: \(error)")
                     
                     // Get the message ID before clearing state
-                    let messageId = await currentStreamingMessageId
+                    let messageId = await animationState.streamingMessageId
                     
-                    // Clear streaming state on error
+                    // Clear unified animation state on error
                     await MainActor.run {
-                        currentStreamingMessageId = nil
+                        animationState = .idle
                         streamingText = ""
                     }
                     
@@ -471,12 +471,12 @@ class AIAssistant: ObservableObject {
     }
     
     private func setupBindings() {
-        // Bind conversation history changes to trigger UI updates
+        // Bind conversation history changes - SwiftUI automatically handles UI updates for @Published properties
         conversationHistory.$messageCount
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                // Trigger UI update by changing a published property
-                self?.objectWillChange.send()
+                // SwiftUI automatically triggers UI updates when @Published properties change
+                // Removed manual objectWillChange.send() to prevent unnecessary re-renders
             }
             .store(in: &cancellables)
         
@@ -530,6 +530,37 @@ class AIAssistant: ObservableObject {
 }
 
 // MARK: - Supporting Types
+
+/// Unified animation state for AI responses to prevent conflicts
+enum AIAnimationState: Equatable {
+    case idle
+    case typing
+    case streaming(messageId: String)
+    case processing
+    
+    var isActive: Bool {
+        switch self {
+        case .idle:
+            return false
+        case .typing, .streaming, .processing:
+            return true
+        }
+    }
+    
+    var isStreaming: Bool {
+        if case .streaming = self {
+            return true
+        }
+        return false
+    }
+    
+    var streamingMessageId: String? {
+        if case .streaming(let messageId) = self {
+            return messageId
+        }
+        return nil
+    }
+}
 
 /// AI system status information
 struct AISystemStatus {

@@ -9,7 +9,6 @@ struct AISidebar: View {
     @StateObject private var aiAssistant: AIAssistant
     @State private var isExpanded: Bool = false
     @State private var chatInput: String = ""
-    @State private var autoCollapseTimer: Timer?
     @FocusState private var isChatInputFocused: Bool
     @State private var showingPrivacySettings: Bool = false
     @State private var includeHistoryContext: Bool = true
@@ -17,15 +16,12 @@ struct AISidebar: View {
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
     
-    // TYPING INDICATOR STATE (streaming state now managed by AIAssistant)
-    @State private var isShowingTypingIndicator: Bool = false
-    @State private var typingAnimationPhase: Double = 0
+    // REMOVED: Old typing indicator state - now using unified AIAnimationState from AIAssistant
     
     // Configuration
     private let collapsedWidth: CGFloat = 4
     private let expandedWidth: CGFloat = 320
     private let maxExpandedWidth: CGFloat = 480
-    private let autoCollapseDelay: TimeInterval = 30.0
     
     // Initializer
     init(tabManager: TabManager) {
@@ -171,10 +167,6 @@ struct AISidebar: View {
             }
             .buttonStyle(PlainButtonStyle())
             .opacity(0.7)
-            .onHover { hovering in
-                // Reset auto-collapse timer on interaction
-                resetAutoCollapseTimer()
-            }
         }
         .frame(height: 40)
         .padding(.bottom, 8)
@@ -194,20 +186,19 @@ struct AISidebar: View {
                         // Show placeholder when no messages
                         chatMessagesPlaceholder()
                     } else {
-                        // Display actual chat messages with streaming support
+                        // Display actual chat messages with unified streaming support
                         ForEach(aiAssistant.messages) { message in
                             ChatBubbleView(
                                 message: message,
-                                isStreaming: aiAssistant.currentStreamingMessageId == message.id,
-                                streamingText: aiAssistant.currentStreamingMessageId == message.id ? aiAssistant.streamingText : ""
+                                isStreaming: aiAssistant.animationState.streamingMessageId == message.id,
+                                streamingText: aiAssistant.animationState.streamingMessageId == message.id ? aiAssistant.streamingText : ""
                             )
                             .id(message.id)
                         }
                         
-                        // Show typing indicator when AI is processing but no message created yet
-                        // OR when we have a streaming message but the UI might need transition help
-                        if isShowingTypingIndicator || (aiAssistant.currentStreamingMessageId != nil && aiAssistant.streamingText.isEmpty) {
-                            typingIndicatorView()
+                        // Show unified typing indicator when AI is in typing state
+                        if aiAssistant.animationState == .typing {
+                            unifiedTypingIndicatorView()
                         }
                     }
                 }
@@ -260,18 +251,18 @@ struct AISidebar: View {
                                     .rotationEffect(.degrees(initSpinnerRotation))
                                     .onAppear {
                                         if !aiAssistant.isInitialized {
-                                            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                                                 initSpinnerRotation = 360
                                             }
                                         }
                                     }
                                     .onChange(of: aiAssistant.isInitialized) { _, isInitialized in
                                         if !isInitialized {
-                                            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                                                 initSpinnerRotation = 360
                                             }
                                         } else {
-                                            withAnimation(.easeOut(duration: 0.5)) {
+                                            withAnimation(.easeOut(duration: 0.3)) {
                                                 initSpinnerRotation = 0
                                             }
                                         }
@@ -420,10 +411,10 @@ struct AISidebar: View {
         }
     }
     
-    // MARK: - Typing Indicator
+    // MARK: - Unified Typing Indicator
     
     @ViewBuilder
-    private func typingIndicatorView() -> some View {
+    private func unifiedTypingIndicatorView() -> some View {
         HStack(alignment: .bottom, spacing: 6) {
             // AI avatar
             Circle()
@@ -444,51 +435,20 @@ struct AISidebar: View {
                         .foregroundColor(.green)
                 )
             
-            // Typing indicator bubble
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(Color.secondary.opacity(0.6))
-                        .frame(width: 6, height: 6)
-                        .scaleEffect(typingDotScale(for: index))
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(.ultraThinMaterial)
-                    .opacity(0.9)
-            )
-            .onAppear {
-                startTypingAnimation()
-            }
-            .onChange(of: isShowingTypingIndicator) { _, newValue in
-                if newValue {
-                    startTypingAnimation()
-                }
-            }
+            // Unified typing indicator bubble with LoadingDotsView
+            LoadingDotsView(dotColor: .secondary.opacity(0.6), dotSize: 6, spacing: 4)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.9)
+                )
             
             Spacer(minLength: 32)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
-    }
-    
-    private func typingDotScale(for index: Int) -> CGFloat {
-        if !isShowingTypingIndicator { return 0.8 }
-        return 0.8 + 0.4 * abs(sin(typingAnimationPhase + Double(index) * 0.5))
-    }
-    
-    private func startTypingAnimation() {
-        guard isShowingTypingIndicator else { return }
-        
-        withAnimation(
-            .linear(duration: 1.5)
-                .repeatForever(autoreverses: false)
-        ) {
-            typingAnimationPhase = .pi * 2
-        }
     }
     
     // MARK: - Chat Input Area
@@ -572,10 +532,6 @@ struct AISidebar: View {
         }
         .frame(minHeight: 44)
         .padding(.top, 12)
-        .onTapGesture {
-            // Reset auto-collapse timer on interaction
-            resetAutoCollapseTimer()
-        }
     }
     
     // MARK: - Background Styling
@@ -649,13 +605,11 @@ struct AISidebar: View {
         NotificationCenter.default.post(name: .aISidebarStateChanged, object: isExpanded)
         
         if isExpanded {
-            startAutoCollapseTimer()
             // Focus input after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 isChatInputFocused = true
             }
         } else {
-            stopAutoCollapseTimer()
             isChatInputFocused = false
         }
     }
@@ -669,8 +623,6 @@ struct AISidebar: View {
         
         // Broadcast state change for button synchronization
         NotificationCenter.default.post(name: .aISidebarStateChanged, object: true)
-        
-        startAutoCollapseTimer()
         
         // Focus input after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -688,7 +640,6 @@ struct AISidebar: View {
         // Broadcast state change for button synchronization
         NotificationCenter.default.post(name: .aISidebarStateChanged, object: false)
         
-        stopAutoCollapseTimer()
         isChatInputFocused = false
     }
     
@@ -703,11 +654,8 @@ struct AISidebar: View {
         let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         chatInput = ""
         
-        // Reset auto-collapse timer on interaction
-        resetAutoCollapseTimer()
-        
-        // Show typing indicator immediately
-        isShowingTypingIndicator = true
+        // Set typing state immediately using unified animation system
+        aiAssistant.animationState = .typing
         
         // Process message with AI Assistant using streaming for ChatGPT-like experience
         Task {
@@ -715,20 +663,10 @@ struct AISidebar: View {
                 // Start streaming response with history context option
                 let stream = aiAssistant.processStreamingQuery(message, includeContext: true, includeHistory: includeHistoryContext)
                 
-                // Process streaming response
+                // Process streaming response - AIAssistant now manages state transitions automatically
                 var fullResponse = ""
-                var hasStartedStreaming = false
                 for try await chunk in stream {
                     fullResponse += chunk
-                    
-                    // Hide typing indicator after first chunk arrives
-                    if !hasStartedStreaming {
-                        await MainActor.run {
-                            isShowingTypingIndicator = false
-                        }
-                        hasStartedStreaming = true
-                    }
-                    
                     NSLog("🌊 Streaming token: \(chunk) (total: \(fullResponse.count) chars)")
                 }
                 
@@ -737,44 +675,18 @@ struct AISidebar: View {
             } catch {
                 NSLog("❌ Streaming failed: \(error)")
                 
-                // Hide typing indicator on error
+                // Clear animation state on error (AIAssistant handles this but ensure cleanup)
                 await MainActor.run {
-                    isShowingTypingIndicator = false
+                    if aiAssistant.animationState == .typing {
+                        aiAssistant.animationState = .idle
+                    }
                 }
                 
-                // Don't attempt fallback to avoid duplicate messages
-                // The AIAssistant error handling already updates the message
-                NSLog("ℹ️ Streaming error handled by AIAssistant - no fallback needed")
+                NSLog("ℹ️ Streaming error handled by AIAssistant - cleanup completed")
             }
         }
     }
     
-    // MARK: - Auto-collapse Timer Management
-    
-    private func startAutoCollapseTimer() {
-        NSLog("🎯 TIMER DEBUG: Starting auto-collapse timer (\(autoCollapseDelay)s)")
-        stopAutoCollapseTimer()
-        autoCollapseTimer = Timer.scheduledTimer(withTimeInterval: autoCollapseDelay, repeats: false) { _ in
-            NSLog("🎯 TIMER DEBUG: Auto-collapse timer fired - expanded: \(self.isExpanded), focused: \(self.isChatInputFocused)")
-            if self.isExpanded && !self.isChatInputFocused {
-                NSLog("🎯 TIMER DEBUG: Auto-collapsing sidebar due to timer")
-                self.collapseSidebar()
-            } else {
-                NSLog("🎯 TIMER DEBUG: Not auto-collapsing - conditions not met")
-            }
-        }
-    }
-    
-    private func resetAutoCollapseTimer() {
-        if isExpanded {
-            startAutoCollapseTimer()
-        }
-    }
-    
-    private func stopAutoCollapseTimer() {
-        autoCollapseTimer?.invalidate()
-        autoCollapseTimer = nil
-    }
 }
 
 // MARK: - AI Status Indicator Component
@@ -813,20 +725,22 @@ struct AIStatusIndicator: View {
                         .frame(width: 12, height: 12)
                         .rotationEffect(.degrees(rotationAngle))
                         .onAppear {
-                            // Start continuous rotation when processing begins
-                            withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                                rotationAngle = 360
+                            // Start continuous rotation when processing begins - using standard 1.5s timing
+                            if isProcessing {
+                                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                                    rotationAngle = 360
+                                }
                             }
                         }
                         .onChange(of: isProcessing) { _, newValue in
                             if newValue {
-                                // Start spinning when processing begins
+                                // Start spinning when processing begins - consistent 1.5s timing
                                 withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                                     rotationAngle = 360
                                 }
                             } else {
-                                // Stop spinning when processing ends
-                                withAnimation(.easeOut(duration: 0.5)) {
+                                // Stop spinning when processing ends - quick 0.3s cleanup
+                                withAnimation(.easeOut(duration: 0.3)) {
                                     rotationAngle = 0
                                 }
                             }

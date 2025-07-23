@@ -1,4 +1,6 @@
 import SwiftUI
+import WebKit
+import Foundation
 
 enum TabDisplayMode: String, CaseIterable {
     case sidebar = "sidebar"
@@ -20,169 +22,171 @@ struct TabDisplayView: View {
     @State private var showTopTabTemporary: Bool = false
     
     var body: some View {
+        mainView
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displayMode)
+            .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isEdgeToEdgeMode)
+            .animation(.easeInOut(duration: 0.2), value: showSidebarOnHover)
+            .animation(.easeInOut(duration: 0.2), value: showTopBarOnHover)
+            .onReceive(NotificationCenter.default.publisher(for: .toggleTabDisplay)) { _ in
+                toggleTabDisplay()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
+                toggleEdgeToEdgeMode()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
+                tabManager.createNewTab()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .newTabInBackgroundRequested)) { notification in
+                if let userInfo = notification.userInfo,
+                   let url = userInfo["url"] as? URL {
+                    tabManager.createNewTabInBackground(url: url)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .closeTabRequested)) { _ in
+                if let activeTab = tabManager.activeTab {
+                    tabManager.closeTab(activeTab)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reopenTabRequested)) { _ in
+                _ = tabManager.reopenLastClosedTab()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .nextTabRequested)) { _ in
+                tabManager.selectNextTab()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .previousTabRequested)) { _ in
+                tabManager.selectPreviousTab()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .selectTabByNumber)) { notification in
+                if let number = notification.object as? Int {
+                    tabManager.selectTabByNumber(number)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .createNewTabWithURL)) { notification in
+                if let url = notification.object as? URL {
+                    tabManager.createNewTab(url: url)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
+                hideTopBar.toggle()
+                if hideTopBar {
+                    startTopTabAutoHideTimer()
+                } else {
+                    topTabAutoHideTimer?.invalidate()
+                    showTopTabTemporary = false
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) { notification in
+                if let url = notification.object as? URL {
+                    if let activeTab = tabManager.activeTab {
+                        activeTab.navigate(to: url)
+                    } else {
+                        _ = tabManager.createNewTab(url: url)
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reloadRequested)) { _ in
+                if let activeTab = tabManager.activeTab {
+                    activeTab.reload()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusAddressBarRequested)) { _ in
+                NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .bookmarkCurrentPageRequested)) { _ in
+                handleBookmarkCurrentPage()
+            }
+            .onAppear {
+                startTopTabAutoHideTimer()
+            }
+            .onDisappear {
+                hideTimer?.invalidate()
+                topTabAutoHideTimer?.invalidate()
+            }
+    }
+    
+    private var mainView: some View {
         GeometryReader { geometry in
             ZStack {
-                // Main content area
-                VStack(spacing: 0) {
-                    // Top bar tabs (with borderless auto-hide behavior)
-                    if displayMode == .topBar && shouldShowTopTab {
-                        TopBarTabView(tabManager: tabManager)
-                            .frame(height: 40)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                    
-                    // Web content
-                    HStack(spacing: 0) {
-                        // Sidebar tabs (if enabled and not edge-to-edge)
-                        if displayMode == .sidebar && (!isEdgeToEdgeMode || showSidebarOnHover) {
-                            SidebarTabView(tabManager: tabManager)
-                                .frame(width: 50)
-                                .transition(.move(edge: .leading).combined(with: .opacity))
-                                .opacity(isEdgeToEdgeMode && !showSidebarOnHover ? 0 : 1)
-                                .onHover { hovering in
-                                    if isEdgeToEdgeMode {
-                                        handleSidebarHover(hovering)
-                                    }
-                                }
-                        }
-                        
-                        // Main web content
-                        WebContentArea(tabManager: tabManager)
-                            .clipped()
-                        
-                        // AI Assistant sidebar (right side)
-                        AISidebar(tabManager: tabManager)
-                    }
-                }
-                
-                // Hoverable URL bar overlay (when top bar is hidden or in edge-to-edge mode)
-                if hideTopBar || isEdgeToEdgeMode {
-                    VStack {
-                        if let activeTab = tabManager.activeTab, let url = activeTab.url {
-                            HoverableURLBar(
-                                urlString: .constant(url.absoluteString),
-                                themeColor: activeTab.themeColor,
-                                onSubmit: { urlString in
-                                    // Handle URL submission
-                                    if let newURL = URL(string: urlString) {
-                                        activeTab.navigate(to: newURL)
-                                    }
-                                },
-                                pageTitle: activeTab.isIncognito ? "🥷 \(activeTab.title)" : activeTab.title,
-                                tabManager: tabManager
-                            )
-                        } else {
-                            HoverableURLBar(
-                                urlString: .constant(""),
-                                themeColor: nil,
-                                onSubmit: { urlString in
-                                    if let url = URL(string: urlString) {
-                                        _ = tabManager.createNewTab(url: url)
-                                    }
-                                },
-                                pageTitle: "New Tab",
-                                tabManager: tabManager
-                            )
-                        }
-                        Spacer()
+                contentArea
+                urlBarOverlay
+            }
+        }
+    }
+    
+    private var contentArea: some View {
+        VStack(spacing: 0) {
+            topBarSection
+            webContentSection
+        }
+    }
+    
+    @ViewBuilder
+    private var topBarSection: some View {
+        if displayMode == .topBar && shouldShowTopTab {
+            TopBarTabView(tabManager: tabManager)
+                .frame(height: 40)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+    
+    private var webContentSection: some View {
+        HStack(spacing: 0) {
+            sidebarSection
+            WebContentArea(tabManager: tabManager)
+                .clipped()
+            AISidebar(tabManager: tabManager)
+        }
+    }
+    
+    @ViewBuilder
+    private var sidebarSection: some View {
+        if displayMode == .sidebar && (!isEdgeToEdgeMode || showSidebarOnHover) {
+            SidebarTabView(tabManager: tabManager)
+                .frame(width: 50)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+                .opacity(isEdgeToEdgeMode && !showSidebarOnHover ? 0 : 1)
+                .onHover { hovering in
+                    if isEdgeToEdgeMode {
+                        handleSidebarHover(hovering)
                     }
                 }
+        }
+    }
+    
+    @ViewBuilder
+    private var urlBarOverlay: some View {
+        if hideTopBar || isEdgeToEdgeMode {
+            VStack {
+                urlBarContent
+                Spacer()
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displayMode)
-        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isEdgeToEdgeMode)
-        .animation(.easeInOut(duration: 0.2), value: showSidebarOnHover)
-        .animation(.easeInOut(duration: 0.2), value: showTopBarOnHover)
-        .onReceive(NotificationCenter.default.publisher(for: .toggleTabDisplay)) { _ in
-            toggleTabDisplay()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
-            toggleEdgeToEdgeMode()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
-            tabManager.createNewTab()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .newTabInBackgroundRequested)) { notification in
-            if let userInfo = notification.userInfo,
-               let url = userInfo["url"] as? URL {
-                tabManager.createNewTabInBackground(url: url)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .newIncognitoTabRequested)) { _ in
-            tabManager.createIncognitoTab()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeTabRequested)) { _ in
-            if let activeTab = tabManager.activeTab {
-                tabManager.closeTab(activeTab)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reopenTabRequested)) { _ in
-            _ = tabManager.reopenLastClosedTab()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nextTabRequested)) { _ in
-            tabManager.selectNextTab()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .previousTabRequested)) { _ in
-            tabManager.selectPreviousTab()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .selectTabByNumber)) { notification in
-            if let number = notification.object as? Int {
-                tabManager.selectTabByNumber(number)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .createNewTabWithURL)) { notification in
-            if let url = notification.object as? URL {
-                tabManager.createNewTab(url: url)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
-            hideTopBar.toggle()
-            // Restart auto-hide timer when entering borderless mode
-            if hideTopBar {
-                startTopTabAutoHideTimer()
-            } else {
-                topTabAutoHideTimer?.invalidate()
-                showTopTabTemporary = false
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) { notification in
-            if let url = notification.object as? URL {
-                if let activeTab = tabManager.activeTab {
-                    activeTab.navigate(to: url)
-                } else {
-                    _ = tabManager.createNewTab(url: url)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reloadRequested)) { _ in
-            if let activeTab = tabManager.activeTab {
-                activeTab.reload()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .focusAddressBarRequested)) { _ in
-            // Focus the URL bar - we'll need to implement this with a focus coordinator
-            NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .bookmarkCurrentPageRequested)) { _ in
-            handleBookmarkCurrentPage()
-        }
-        // TODO: Restore these notification handlers once SwiftUI type-checking is resolved
-        // .onReceive(NotificationCenter.default.publisher(for: .showHistoryRequested)) { _ in
-        //     handleHistoryRequest()
-        // }
-        // .onReceive(NotificationCenter.default.publisher(for: .bookmarkPageRequested)) { _ in
-        //     handleBookmarkRequest()
-        // }
-        // .onReceive(NotificationCenter.default.publisher(for: .showDownloadsRequested)) { _ in
-        //     handleDownloadsRequest()
-        // }
-        .onAppear {
-            startTopTabAutoHideTimer()
-        }
-        .onDisappear {
-            // Critical: Clean up all timers to prevent memory leaks and performance issues
-            hideTimer?.invalidate()
-            topTabAutoHideTimer?.invalidate()
+    }
+    
+    @ViewBuilder
+    private var urlBarContent: some View {
+        if let activeTab = tabManager.activeTab {
+            HoverableURLBar(
+                tabID: activeTab.id,
+                themeColor: activeTab.themeColor,
+                onSubmit: { urlString in
+                    if let newURL = URL(string: urlString) {
+                        activeTab.navigate(to: newURL)
+                    }
+                },
+                tabManager: tabManager
+            )
+        } else {
+            HoverableURLBar(
+                tabID: UUID(),
+                themeColor: nil,
+                onSubmit: { urlString in
+                    if let url = URL(string: urlString) {
+                        _ = tabManager.createNewTab(url: url)
+                    }
+                },
+                tabManager: tabManager
+            )
         }
     }
     
@@ -357,10 +361,17 @@ struct WebContentArea: View {
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
-    @State private var urlString: String = ""
+    
+    // Use centralized URL synchronizer
+    @ObservedObject private var urlSynchronizer = URLSynchronizer.shared
+    
+    // Network error handling state
+    @State private var showNoInternetPage: Bool = false
+    @State private var networkError: Error?
+    @State private var failedURL: URL?
     
     // Helper to determine if tab is in browsing mode (not new tab mode)
-    private func isTabInBrowsingMode(_ tab: Tab) -> Bool {
+    private func isTabInBrowsingMode(_ tab: Web.Tab) -> Bool {
         return tab.url != nil || tab.isLoading || (tab.title != "New Tab" && !tab.title.isEmpty)
     }
     
@@ -370,16 +381,56 @@ struct WebContentArea: View {
         return isTabInBrowsingMode(activeTab)
     }
     
-    // Simplified URL string binding to prevent synchronization loops that cause Google issues
-    private var currentURLString: Binding<String> {
-        Binding(
-            get: {
-                return urlString
-            },
-            set: { newValue in
-                urlString = newValue
+    // MARK: - Network Error Handling Methods
+    
+    private func handleNoInternetConnectionNotification(_ notification: Notification) {
+        // Check if this notification is for the current active tab
+        guard let activeTab = tabManager.activeTab,
+              let notificationTabID = notification.object as? UUID,
+              notificationTabID == activeTab.id else {
+            return
+        }
+        
+        // Extract error and URL information from notification
+        if let userInfo = notification.userInfo {
+            networkError = userInfo["error"] as? Error
+            failedURL = userInfo["url"] as? URL
+        }
+        
+        // Show the no internet page with animation
+        withAnimation(.easeInOut(duration: 0.4)) {
+            showNoInternetPage = true
+        }
+    }
+    
+    private func retryConnection() {
+        guard let activeTab = tabManager.activeTab else { return }
+        
+        let networkMonitor = NetworkConnectivityMonitor.shared
+        
+        // Check network connectivity before retrying
+        if networkMonitor.hasInternetConnection {
+            // Hide the no internet page
+            withAnimation(.easeInOut(duration: 0.4)) {
+                showNoInternetPage = false
             }
-        )
+            
+            // Clear error state
+            networkError = nil
+            failedURL = nil
+            
+            // Retry loading the page
+            if let url = failedURL ?? activeTab.url {
+                activeTab.navigate(to: url)
+            } else {
+                // If no URL to retry, reload current page
+                activeTab.reload()
+            }
+        } else {
+            // Still no internet connection - shake animation or show error
+            // For now, just keep showing the no internet page
+            NSLog("🔴 Retry attempted but still no internet connection")
+        }
     }
     
     var body: some View {
@@ -393,18 +444,22 @@ struct WebContentArea: View {
                         NavigationControls(tab: activeTab)
                     }
                     
-                    // URL bar with reduced height and theme color
-                    URLBar(
-                        urlString: currentURLString, 
-                        themeColor: tabManager.activeTab?.themeColor,
-                        onSubmit: navigateToURL,
-                        pageTitle: {
-                            if let activeTab = tabManager.activeTab {
-                                return activeTab.isIncognito ? "🥷 \(activeTab.title)" : activeTab.title
-                            }
-                            return "New Tab"
-                        }()
-                    )
+                    // URL bar with URLSynchronizer integration
+                    Group {
+                        if let activeTab = tabManager.activeTab {
+                            URLBar(
+                                tabID: activeTab.id,
+                                themeColor: activeTab.themeColor,
+                                onSubmit: navigateToURL
+                            )
+                        } else {
+                            URLBar(
+                                tabID: UUID(), // Temporary ID for new tab creation
+                                themeColor: nil,
+                                onSubmit: navigateToURL
+                            )
+                        }
+                    }
                     .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 16)
@@ -520,10 +575,23 @@ struct WebContentArea: View {
                 )
             }
             
-            // Web content with smart status bar overlay
+            // Web content with smart status bar overlay and network error handling
             ZStack(alignment: .bottom) {
-                if let activeTab = tabManager.activeTab {
-                    WebContentView(tab: activeTab, urlString: currentURLString)
+                if showNoInternetPage {
+                    // Show no internet connection page
+                    NoInternetConnectionView(
+                        onRetry: {
+                            retryConnection()
+                        },
+                        onGoBack: {
+                            showNoInternetPage = false
+                            networkError = nil
+                            failedURL = nil
+                        }
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                } else if let activeTab = tabManager.activeTab {
+                    WebContentView(tab: activeTab)
                 } else {
                     NewTabView()
                 }
@@ -531,22 +599,29 @@ struct WebContentArea: View {
         }
         .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onReceive(NotificationCenter.default.publisher(for: .showNoInternetConnection)) { notification in
+            handleNoInternetConnectionNotification(notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
+            isEdgeToEdgeMode.toggle()
+        }
         .background(
             // Add drag area to the padding/margin area around web content
             WindowDragArea(allowsHitTesting: false) // Don't interfere with content clicks
                 .background(Color.clear)
         )
         .padding(2) // 2px margin as requested
-        .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
-            isEdgeToEdgeMode.toggle()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleTopBar)) { _ in
-            // This ensures both components stay in sync
-        }
         .onAppear {
-            // Initialize with a default URL if needed
-            if let firstTab = tabManager.tabs.first, firstTab.url == nil {
-                navigateToURL("google.com")
+            // Sync with URLSynchronizer on appear
+            if let activeTab = tabManager.activeTab {
+                URLSynchronizer.shared.updateFromTabSwitch(
+                    tabID: activeTab.id,
+                    url: activeTab.url,
+                    title: activeTab.title,
+                    isLoading: activeTab.isLoading,
+                    progress: activeTab.estimatedProgress,
+                    isHibernated: activeTab.isHibernated
+                )
             }
         }
     }
@@ -591,6 +666,4 @@ struct WebContentArea: View {
         
         return false
     }
-    
-    
 }

@@ -251,6 +251,9 @@ extension Notification.Name {
     static let aISidebarStateChanged = Notification.Name("aISidebarStateChanged")
     static let pageNavigationCompleted = Notification.Name("pageNavigationCompleted")
     
+    // Network error handling shortcuts
+    static let showNoInternetConnection = Notification.Name("showNoInternetConnection")
+    
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
 }

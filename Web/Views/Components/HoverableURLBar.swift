@@ -2,10 +2,9 @@ import SwiftUI
 import AppKit
 
 struct HoverableURLBar: View {
-    @Binding var urlString: String
+    let tabID: UUID
     let themeColor: NSColor?
     let onSubmit: (String) -> Void
-    let pageTitle: String
     let tabManager: TabManager
     @State private var isVisible: Bool = false
     @State private var hideTimer: Timer?
@@ -13,9 +12,9 @@ struct HoverableURLBar: View {
     @FocusState private var isURLBarFocused: Bool
     @State private var editingText: String = ""
     @State private var suggestions: [SearchSuggestion] = []
-    @State private var displayString: String = ""
     
-    // Simplified - use native SwiftUI focus management
+    // Use centralized URL synchronizer for state management
+    @ObservedObject private var urlSynchronizer = URLSynchronizer.shared
     
     struct SearchSuggestion: Identifiable {
         let id = UUID()
@@ -35,61 +34,34 @@ struct HoverableURLBar: View {
         return .clear
     }
     
-    // Simple binding for display text using state variable
-    private var displayText: Binding<String> {
+    // Simplified display text logic using URLSynchronizer
+    private var displayText: String {
+        if isURLBarFocused {
+            return editingText
+        } else {
+            // For hoverable URL bar, show the full URL instead of the cleaned version
+            return urlSynchronizer.currentURL
+        }
+    }
+    
+    // Editable binding for input field
+    private var editableText: Binding<String> {
         Binding(
-            get: { 
-                if isURLBarFocused {
-                    return editingText
-                } else {
-                    return displayString
-                }
-            },
+            get: { self.displayText },
             set: { newValue in
-                if isURLBarFocused {
-                    editingText = newValue
-                } else {
-                    displayString = newValue
+                self.editingText = newValue
+                if self.isURLBarFocused {
+                    self.updateSuggestions(for: newValue)
                 }
             }
         )
     }
     
-    // Update display string based on current state
-    private func updateDisplayString() {
-        guard !isURLBarFocused else { return }
-        
-        if !pageTitle.isEmpty && pageTitle != "New Tab" && !urlString.isEmpty {
-            displayString = pageTitle
-        } else if !urlString.isEmpty {
-            displayString = cleanDisplayURL(urlString)
-        } else {
-            displayString = ""
+    private func syncWithURLSynchronizer() {
+        // Initialize editing text when focus is gained
+        if isURLBarFocused && editingText.isEmpty {
+            editingText = urlSynchronizer.currentURL
         }
-    }
-    
-    // Clean URL for display (remove protocol, www, etc.)
-    private func cleanDisplayURL(_ url: String) -> String {
-        var cleanURL = url
-        
-        // Remove protocol
-        if cleanURL.hasPrefix("https://") {
-            cleanURL = String(cleanURL.dropFirst(8))
-        } else if cleanURL.hasPrefix("http://") {
-            cleanURL = String(cleanURL.dropFirst(7))
-        }
-        
-        // Remove www.
-        if cleanURL.hasPrefix("www.") {
-            cleanURL = String(cleanURL.dropFirst(4))
-        }
-        
-        // Remove trailing slash
-        if cleanURL.hasSuffix("/") {
-            cleanURL = String(cleanURL.dropLast())
-        }
-        
-        return cleanURL
     }
     
     var body: some View {
@@ -101,10 +73,10 @@ struct HoverableURLBar: View {
                 if isVisible {
                     HStack(spacing: 12) {
                         // Security indicator
-                        SecurityIndicator(urlString: urlString)
+                        SecurityIndicator(urlString: urlSynchronizer.currentURL)
                         
                         // URL input field
-                        TextField("Search Google or enter website", text: displayText)
+                        TextField("Search Google or enter website", text: editableText)
                             .textFieldStyle(.plain)
                             .font(.webBody)
                             .foregroundColor(.textPrimary)
@@ -116,7 +88,7 @@ struct HoverableURLBar: View {
                             }
                             .onChange(of: isURLBarFocused) { _, focused in
                                 if focused {
-                                    editingText = urlString
+                                    syncWithURLSynchronizer()
                                     // Keep visible when focused
                                     cancelHideTimer()
                                 } else {
@@ -124,18 +96,6 @@ struct HoverableURLBar: View {
                                     scheduleHide()
                                     suggestions = []
                                 }
-                            }
-                            .onChange(of: urlString) { _, newURL in
-                                if !isURLBarFocused {
-                                    editingText = newURL
-                                }
-                                updateDisplayString()
-                            }
-                            .onChange(of: pageTitle) { _, _ in
-                                updateDisplayString()
-                            }
-                            .onChange(of: editingText) { _, newValue in
-                                updateSuggestions(for: newValue)
                             }
                         
                         // Clear button
@@ -185,7 +145,7 @@ struct HoverableURLBar: View {
                             })
                             
                             AIToggleButton()
-                            BookmarkButton(urlString: urlString)
+                            BookmarkButton()
                         }
                     }
                     .padding(.horizontal, 16)
@@ -230,7 +190,7 @@ struct HoverableURLBar: View {
             handleHover(hovering)
         }
         .onAppear {
-            updateDisplayString()
+            syncWithURLSynchronizer()
             setupNotificationHandlers()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dismissHoverableURLBar)) { _ in
@@ -358,8 +318,19 @@ struct HoverableURLBar: View {
     }
     
     private func navigateToURL() {
-        let inputText = editingText.isEmpty ? urlString : editingText
+        let inputText = editingText.isEmpty ? urlSynchronizer.currentURL : editingText
         guard !inputText.isEmpty else { return }
+        
+        // Update URLSynchronizer with user input
+        let finalURL: String
+        if isValidURL(inputText) {
+            finalURL = inputText.hasPrefix("http") ? inputText : "https://\(inputText)"
+        } else {
+            let searchQuery = inputText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            finalURL = "https://www.google.com/search?q=\(searchQuery)"
+        }
+        
+        urlSynchronizer.updateFromUserInput(urlString: finalURL, tabID: tabID)
         
         // Navigate to URL or perform search
         if isValidURL(inputText) {
@@ -559,10 +530,9 @@ struct SimpleActionButton: View {
 
 #Preview {
     HoverableURLBar(
-        urlString: .constant("https://www.google.com"),
+        tabID: UUID(),
         themeColor: nil,
         onSubmit: { _ in },
-        pageTitle: "Google",
         tabManager: TabManager()
     )
     .frame(width: 800, height: 600)
