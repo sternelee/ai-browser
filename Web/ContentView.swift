@@ -48,7 +48,8 @@ struct ContentView: View {
                 .allowsHitTesting(true)
             
             // Strategic window drag areas overlay
-            // These areas allow dragging from empty spaces without interfering with interactive content
+            // These areas allow dragging from empty spaces while *not* blocking clicks on sidebar tabs
+            // or custom window controls.
             WindowDragOverlay()
         }
         // CRITICAL FIX: Temporarily disable double-tap gesture to test input locking fix
@@ -95,10 +96,10 @@ struct WindowDragOverlay: View {
                 // Corner drag areas - small triangular zones at corners for dragging
                 VStack {
                     HStack {
-                        // Top-left corner drag area
+                        // Top-left corner drag area (hit-test transparent to keep window controls clickable)
                         Triangle()
                             .fill(Color.clear)
-                            .background(WindowDragArea())
+                            .background(WindowDragArea(allowsHitTesting: false))
                             .frame(width: 40, height: 40)
                         
                         Spacer()
@@ -163,7 +164,7 @@ struct WindowDragOverlay: View {
                         Spacer().frame(height: 100) // Avoid top corner and sidebar tabs
                         Rectangle()
                             .fill(Color.clear)
-                            .background(WindowDragArea())
+                            .background(WindowDragArea(allowsHitTesting: false))
                             .frame(width: 8)
                         Spacer().frame(height: 60) // Avoid bottom corner
                     }

@@ -86,15 +86,15 @@ class WindowDragAreaView: NSView {
             super.mouseDown(with: event)
             return
         }
-        
-        // Ensure we have a valid window for dragging
-        guard let window = window else {
-            super.mouseDown(with: event)
+
+        // Handle double-click to zoom/restore window size just like the standard title-bar
+        if event.clickCount == 2 {
+            window?.zoom(nil)
             return
         }
         
-        // Check if window is borderless (our target use case)
-        guard window.styleMask.contains(.borderless) else {
+        // Ensure we have a valid window for dragging
+        guard let window = window else {
             super.mouseDown(with: event)
             return
         }
@@ -109,8 +109,7 @@ class WindowDragAreaView: NSView {
     override func mouseDragged(with event: NSEvent) {
         // Only proceed if we initiated the drag and have a valid window
         guard isDragging,
-              let window = window,
-              window.styleMask.contains(.borderless) else {
+              let window = window else {
             super.mouseDragged(with: event)
             return
         }
