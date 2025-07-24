@@ -159,7 +159,7 @@ class GemmaService {
                     
                     do {
                         for try await textChunk in textStream {
-                            let cleanedChunk = postProcessResponse(textChunk)
+                            let cleanedChunk = postProcessResponse(textChunk, trimWhitespace: false)
                             if !cleanedChunk.isEmpty {
                                 accumulatedResponse += cleanedChunk
                                 hasYieldedContent = true
@@ -294,7 +294,13 @@ class GemmaService {
     
     // All inference now handled by MLXRunner using MLX models from Hugging Face
     
-    private func postProcessResponse(_ text: String) -> String {
+    /// Post-processes raw output from the model to remove artifacts.
+    ///
+    /// - Parameters:
+    ///   - text: Raw text emitted by the model.
+    ///   - trimWhitespace: When true (default) leading/trailing whitespace and newline characters are trimmed. For streaming output we set this to **false** so that legitimate leading spaces between tokens are preserved.  
+    ///                     This prevents issues where streamed tokens like "Hello" "world" are concatenated into "Helloworld" when whitespace is stripped on every chunk.
+    private func postProcessResponse(_ text: String, trimWhitespace: Bool = true) -> String {
         // Clean up the response
         var cleaned = text
         
@@ -366,8 +372,10 @@ class GemmaService {
             NSLog("📏 Response truncated to \(cleaned.count) chars due to \(memoryPressure) memory pressure")
         }
         
-        // Trim whitespace
-        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Optionally trim whitespace (disabled for streaming so that spaces between tokens are preserved)
+        if trimWhitespace {
+            cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         
         return cleaned
     }
