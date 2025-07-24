@@ -288,13 +288,21 @@ struct TLDRCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             
-            Text(tldrSummary)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundColor(.primary.opacity(0.9))
-                // Allow the full summary to be visible when expanded
-                .lineLimit(nil)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+            // Render TLDR summary with markdown support
+            Group {
+                if let attributedString = try? AttributedString(markdown: tldrSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                    Text(attributedString)
+                } else {
+                    // Fallback to plain text if markdown parsing fails
+                    Text(tldrSummary)
+                }
+            }
+            .font(.system(size: 12, weight: .regular))
+            .foregroundColor(.primary.opacity(0.9))
+            // Allow the full summary to be visible when expanded
+            .lineLimit(nil)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
             
             // Word count indicator
             if !tldrSummary.isEmpty {

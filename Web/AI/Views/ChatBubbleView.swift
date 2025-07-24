@@ -29,12 +29,16 @@ struct ChatBubbleView: View {
         if isStreaming {
             Text(displayText)
         } else {
-            // Use SwiftUI's native markdown renderer which better preserves new-line characters
-            // and list formatting compared to manual `AttributedString` parsing.
-            // This automatically handles bold/italic/bullets while respecting the
-            // original line breaks coming from the LLM.
-            Text(displayText)
-                .lineSpacing(2)
+            // Use SwiftUI's native markdown renderer with AttributedString
+            // This properly handles bold/italic/links while preserving line breaks
+            if let attributedString = try? AttributedString(markdown: displayText, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                Text(attributedString)
+                    .lineSpacing(2)
+            } else {
+                // Fallback to plain text if markdown parsing fails
+                Text(displayText)
+                    .lineSpacing(2)
+            }
         }
     }
     

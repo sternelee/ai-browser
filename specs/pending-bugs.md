@@ -8,10 +8,11 @@
 [ ] Let's ensure there are 0 warnings when building
 [ ] Show favicon in history panel, autofill, bookmarks panel
 [ ] Open in new tab or cmd + link click should selected the new tab automatically
-[ ] Does full screen videos work?
-[ ] Double clicking window should expand the window to the whole screen and double clicking again should restore the previous size of the window
-[ ] The keyboard gets "locked" for some specific reason, cant select inputs from the browser app or even from pages like the google input, and like pressing "spacebar" to stop a video is also locked and doesnt work
 [ ] If user puts a wrong link like youtube.om it loops infinitely trying to load
+[ ] Missing way to clear the AI
+[ ] When the top url bar is in hoverable mode the keyboard and focus of every input and similar gets on a "locked" state both the web pages and the app itself
+[ ] The TLDR and the AI responses are missing markdown support
+[ ] When having more than 1 window of this app the windows shadows flicker
 
 --
 
