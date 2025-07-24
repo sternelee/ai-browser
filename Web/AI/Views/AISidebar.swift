@@ -13,6 +13,7 @@ struct AISidebar: View {
     @FocusState private var isChatInputFocused: Bool
     @State private var showingPrivacySettings: Bool = false
     @State private var includeHistoryContext: Bool = true
+    @State private var showingClearConfirmation: Bool = false
     
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
@@ -169,6 +170,34 @@ struct AISidebar: View {
             )
             
             Spacer()
+            
+            // Clear conversation button - only show when messages exist
+            if !aiAssistant.messages.isEmpty {
+                Button(action: {
+                    showingClearConfirmation = true
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .opacity(0.7)
+                .help("Clear conversation")
+                .confirmationDialog(
+                    "Clear Conversation",
+                    isPresented: $showingClearConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Clear", role: .destructive) {
+                        clearConversation()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This will permanently delete all messages in this conversation.")
+                }
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: aiAssistant.messages.isEmpty)
+            }
             
             // Collapse button
             Button(action: {
@@ -701,6 +730,13 @@ struct AISidebar: View {
                 NSLog("ℹ️ Streaming error handled by AIAssistant - cleanup completed")
             }
         }
+    }
+    
+    private func clearConversation() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            aiAssistant.clearConversation()
+        }
+        NSLog("🗑️ Conversation cleared via UI")
     }
     
 }
