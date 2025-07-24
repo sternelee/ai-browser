@@ -19,8 +19,10 @@ class ContextManager: ObservableObject {
     
     // MARK: - Properties
     
-    // Allow more page content while remaining below typical 8K-token context window for Gemma (≈ 32k characters max).
-    private let maxContentLength = 24000 // Increased for richer context while staying performant
+    /// Maximum number of characters allowed in `WebpageContext.text`.
+    /// 0 ➜ unlimited (no truncation). We default to **0** because modern Apple-Silicon devices can easily feed tens of thousands of characters to the 2B Gemma model.
+    /// If we later decide to cap it dynamically, we just need to set this to a non-zero value.
+    private let maxContentLength: Int = 0
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
@@ -142,11 +144,14 @@ class ContextManager: ObservableObject {
             return sentences.joined(separator: " ")
         }()
 
+        // Re-compute word count to avoid stale/incorrect values from earlier extractions
+        let dynamicWordCount = ctx.text.split { $0.isWhitespace || $0.isNewline }.count
+
         return """
         Current webpage context:
         Title: \(ctx.title)
         URL: \(ctx.url)
-        Word Count: \(ctx.wordCount)
+        Word Count: \(dynamicWordCount)
 
         Outline (headings):
         \(headingLines.isEmpty ? "(none)" : headingLines)
@@ -306,40 +311,56 @@ class ContextManager: ObservableObject {
     // MARK: - Private Methods
     
     private func performContentExtraction(from webView: WKWebView, tab: Tab) async throws -> WebpageContext {
-        return try await withCheckedThrowingContinuation { continuation in
-            
+        func extractOnce(completion: @escaping (Result<WebpageContext, Error>) -> Void) {
             let script = contentExtractionJavaScript
-            
+
             // Set timeout for JavaScript execution
             let timeoutTask = Task {
                 try await Task.sleep(nanoseconds: UInt64(contentExtractionTimeout * 1_000_000_000))
-                continuation.resume(throwing: ContextError.extractionTimeout)
+                completion(.failure(ContextError.extractionTimeout))
             }
-            
-            // FIXED: Execute JavaScript on main thread
+
+            // Execute JavaScript on main thread
             Task { @MainActor in
                 webView.evaluateJavaScript(script) { result, error in
                     timeoutTask.cancel()
-                    
                     if let error = error {
-                        continuation.resume(throwing: ContextError.javascriptError(error.localizedDescription))
+                        completion(.failure(ContextError.javascriptError(error.localizedDescription)))
                         return
                     }
-                    
                     guard let data = result as? [String: Any] else {
-                        continuation.resume(throwing: ContextError.invalidResponse)
+                        completion(.failure(ContextError.invalidResponse))
                         return
                     }
-                    
                     do {
                         let context = try self.parseExtractionResult(data, from: webView, tab: tab)
-                        continuation.resume(returning: context)
+                        completion(.success(context))
                     } catch {
-                        continuation.resume(throwing: error)
+                        completion(.failure(error))
                     }
                 }
             }
         }
+
+        // First attempt
+        var context = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<WebpageContext, Error>) in
+            extractOnce { res in
+                cont.resume(with: res)
+            }
+        }
+
+        // Retry once if content seems insufficient for known dynamic sites
+        if shouldRetryExtraction(for: context) {
+            NSLog("🔄 Retrying context extraction after delay for dynamic site…")
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+            context = try await withCheckedThrowingContinuation { cont in
+                extractOnce { res in
+                    cont.resume(with: res)
+                }
+            }
+        }
+
+        return context
     }
     
     private func parseExtractionResult(_ data: [String: Any], from webView: WKWebView, tab: Tab) throws -> WebpageContext {
@@ -356,7 +377,9 @@ class ContextManager: ObservableObject {
         // Extract additional metadata
         let headings = data["headings"] as? [String] ?? []
         let links = data["links"] as? [String] ?? []
-        let wordCount = data["wordCount"] as? Int ?? 0
+
+        // Re-compute word count on the Swift side to avoid under-count issues seen on some dynamic sites (e.g. Reddit).
+        let wordCount = truncatedText.split { $0.isWhitespace || $0.isNewline }.count
         let extractionMethod = data["extractionMethod"] as? String ?? "unknown"
         let postCount = data["postCount"] as? Int ?? 0
         let isMultiPost = data["isMultiPost"] as? Bool ?? false
@@ -380,6 +403,14 @@ class ContextManager: ObservableObject {
         )
     }
     
+    // If extracted content looks suspiciously small for well-known dynamic sites, attempt a delayed retry once.
+    private func shouldRetryExtraction(for context: WebpageContext) -> Bool {
+        // Consider less than 300 chars as possibly insufficient.
+        guard context.text.count < 300 else { return false }
+        let dynamicDomains = ["reddit.com", "medium.com", "twitter.com", "x.com"]
+        return dynamicDomains.contains(where: { context.url.contains($0) })
+    }
+    
     private func cleanExtractedContent(_ text: String) -> String {
         // Remove excessive whitespace and clean up content
         let cleaned = text
@@ -391,17 +422,18 @@ class ContextManager: ObservableObject {
     }
     
     private func truncateContent(_ text: String) -> String {
-        if text.count <= maxContentLength {
+        // If no limit set or text is within limit, return as-is
+        if maxContentLength == 0 || text.count <= maxContentLength {
             return text
         }
-        
+
         // Truncate at word boundary
         let truncated = String(text.prefix(maxContentLength))
         if let lastSpace = truncated.lastIndex(of: " ") {
             let result = String(truncated[..<lastSpace])
             return result + "... (content truncated)"
         }
-        
+
         return String(text.prefix(maxContentLength)) + "... (content truncated)"
     }
     
@@ -726,3 +758,4 @@ enum ContextError: LocalizedError {
         }
     }
 }
+

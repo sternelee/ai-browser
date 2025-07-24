@@ -88,6 +88,10 @@ struct AISidebar: View {
             // Header with AI status
             sidebarHeader()
             
+            // TL;DR Component - Next-gen auto-summary with progressive disclosure
+            TLDRCard(tabManager: tabManager, aiAssistant: aiAssistant)
+                .padding(.bottom, 8)
+            
             // Context status indicator
             contextStatusView()
             
