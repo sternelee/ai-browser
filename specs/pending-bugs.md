@@ -1,6 +1,7 @@
 # PENDING TASKS and BUGS
 
 [ ] 'Page context available' im not sure if its taking all the text in the page correctly, please review, it doesnt seem like it, we need to do smart context engineering to optimize context but its important that we give all the important info to the model
+[ ] Missing 'Find' feature
 [ ] In the AI responses, before responding the 3 dots are duplicated, not animated properly, and badly layouted. Also after the AI responses the message flickers in a loop forever, and we still see one of the 3 dots moving up and down
 [ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url, should always show the current page, its critical that this is correct
 [ ] Overlay panels like history, settings, etc show a weird square with blue accent border wrapping them
