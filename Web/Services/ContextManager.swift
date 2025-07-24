@@ -19,7 +19,8 @@ class ContextManager: ObservableObject {
     
     // MARK: - Properties
     
-    private let maxContentLength = 12000 // ENHANCED: Further increased for comprehensive multi-post analysis
+    // Allow more page content while remaining below typical 8K-token context window for Gemma (≈ 32k characters max).
+    private let maxContentLength = 24000 // Increased for richer context while staying performant
     private let contentExtractionTimeout = 10.0 // seconds
     private var lastExtractionTime: Date?
     private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
@@ -90,32 +91,75 @@ class ContextManager: ObservableObject {
         }
     }
     
-    /// Get a formatted context string for AI processing with optional history
+    /// Returns a rich, structured context string for the AI model by combining the current page data
+    /// with optional browsing-history context. The page section includes title, URL, word count,
+    /// a list of headings & prominent links, and finally the raw (truncated) body text.
     func getFormattedContext(from context: WebpageContext?, includeHistory: Bool = true) -> String? {
-        var contextParts: [String] = []
-        
-        // Add current webpage context
+        var sections: [String] = []
+
+        // 1. Current page
         if let context = context {
-            let currentContext = """
-            Current webpage context:
-            
-            Title: \(context.title)
-            URL: \(context.url)
-            
-            Content:
-            \(context.text)
-            """
-            contextParts.append(currentContext)
+            sections.append(formatWebpageContext(context))
         }
-        
-        // Add history context if enabled and requested
-        if includeHistory && isHistoryContextEnabled {
-            if let historyContext = getHistoryContext() {
-                contextParts.append(historyContext)
+
+        // 2. Browsing history (optional)
+        if includeHistory && isHistoryContextEnabled, let historyContext = getHistoryContext() {
+            sections.append(historyContext)
+        }
+
+        guard !sections.isEmpty else { return nil }
+        return sections.joined(separator: "\n\n---\n\n")
+    }
+
+    /// Builds a well-structured string from a `WebpageContext` that is optimised for LLM consumption.
+    /// – Headings provide document outline.
+    /// – Links surface key outbound references.
+    /// – We keep the *full* cleaned text (up to `maxContentLength`) so the model can quote exact phrasing if necessary.
+    private func formatWebpageContext(_ ctx: WebpageContext) -> String {
+        // Headings (limit to first 12 for brevity)
+        let headingLines: String = ctx.headings.prefix(12).map { "- \($0)" }.joined(separator: "\n")
+
+        // Prominent links (limit 10) – already "text (url)" formatted by JS extractor
+        let linkLines: String = ctx.links.prefix(10).map { "- \($0)" }.joined(separator: "\n")
+
+        // Optionally include a quick preview/summary (first 2-3 sentences) to guide the model before the wall of text
+        let preview: String = {
+            // Rough sentence splitting on period/exclamation/question marks.
+            let delimiters: Set<Character> = [".", "!", "?"]
+            var current = ""
+            var sentences: [String] = []
+            for char in ctx.text {
+                current.append(char)
+                if delimiters.contains(char) {
+                    let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        sentences.append(trimmed)
+                    }
+                    current = ""
+                }
+                if sentences.count >= 3 { break }
             }
-        }
-        
-        return contextParts.isEmpty ? nil : contextParts.joined(separator: "\n\n---\n\n")
+            return sentences.joined(separator: " ")
+        }()
+
+        return """
+        Current webpage context:
+        Title: \(ctx.title)
+        URL: \(ctx.url)
+        Word Count: \(ctx.wordCount)
+
+        Outline (headings):
+        \(headingLines.isEmpty ? "(none)" : headingLines)
+
+        Prominent links:
+        \(linkLines.isEmpty ? "(none)" : linkLines)
+
+        Preview:
+        \(preview)
+
+        Full content (truncated to \(maxContentLength) chars):
+        \(ctx.text)
+        """
     }
     
     /// Get browsing history context for AI processing
