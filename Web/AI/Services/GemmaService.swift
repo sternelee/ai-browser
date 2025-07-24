@@ -344,6 +344,34 @@ class GemmaService {
             // Preserve natural line breaks between sentences to improve readability and markdown rendering
             cleaned = uniqueSentences.joined(separator: ".\n")
         }
+
+        // NEW: Collapse repeated adjacent words (e.g. "it it", "you you") that sometimes
+        // appear in streamed output when the tokenizer emits duplicated tokens. This is a
+        // lightweight regex-based pass that keeps the first occurrence and removes the rest.
+        // It is case-insensitive and works across multiple repetitions in a row.
+        do {
+            let pattern = "\\b(\\w+)(?:\\s+\\1)+\\b"
+            let regex = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            let range = NSRange(location: 0, length: cleaned.utf16.count)
+            cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "$1")
+        } catch {
+            NSLog("⚠️ Regex error while collapsing repeated words: \(error)")
+        }
+
+        // NEW: Collapse repeated adjacent words that appear **without** intervening whitespace, often a byproduct
+        // of tokenization artifacts when leading spaces are stripped from successive tokens. For example,
+        // "Itit seems" should be reduced to "It seems". We perform a second regex pass that catches the
+        // pattern of the *exact* same word appearing at least twice in immediate succession.
+        do {
+            let patternNoSpace = "\\b(\\w{1,20}?)\\1+\\b"
+            let regexNoSpace = try NSRegularExpression(pattern: patternNoSpace, options: [.caseInsensitive])
+            let rangeNoSpace = NSRange(location: 0, length: cleaned.utf16.count)
+            // Replace the full match with a single captured word followed by a space so that we don't merge
+            // the next word when there originally should have been whitespace.
+            cleaned = regexNoSpace.stringByReplacingMatches(in: cleaned, options: [], range: rangeNoSpace, withTemplate: "$1 ")
+        } catch {
+            NSLog("⚠️ Regex error while collapsing repeated words without space: \(error)")
+        }
         
         // Dynamic response length based on memory availability
         let memoryPressure = ProcessInfo.processInfo.thermalState
@@ -394,7 +422,10 @@ class GemmaService {
 
         do {
             let generated = try await SimplifiedMLXRunner.shared.generateWithPrompt(prompt: prompt, modelId: "gemma3_2B_4bit")
-            return postProcessResponse(generated)
+            // Preserve leading spaces between tokens so that duplicate-word regex works correctly
+            let cleaned = postProcessResponse(generated, trimWhitespace: false)
+            // Finally, trim outer whitespace/newlines to keep the output tidy for display
+            return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             NSLog("❌ GemmaService raw generation failed: \(error)")
             throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
