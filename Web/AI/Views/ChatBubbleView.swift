@@ -29,14 +29,21 @@ struct ChatBubbleView: View {
         if isStreaming {
             Text(displayText)
         } else {
+            // Preprocess text to fix missing spaces that break markdown
+            let processedText = displayText
+                .replacingOccurrences(of: "(?<=[.!?:])(?=[A-Z])", with: " ", options: .regularExpression)
+                // Insert a line-break before list markers that are glued to a preceding colon, e.g. "We can:*" → "We can:\n* "
+                // This avoids corrupting inline *italic* or **bold** markup because those usually have a space before the asterisk.
+                .replacingOccurrences(of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
+            
             // Use SwiftUI's native markdown renderer with AttributedString
             // This properly handles bold/italic/links while preserving line breaks
-            if let attributedString = try? AttributedString(markdown: displayText, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            if let attributedString = try? AttributedString(markdown: processedText, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
                 Text(attributedString)
                     .lineSpacing(2)
             } else {
                 // Fallback to plain text if markdown parsing fails
-                Text(displayText)
+                Text(processedText)
                     .lineSpacing(2)
             }
         }

@@ -290,11 +290,17 @@ struct TLDRCard: View {
             
             // Render TLDR summary with markdown support
             Group {
-                if let attributedString = try? AttributedString(markdown: tldrSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                // Preprocess to fix missing spaces that break markdown
+                let processedSummary = tldrSummary
+                    .replacingOccurrences(of: "(?<=[.!?:])(?=[A-Z])", with: " ", options: .regularExpression)
+                    // Insert a line-break before list markers that directly follow a colon ("We can:*" → "We can:\n* ")
+                    .replacingOccurrences(of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
+                
+                if let attributedString = try? AttributedString(markdown: processedSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
                     Text(attributedString)
                 } else {
                     // Fallback to plain text if markdown parsing fails
-                    Text(tldrSummary)
+                    Text(processedSummary)
                 }
             }
             .font(.system(size: 12, weight: .regular))
