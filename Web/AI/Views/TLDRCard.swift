@@ -70,86 +70,85 @@ struct TLDRCard: View {
     
     @ViewBuilder
     private func collapsedView() -> some View {
-        Button(action: {
+        HStack(spacing: 6) {
+            // Sentiment emoji (prominent display) or status indicator
+            if !sentimentEmoji.isEmpty && !isGenerating {
+                Text(sentimentEmoji)
+                    .font(.system(size: 14))
+                    .opacity(pulseOpacity)
+                    .animation(
+                        .easeInOut(duration: 2.0).repeatForever(autoreverses: true),
+                        value: pulseOpacity
+                    )
+            } else {
+                // Fallback status indicator when no emoji or generating
+                ZStack {
+                    Circle()
+                        .fill(statusGradient)
+                        .frame(width: 16, height: 16)
+                    
+                    if isGenerating {
+                        // Subtle loading animation
+                        Circle()
+                            .trim(from: 0, to: 0.6)
+                            .stroke(
+                                AngularGradient(
+                                    colors: [.blue.opacity(0.3), .blue],
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                            )
+                            .frame(width: 14, height: 14)
+                            .rotationEffect(.degrees(shimmerOffset))
+                            .onAppear {
+                                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                    shimmerOffset = 360
+                                }
+                            }
+                            .onDisappear {
+                                shimmerOffset = 0
+                            }
+                    } else {
+                        Image(systemName: statusIcon)
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+            
+            // TL;DR label
+            Text("TL;DR")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.primary.opacity(0.8))
+            
+            // AI Busy indicator if processing chat
+            if aiAssistant.isProcessing && !isGenerating {
+                Text("AI Busy")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.orange.opacity(0.8))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(.orange.opacity(0.1))
+                    )
+            }
+            
+            Spacer()
+            
+            // Expand hint
+            Image(systemName: "chevron.up")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.6))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 isExpanded = true
             }
-        }) {
-            HStack(spacing: 6) {
-                // Sentiment emoji (prominent display) or status indicator
-                if !sentimentEmoji.isEmpty && !isGenerating {
-                    Text(sentimentEmoji)
-                        .font(.system(size: 14))
-                        .opacity(pulseOpacity)
-                        .animation(
-                            .easeInOut(duration: 2.0).repeatForever(autoreverses: true),
-                            value: pulseOpacity
-                        )
-                } else {
-                    // Fallback status indicator when no emoji or generating
-                    ZStack {
-                        Circle()
-                            .fill(statusGradient)
-                            .frame(width: 16, height: 16)
-                        
-                        if isGenerating {
-                            // Subtle loading animation
-                            Circle()
-                                .trim(from: 0, to: 0.6)
-                                .stroke(
-                                    AngularGradient(
-                                        colors: [.blue.opacity(0.3), .blue],
-                                        center: .center
-                                    ),
-                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
-                                )
-                                .frame(width: 14, height: 14)
-                                .rotationEffect(.degrees(shimmerOffset))
-                                .onAppear {
-                                    withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-                                        shimmerOffset = 360
-                                    }
-                                }
-                                .onDisappear {
-                                    shimmerOffset = 0
-                                }
-                        } else {
-                            Image(systemName: statusIcon)
-                                .font(.system(size: 8, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                }
-                
-                // TL;DR label
-                Text("TL;DR")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primary.opacity(0.8))
-                
-                // AI Busy indicator if processing chat
-                if aiAssistant.isProcessing && !isGenerating {
-                    Text("AI Busy")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.orange.opacity(0.8))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(.orange.opacity(0.1))
-                        )
-                }
-                
-                Spacer()
-                
-                // Expand hint
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(.secondary.opacity(0.6))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
         }
-        .buttonStyle(PlainButtonStyle())
         .disabled(isGenerating && tldrSummary.isEmpty)
     }
     
@@ -270,6 +269,25 @@ struct TLDRCard: View {
     @ViewBuilder
     private func summaryView() -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Sentiment chip if available
+            if !sentimentEmoji.isEmpty {
+                HStack(spacing: 4) {
+                    Text(sentimentEmoji)
+                        .font(.system(size: 12))
+                    
+                    Text("Sentiment:")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.quaternary.opacity(0.3))
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
             Text(tldrSummary)
                 .font(.system(size: 12, weight: .regular))
                 .foregroundColor(.primary.opacity(0.9))
