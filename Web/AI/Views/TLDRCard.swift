@@ -51,6 +51,13 @@ struct TLDRCard: View {
             startPulseAnimation()
             autoGenerateTLDR()
         }
+        .onChange(of: isGenerating) { _, newValue in
+            if newValue {
+                startSpinnerAnimation()
+            } else {
+                stopSpinnerAnimation()
+            }
+        }
         .onReceive(aiAssistant.$isProcessing) { isProcessing in
             // If AI starts processing (chat), cancel any running TL;DR
             if isProcessing && isGenerating {
@@ -98,10 +105,14 @@ struct TLDRCard: View {
                                 )
                                 .frame(width: 14, height: 14)
                                 .rotationEffect(.degrees(shimmerOffset))
-                                .animation(
-                                    .linear(duration: 1.2).repeatForever(autoreverses: false),
-                                    value: shimmerOffset
-                                )
+                                .onAppear {
+                                    withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                        shimmerOffset = 360
+                                    }
+                                }
+                                .onDisappear {
+                                    shimmerOffset = 0
+                                }
                         } else {
                             Image(systemName: statusIcon)
                                 .font(.system(size: 8, weight: .semibold))
@@ -462,10 +473,17 @@ struct TLDRCard: View {
         withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             pulseOpacity = 0.8
         }
-        
+    }
+    
+    private func startSpinnerAnimation() {
+        shimmerOffset = 0
         withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-            shimmerOffset = 200
+            shimmerOffset = 360
         }
+    }
+    
+    private func stopSpinnerAnimation() {
+        shimmerOffset = 0
     }
 }
 
