@@ -49,17 +49,17 @@ class PrivacyManager: ObservableObject {
     
     // MARK: - Public Interface
     
-    /// Initialize privacy system with encryption key generation
+    /// Initialize privacy system without accessing keychain (delayed until first use)
     func initialize() async throws {
         do {
-            // Generate or retrieve encryption key
-            try await setupEncryptionKey()
+            // Skip encryption key setup on initialization to avoid keychain access
+            // Key will be generated lazily when first needed
             
-            // Clean up expired data
+            // Clean up expired data (doesn't require keychain)
             try await cleanupExpiredData()
             
             isInitialized = true
-            NSLog("✅ Privacy Manager initialization completed")
+            NSLog("✅ Privacy Manager initialization completed (keychain access deferred)")
             
         } catch {
             NSLog("❌ Privacy Manager initialization failed: \(error)")
@@ -68,7 +68,12 @@ class PrivacyManager: ObservableObject {
     }
     
     /// Encrypt conversation data
-    func encryptConversationData(_ data: Data) throws -> EncryptedData {
+    func encryptConversationData(_ data: Data) async throws -> EncryptedData {
+        // Lazy initialization of encryption key when first needed
+        if encryptionKey == nil {
+            try await setupEncryptionKey()
+        }
+        
         guard let key = encryptionKey else {
             throw PrivacyError.encryptionKeyNotAvailable
         }
@@ -96,7 +101,12 @@ class PrivacyManager: ObservableObject {
     }
     
     /// Decrypt conversation data
-    func decryptConversationData(_ encryptedData: EncryptedData) throws -> Data {
+    func decryptConversationData(_ encryptedData: EncryptedData) async throws -> Data {
+        // Lazy initialization of encryption key when first needed
+        if encryptionKey == nil {
+            try await setupEncryptionKey()
+        }
+        
         guard let key = encryptionKey else {
             throw PrivacyError.encryptionKeyNotAvailable
         }
@@ -127,7 +137,7 @@ class PrivacyManager: ObservableObject {
             // let data = try JSONEncoder().encode(conversation)
             
             // Encrypt data
-            let encryptedData = try encryptConversationData(data)
+            let encryptedData = try await encryptConversationData(data)
             
             // Store encrypted data
             let filename = "conversation_\(conversation.sessionId).encrypted"

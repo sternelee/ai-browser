@@ -8,6 +8,7 @@ struct AISidebar: View {
     @ObservedObject private var contextManager = ContextManager.shared
     @StateObject private var aiAssistant: AIAssistant
     @State private var isExpanded: Bool = false
+    @AppStorage("hasLaunchedBefore") private var hasLaunchedBefore: Bool = false
     @State private var chatInput: String = ""
     @FocusState private var isChatInputFocused: Bool
     @State private var showingPrivacySettings: Bool = false
@@ -55,6 +56,13 @@ struct AISidebar: View {
                     AIPrivacySettings()
                 }
                 .onAppear {
+                    // Show AI sidebar on first app launch
+                    if !hasLaunchedBefore {
+                        isExpanded = true
+                        hasLaunchedBefore = true
+                        NSLog("🎉 First app launch - showing AI sidebar by default")
+                    }
+                    
                     // Initialize AI system on first appearance
                     Task {
                         await aiAssistant.initialize()
