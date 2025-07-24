@@ -241,34 +241,21 @@ class GemmaService {
         conversationHistory: [ConversationMessage]
     ) throws -> String {
         
-        // ENHANCED: Build proper multi-turn conversation prompt with conversation history
+        // ENHANCED: Build proper multi-turn conversation prompt with context placed strategically
         var promptParts: [String] = []
         
-        // System prompt as first user turn
+        // System prompt as first user turn - simplified and clearer
         promptParts.append("<start_of_turn>user")
-
-        // ENHANCEMENT: Make it crystal-clear to the model that it ALREADY has the webpage content
-        // and should never ask the user to supply it again. This prevents answers like
-        // "Please provide me with the webpage URL or HTML code …" when the context was actually provided.
-        promptParts.append("You are a helpful AI assistant. You have already been given the current webpage\'s content in this prompt. NEVER ask the user to provide the webpage again. When answering, rely on the provided content. Be concise and direct.")
-        
-        // Add context if available 
-        if let context = context, !context.isEmpty {
-            let cleanContext = String(context.prefix(6000))  // ENHANCED: Increased from 2000 to 6000 for comprehensive content analysis
-                .replacingOccurrences(of: "\n\n+", with: "\n", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            promptParts.append("\nWebpage content:\n\(cleanContext)")
-        }
-        
+        promptParts.append("You are a helpful assistant. Answer questions based on provided webpage content.")
         promptParts.append("<end_of_turn>")
         
         // Assistant acknowledges 
         promptParts.append("<start_of_turn>model")
-        promptParts.append("I understand. I'll help you with questions about the webpage content.")
+        promptParts.append("I'll help answer questions using the webpage content.")
         promptParts.append("<end_of_turn>")
         
-        // ENHANCED: Add recent conversation history for continuity
-        let recentHistory = Array(conversationHistory.suffix(6))  // Last 3 exchanges (6 messages)
+        // Add recent conversation history for continuity (limited to avoid context burial)
+        let recentHistory = Array(conversationHistory.suffix(4))  // Last 2 exchanges only
         for message in recentHistory {
             if message.role == .user {
                 promptParts.append("<start_of_turn>user")
@@ -281,9 +268,20 @@ class GemmaService {
             }
         }
         
-        // Current user question
+        // CRITICAL FIX: Place context RIGHT BEFORE the current question
         promptParts.append("<start_of_turn>user")
-        promptParts.append(query)
+        
+        if let context = context, !context.isEmpty {
+            let cleanContext = String(context.prefix(6000))
+                .replacingOccurrences(of: "\n\n+", with: "\n", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Structure: Context first, then question - makes it clear what to reference
+            promptParts.append("WEBPAGE CONTENT:\n\(cleanContext)\n\n---\n\nBased on the above webpage content, please answer: \(query)")
+        } else {
+            promptParts.append(query)
+        }
+        
         promptParts.append("<end_of_turn>")
         
         // Assistant response start
@@ -291,7 +289,11 @@ class GemmaService {
         
         let fullPrompt = promptParts.joined(separator: "\n")
         
-        NSLog("📝 Built MLX Gemma prompt (\(fullPrompt.count) chars): \(String(fullPrompt.prefix(300)))...")
+        NSLog("📝 Built MLX Gemma prompt (\(fullPrompt.count) chars) with context: \(context != nil ? "YES (\(context!.count) chars)" : "NO")")
+        if context != nil {
+            NSLog("📝 Context preview: \(String(context!.prefix(200)))...")
+        }
+        NSLog("📝 Full prompt preview: \(String(fullPrompt.suffix(500)))")
         
         return fullPrompt
     }

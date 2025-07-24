@@ -102,14 +102,30 @@ final class SimplifiedMLXRunner: ObservableObject {
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    // The tokens parameter contains ALL tokens generated so far
-                    // Only keep the latest complete set, don't accumulate duplicates
+                    NSLog("🔍 MLX callback received \(tokens.count) tokens: \(tokens.prefix(5))")
+                    
+                    // Store the complete token array - MLX gives us all tokens accumulated so far
                     allTokens = tokens
+                    
+                    // Stop if we have enough tokens or find EOS
+                    if tokens.count >= 512 {
+                        NSLog("🛑 Stopping: reached max tokens (\(tokens.count))")
+                        return .stop
+                    }
+                    
+                    // Check for EOS tokens
+                    let eosTokens: Set<Int> = [2, 1, 0] // Common EOS token IDs
+                    if let lastToken = tokens.last, eosTokens.contains(lastToken) {
+                        NSLog("🛑 Stopping: found EOS token \(lastToken)")
+                        return .stop
+                    }
+                    
                     return .more
                 }
                 
-                // Decode all accumulated tokens at the end
+                NSLog("🔤 Decoding \(allTokens.count) total tokens...")
                 let fullResponse = modelContext.tokenizer.decode(tokens: allTokens)
+                NSLog("📝 Final decoded response: \(fullResponse.count) characters")
                 
                 return fullResponse
             }
@@ -146,28 +162,28 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
-                        // Track tokens we've already sent to avoid duplication while preserving proper decoding
+                        // Track tokens we've already sent to avoid duplication
                         var sentTokenCount = 0
-                        let maxTokens = 512 // Limit to prevent infinite generation
+                        let maxTokens = 512
                         
                         let _ = try MLXLMCommon.generate(
                             input: input,
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
+                            NSLog("🌊 Streaming token: \(tokens.count > sentTokenCount ? tokens[sentTokenCount..<tokens.count] : []) (total: \(tokens.count) chars)")
+                            
                             // Stop if we've reached the maximum token limit
                             if tokens.count >= maxTokens {
-                                NSLog("🛑 Stopping generation: reached max tokens (\(tokens.count))")
+                                NSLog("🛑 Stopping streaming: reached max tokens (\(tokens.count))")
                                 return .stop
                             }
                             
-                            // Check for EOS tokens that indicate generation should stop
-                            let eosTokens: Set<Int> = [2, 1, 0] // Common EOS token IDs
-                            for token in tokens {
-                                if eosTokens.contains(token) {
-                                    NSLog("🛑 Stopping generation: found EOS token (\(token))")
-                                    return .stop
-                                }
+                            // Check for EOS tokens in the latest tokens
+                            let eosTokens: Set<Int> = [2, 1, 0]
+                            if let lastToken = tokens.last, eosTokens.contains(lastToken) {
+                                NSLog("🛑 Stopping streaming: found EOS token \(lastToken)")
+                                return .stop
                             }
                             
                             // Only process if we have new tokens

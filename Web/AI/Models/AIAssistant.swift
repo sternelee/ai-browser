@@ -192,7 +192,18 @@ class AIAssistant: ObservableObject {
         do {
             // Extract context from current webpage with optional history
             let webpageContext = await extractCurrentContext()
+            if let webpageContext = webpageContext {
+                NSLog("🔍 AIAssistant extracted webpage context: \(webpageContext.text.count) chars, quality: \(webpageContext.contentQuality)")
+            } else {
+                NSLog("⚠️ AIAssistant: No webpage context extracted")
+            }
+            
             let context = contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
+            if let context = context {
+                NSLog("🔍 AIAssistant formatted context: \(context.count) characters")
+            } else {
+                NSLog("⚠️ AIAssistant: No formatted context returned")
+            }
             
             // Create conversation entry
             let userMessage = ConversationMessage(
@@ -247,7 +258,18 @@ class AIAssistant: ObservableObject {
                     
                     // Extract context from current webpage with optional history
                     let webpageContext = await self.extractCurrentContext()
+                    if let webpageContext = webpageContext {
+                        NSLog("🔍 AIAssistant streaming extracted webpage context: \(webpageContext.text.count) chars, quality: \(webpageContext.contentQuality)")
+                    } else {
+                        NSLog("⚠️ AIAssistant streaming: No webpage context extracted")
+                    }
+                    
                     let context = self.contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
+                    if let context = context {
+                        NSLog("🔍 AIAssistant streaming formatted context: \(context.count) characters")
+                    } else {
+                        NSLog("⚠️ AIAssistant streaming: No formatted context returned")
+                    }
                     
                     // Process with streaming
                     let stream = try await gemmaService.generateStreamingResponse(
@@ -361,8 +383,11 @@ class AIAssistant: ObservableObject {
         // Extract context from current webpage
         let webpageContext = await extractCurrentContext()
         guard let context = webpageContext, !context.text.isEmpty else {
+            NSLog("⚠️ TL;DR: No context available - webpageContext: \(webpageContext != nil ? "exists but empty" : "nil")")
             throw AIError.contextProcessingFailed("No content available to summarize")
         }
+        
+        NSLog("🔍 TL;DR: Using context with \(context.text.count) characters, quality: \(context.contentQuality)")
         
         // Create clean, direct TL;DR prompt with sentiment analysis
         let tldrPrompt = """

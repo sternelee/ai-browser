@@ -627,29 +627,16 @@ struct WebView: NSViewRepresentable {
                 }
             }
             
-            // AUTO-READ: Automatically extract page content for AI context
+            // ENHANCED AUTO-READ: Intelligent content extraction with adaptive timing
             // This provides comprehensive page content without user intervention
             if let currentURL = webView.url, 
                let scheme = currentURL.scheme?.lowercased(),
                (scheme == "http" || scheme == "https") {
                 
-                // Delay extraction to ensure page content is fully rendered
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    Task {
-                        if let tab = self.parent.tab {
-                            let context = await ContextManager.shared.extractPageContext(from: webView, tab: tab)
-                            if let context = context {
-                                NSLog("📖 Auto-read completed: \(context.text.count) characters from \(context.title)")
-                            }
-                            
-                            // Notify that page navigation and context extraction has completed
-                            await MainActor.run {
-                                NotificationCenter.default.post(
-                                    name: .pageNavigationCompleted,
-                                    object: tab.id
-                                )
-                            }
-                        }
+                // Use adaptive timing system instead of fixed delay
+                Task {
+                    if let tab = self.parent.tab {
+                        await self.performAdaptiveContentExtraction(webView: webView, tab: tab)
                     }
                 }
             } else {
@@ -1209,6 +1196,94 @@ struct WebView: NSViewRepresentable {
                 } else {
                     print("🧹 WebView timer cleanup executed successfully")
                 }
+            }
+        }
+        
+        // MARK: - Adaptive Content Extraction
+        
+        /// Performs intelligent content extraction with adaptive timing based on page readiness
+        private func performAdaptiveContentExtraction(webView: WKWebView, tab: Tab) async {
+            var attemptCount = 0
+            let maxAttempts = 5
+            var bestContext: WebpageContext?
+            
+            // Wait for basic page readiness
+            await waitForPageReadiness(webView: webView)
+            
+            while attemptCount < maxAttempts {
+                attemptCount += 1
+                
+                let context = await ContextManager.shared.extractPageContext(from: webView, tab: tab)
+                
+                if let context = context {
+                    bestContext = context
+                    
+                    // Log extraction attempt
+                    NSLog("📖 Auto-read attempt \(attemptCount): \(context.text.count) characters, quality: \(context.contentQuality) (\(context.qualityDescription))")
+                    
+                    // Check if we have good enough content or if JS recommends no retry
+                    if context.isHighQuality || !context.shouldRetry {
+                        NSLog("✅ Auto-read completed: \(context.text.count) characters from \(context.title)")
+                        break
+                    }
+                    
+                    // If content is not stable, wait for stability
+                    if !context.isContentStable {
+                        NSLog("⏳ Content not stable, waiting...")
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                    } else {
+                        // Wait progressively longer between attempts
+                        let delay = Double(attemptCount) * 1.5 // 1.5s, 3s, 4.5s, 6s
+                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    }
+                } else {
+                    // Failed extraction, wait before retry
+                    try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+                }
+            }
+            
+            // Notify completion regardless of result quality
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .pageNavigationCompleted,
+                    object: tab.id
+                )
+            }
+            
+            if let finalContext = bestContext {
+                NSLog("🏁 Final extraction result: \(finalContext.text.count) characters, quality: \(finalContext.contentQuality) (\(finalContext.qualityDescription)) after \(attemptCount) attempts")
+            } else {
+                NSLog("❌ Content extraction failed after \(attemptCount) attempts")
+            }
+        }
+        
+        /// Waits for basic page readiness using document.readyState and network activity
+        private func waitForPageReadiness(webView: WKWebView) async {
+            let maxWaitTime: TimeInterval = 10.0 // Maximum wait time
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < maxWaitTime {
+                // Check document ready state
+                let isReady = await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async {
+                        webView.evaluateJavaScript("document.readyState") { result, error in
+                            if let readyState = result as? String {
+                                continuation.resume(returning: readyState == "complete")
+                            } else {
+                                continuation.resume(returning: false)
+                            }
+                        }
+                    }
+                }
+                
+                if isReady {
+                    // Wait a bit more for dynamic content
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                    break
+                }
+                
+                // Check every 100ms
+                try? await Task.sleep(nanoseconds: 100_000_000)
             }
         }
         
