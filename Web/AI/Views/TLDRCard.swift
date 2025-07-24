@@ -29,6 +29,12 @@ struct TLDRCard: View {
                 collapsedView()
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isExpanded.toggle()
+            }
+        }
         .background(cardBackground())
         .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 12 : 20))
         .overlay(
@@ -143,12 +149,6 @@ struct TLDRCard: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                isExpanded = true
-            }
-        }
         .disabled(isGenerating && tldrSummary.isEmpty)
     }
     
@@ -272,12 +272,12 @@ struct TLDRCard: View {
             // Sentiment chip if available
             if !sentimentEmoji.isEmpty {
                 HStack(spacing: 4) {
-                    Text(sentimentEmoji)
-                        .font(.system(size: 12))
-                    
                     Text("Sentiment:")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.secondary.opacity(0.7))
+                    
+                    Text(sentimentEmoji)
+                        .font(.system(size: 12))
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

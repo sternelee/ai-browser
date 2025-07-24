@@ -102,8 +102,9 @@ final class SimplifiedMLXRunner: ObservableObject {
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    // Accumulate ALL tokens from this callback
-                    allTokens.append(contentsOf: tokens)
+                    // The tokens parameter contains ALL tokens generated so far
+                    // Only keep the latest complete set, don't accumulate duplicates
+                    allTokens = tokens
                     return .more
                 }
                 
