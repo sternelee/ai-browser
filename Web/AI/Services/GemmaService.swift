@@ -159,12 +159,21 @@ class GemmaService {
                     
                     do {
                         for try await textChunk in textStream {
-                            let cleanedChunk = postProcessResponse(textChunk, trimWhitespace: false)
-                            if !cleanedChunk.isEmpty {
-                                accumulatedResponse += cleanedChunk
-                                hasYieldedContent = true
-                                continuation.yield(cleanedChunk)
-                            }
+                            // PRESERVE LINE BREAKS: Don't post-process individual chunks during streaming
+                            // as this can strip U+000A characters. Only clean obvious control tokens.
+                            var cleanedChunk = textChunk
+                            
+                            // Only remove MLX-specific control tokens, preserve all whitespace and line breaks
+                            cleanedChunk = cleanedChunk.replacingOccurrences(of: "<|endoftext|>", with: "")
+                            cleanedChunk = cleanedChunk.replacingOccurrences(of: "<start_of_turn>", with: "")
+                            cleanedChunk = cleanedChunk.replacingOccurrences(of: "<end_of_turn>", with: "")
+                            cleanedChunk = cleanedChunk.replacingOccurrences(of: "<bos>", with: "")
+                            cleanedChunk = cleanedChunk.replacingOccurrences(of: "<eos>", with: "")
+                            
+                            // Always yield the chunk even if it's just whitespace/line breaks
+                            accumulatedResponse += cleanedChunk
+                            hasYieldedContent = true
+                            continuation.yield(cleanedChunk)
                         }
                         
                         // If no content was streamed, provide a helpful fallback
