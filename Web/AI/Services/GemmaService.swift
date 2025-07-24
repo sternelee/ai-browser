@@ -409,6 +409,39 @@ class GemmaService {
         return cleaned
     }
 
+    // MARK: - TLDR Specific Cleanup
+
+    /// Additional cleanup pass used by the TL;DR pipeline to salvage a summary when the
+    /// model produces heavy phrase-level repetition. It repeatedly collapses any 3-6 word
+    /// chunk that appears two or more times in a row (case-insensitive) until no such
+    /// patterns remain. This sits on top of `postProcessResponse`.
+    /// - Parameter text: The raw summary to clean.
+    /// - Returns: A cleaned version with collapsed repetitions.
+    func postProcessForTLDR(_ text: String) -> String {
+        var cleaned = text
+
+        // First, reuse postProcessResponse to remove simpler artifacts while preserving
+        // whitespace between tokens so that phrase boundaries remain intact.
+        cleaned = postProcessResponse(cleaned, trimWhitespace: false)
+
+        // Regex to capture a 3-6 word phrase that repeats consecutively (case-insensitive).
+        let phrasePattern = "(\\b(?:[A-Za-z0-9]+\\s+){2,5}[A-Za-z0-9]+\\b)(?:\\s+\\1)+"
+
+        do {
+            let regex = try NSRegularExpression(pattern: phrasePattern, options: [.caseInsensitive])
+            var previous: String
+            repeat {
+                previous = cleaned
+                let range = NSRange(location: 0, length: cleaned.utf16.count)
+                cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "$1")
+            } while previous != cleaned // Iterate until no more replacements
+        } catch {
+            NSLog("⚠️ Regex error while collapsing repeated phrases: \(error)")
+        }
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Generate a response from a RAW prompt without adding the conversation chat template.
     /// This is useful for utility features such as TL;DR summaries where the entire
     /// instruction is contained in the prompt itself and we do **not** want the
