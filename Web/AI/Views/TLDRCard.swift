@@ -10,10 +10,12 @@ struct TLDRCard: View {
     
     @State private var isExpanded: Bool = false
     @State private var tldrSummary: String = ""
+    @State private var sentimentEmoji: String = ""
     @State private var isGenerating: Bool = false
     @State private var lastProcessedURL: String = ""
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
+    @State private var isCancelled: Bool = false
     
     // Animation states
     @State private var pulseOpacity: Double = 0.3
@@ -49,6 +51,12 @@ struct TLDRCard: View {
             startPulseAnimation()
             autoGenerateTLDR()
         }
+        .onReceive(aiAssistant.$isProcessing) { isProcessing in
+            // If AI starts processing (chat), cancel any running TL;DR
+            if isProcessing && isGenerating {
+                cancelTLDRIfGenerating()
+            }
+        }
     }
     
     // MARK: - Collapsed View
@@ -61,33 +69,44 @@ struct TLDRCard: View {
             }
         }) {
             HStack(spacing: 6) {
-                // TL;DR icon with status indicator
-                ZStack {
-                    Circle()
-                        .fill(statusGradient)
-                        .frame(width: 16, height: 16)
-                    
-                    if isGenerating {
-                        // Subtle loading animation
+                // Sentiment emoji (prominent display) or status indicator
+                if !sentimentEmoji.isEmpty && !isGenerating {
+                    Text(sentimentEmoji)
+                        .font(.system(size: 14))
+                        .opacity(pulseOpacity)
+                        .animation(
+                            .easeInOut(duration: 2.0).repeatForever(autoreverses: true),
+                            value: pulseOpacity
+                        )
+                } else {
+                    // Fallback status indicator when no emoji or generating
+                    ZStack {
                         Circle()
-                            .trim(from: 0, to: 0.6)
-                            .stroke(
-                                AngularGradient(
-                                    colors: [.blue.opacity(0.3), .blue],
-                                    center: .center
-                                ),
-                                style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
-                            )
-                            .frame(width: 14, height: 14)
-                            .rotationEffect(.degrees(shimmerOffset))
-                            .animation(
-                                .linear(duration: 1.2).repeatForever(autoreverses: false),
-                                value: shimmerOffset
-                            )
-                    } else {
-                        Image(systemName: statusIcon)
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.white)
+                            .fill(statusGradient)
+                            .frame(width: 16, height: 16)
+                        
+                        if isGenerating {
+                            // Subtle loading animation
+                            Circle()
+                                .trim(from: 0, to: 0.6)
+                                .stroke(
+                                    AngularGradient(
+                                        colors: [.blue.opacity(0.3), .blue],
+                                        center: .center
+                                    ),
+                                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                                )
+                                .frame(width: 14, height: 14)
+                                .rotationEffect(.degrees(shimmerOffset))
+                                .animation(
+                                    .linear(duration: 1.2).repeatForever(autoreverses: false),
+                                    value: shimmerOffset
+                                )
+                        } else {
+                            Image(systemName: statusIcon)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
                 
@@ -96,15 +115,16 @@ struct TLDRCard: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.primary.opacity(0.8))
                 
-                // Status indicator
-                if !tldrSummary.isEmpty {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: 4, height: 4)
-                        .opacity(pulseOpacity)
-                        .animation(
-                            .easeInOut(duration: 2.0).repeatForever(autoreverses: true),
-                            value: pulseOpacity
+                // AI Busy indicator if processing chat
+                if aiAssistant.isProcessing && !isGenerating {
+                    Text("AI Busy")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.orange.opacity(0.8))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(.orange.opacity(0.1))
                         )
                 }
                 
@@ -327,10 +347,18 @@ struct TLDRCard: View {
             return
         }
         
+        // CONCURRENCY CHECK: Don't start if AI is already busy with chat
+        if aiAssistant.isProcessing {
+            NSLog("⚠️ TL;DR: Skipping generation - AI is busy with chat")
+            return
+        }
+        
         // Reset state for new page
         showError = false
         errorMessage = ""
         tldrSummary = ""
+        sentimentEmoji = ""
+        isCancelled = false
         lastProcessedURL = currentURL
         isGenerating = true
         
@@ -341,15 +369,28 @@ struct TLDRCard: View {
                 // Small delay to ensure context is extracted after page load
                 try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds for page content to be fully extracted
                 
+                // Check if cancelled or AI became busy during delay
+                if await MainActor.run(body: { isCancelled }) || aiAssistant.isProcessing {
+                    await MainActor.run {
+                        isGenerating = false
+                        NSLog("⚠️ TL;DR: Generation cancelled - AI became busy or was cancelled")
+                    }
+                    return
+                }
+                
                 // Generate TL;DR using the dedicated method that doesn't affect chat history
-                let summary = try await aiAssistant.generatePageTLDR()
+                let fullResponse = try await aiAssistant.generatePageTLDR()
+                
+                // Parse emoji and summary from response
+                let (emoji, summary) = parseTLDRResponse(fullResponse)
                 
                 await MainActor.run {
                     isGenerating = false
+                    sentimentEmoji = emoji
                     tldrSummary = summary
                     showError = false
                     
-                    NSLog("✅ TL;DR: Generated bullet point summary (\(tldrSummary.count) chars)")
+                    NSLog("✅ TL;DR: Generated summary with emoji \(emoji) (\(tldrSummary.count) chars)")
                 }
                 
             } catch {
@@ -361,6 +402,56 @@ struct TLDRCard: View {
                     NSLog("❌ TL;DR: Generation failed - \(error.localizedDescription)")
                 }
             }
+        }
+    }
+    
+    /// Parse emoji and summary from AI response
+    private func parseTLDRResponse(_ response: String) -> (emoji: String, summary: String) {
+        let lines = response.split(separator: "\n", omittingEmptySubsequences: true)
+        
+        // Look for emoji in first line or extract from response
+        var emoji = ""
+        var summary = response
+        
+        // Try to extract emoji from first line
+        if let firstLine = lines.first {
+            let firstLineStr = String(firstLine).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Check if first line contains an emoji (common sentiment emojis)
+            let sentimentEmojis = ["📰", "🔬", "💼", "🎬", "⚠️", "😊", "😐", "😟", "🏠", "🛒", "🎮", "🎵", "🍔", "✈️", "⚽", "🎨", "📊", "💡"]
+            
+            for sentimentEmoji in sentimentEmojis {
+                if firstLineStr.contains(sentimentEmoji) {
+                    emoji = sentimentEmoji
+                    // Remove emoji from summary
+                    summary = response.replacingOccurrences(of: sentimentEmoji, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    break
+                }
+            }
+        }
+        
+        // If no emoji found, default based on content keywords
+        if emoji.isEmpty {
+            let lowercasedResponse = response.lowercased()
+            if lowercasedResponse.contains("news") || lowercasedResponse.contains("breaking") {
+                emoji = "📰"
+            } else if lowercasedResponse.contains("tech") || lowercasedResponse.contains("software") {
+                emoji = "🔬"
+            } else if lowercasedResponse.contains("business") || lowercasedResponse.contains("finance") {
+                emoji = "💼"
+            } else {
+                emoji = "😐" // Default neutral
+            }
+        }
+        
+        return (emoji: emoji, summary: summary)
+    }
+    
+    /// Cancel TL;DR generation if user starts interacting with chat
+    func cancelTLDRIfGenerating() {
+        if isGenerating {
+            isCancelled = true
+            isGenerating = false
+            NSLog("🚫 TL;DR: Generation cancelled due to user interaction")
         }
     }
     

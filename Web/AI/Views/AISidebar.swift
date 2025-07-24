@@ -91,6 +91,7 @@ struct AISidebar: View {
             // TL;DR Component - Next-gen auto-summary with progressive disclosure
             TLDRCard(tabManager: tabManager, aiAssistant: aiAssistant)
                 .padding(.bottom, 8)
+                .id("tldr-card") // For referencing
             
             // Context status indicator
             contextStatusView()

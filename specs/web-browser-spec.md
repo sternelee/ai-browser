@@ -228,6 +228,7 @@ Web/
    - Handoff integration
    - iCloud sync for bookmarks/history
    - Continuity features
+   - Print feature?
 
 2. **Updates & Maintenance**
    - Sparkle framework integration
