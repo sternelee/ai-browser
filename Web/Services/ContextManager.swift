@@ -358,6 +358,18 @@ class ContextManager: ObservableObject {
                     cont.resume(with: res)
                 }
             }
+            
+            // SECOND-PASS: If the domain is known to lazy-load and we still have very little text, scroll the page to force render and try once more.
+            if context.text.count < 300 {
+                NSLog("🔄 Context still sparse after retry – performing lazy-load scroll before final attempt…")
+                await triggerLazyLoadScroll(on: webView)
+                try await Task.sleep(nanoseconds: 1_500_000_000) // wait 1.5 s for DOM update
+                context = try await withCheckedThrowingContinuation { cont in
+                    extractOnce { res in
+                        cont.resume(with: res)
+                    }
+                }
+            }
         }
 
         return context
@@ -405,10 +417,8 @@ class ContextManager: ObservableObject {
     
     // If extracted content looks suspiciously small for well-known dynamic sites, attempt a delayed retry once.
     private func shouldRetryExtraction(for context: WebpageContext) -> Bool {
-        // Consider less than 300 chars as possibly insufficient.
-        guard context.text.count < 300 else { return false }
-        let dynamicDomains = ["reddit.com", "medium.com", "twitter.com", "x.com"]
-        return dynamicDomains.contains(where: { context.url.contains($0) })
+        // Retry if we have very little content regardless of domain.
+        return context.text.count < 300
     }
     
     private func cleanExtractedContent(_ text: String) -> String {
@@ -465,38 +475,7 @@ class ContextManager: ObservableObject {
                 var contentFound = false;
                 var postCount = 0;
                 
-                // SPECIAL HANDLING: Reddit multi-post extraction
-                if (url.includes('reddit.com')) {
-                    var redditPosts = document.querySelectorAll('[data-testid="post-content"], .thing, .Post, [data-click-id="text"], .usertext-body');
-                    
-                    for (var i = 0; i < Math.min(redditPosts.length, 20); i++) {
-                        var post = redditPosts[i];
-                        var postText = post.textContent || post.innerText || "";
-                        
-                        // Filter out short posts (likely metadata)
-                        if (postText.trim().length > 50) {
-                            postCount++;
-                            extractedContent += "POST " + postCount + ": " + postText.trim() + "\\n\\n";
-                            contentFound = true;
-                        }
-                    }
-                    
-                    // Also try to get Reddit comments
-                    if (postCount > 0) {
-                        var comments = document.querySelectorAll('.Comment, [data-testid="comment"], .usertext .md');
-                        var commentCount = 0;
-                        
-                        for (var i = 0; i < Math.min(comments.length, 15); i++) {
-                            var comment = comments[i];
-                            var commentText = comment.textContent || comment.innerText || "";
-                            
-                            if (commentText.trim().length > 30 && commentCount < 10) {
-                                commentCount++;
-                                extractedContent += "COMMENT " + commentCount + ": " + commentText.trim() + "\\n\\n";
-                            }
-                        }
-                    }
-                }
+                // --- Removed site-specific Reddit block; generic multi-post logic below handles all sites ---
                 
                 // GENERAL MULTI-POST EXTRACTION: For other forum sites
                 if (!contentFound) {
@@ -671,6 +650,15 @@ class ContextManager: ObservableObject {
             }
         })();
         """
+    }
+
+    /// Programmatically scrolls the page to the bottom (and briefly back to top) to trigger lazy-loaded content like virtualised lists.
+    /// Must be called on the main actor because it touches the WebView JS runtime.
+    private func triggerLazyLoadScroll(on webView: WKWebView) async {
+        await MainActor.run {
+            let js = "(function(){ const scrollBottom = () => window.scrollTo(0, document.body.scrollHeight); scrollBottom(); setTimeout(scrollBottom, 200); setTimeout(() => window.scrollTo(0,0), 400); })();"
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
     }
 }
 
