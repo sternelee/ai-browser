@@ -140,8 +140,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Apple's WebKit team for the excellent web rendering engine
 - The Swift community for SwiftUI and modern iOS/macOS development patterns
 
----
-
 ## 🔗 Links
 
 - Website: [Nuanc.me](https://nuanc.me)
