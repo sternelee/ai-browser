@@ -8,9 +8,11 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 ![Swift](https://img.shields.io/badge/Swift-6-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-*_Note: This is an experimental early access version, as AI models improve so will Web.
-Note 2: The AI features require an Apple M chip.
-Note 3: The current version is meant to be used to play around and give feedback to gear the development. As a browser it's still missing key features._*
+*_Note: This is an experimental early access version, as AI models improve so will Web._*
+
+*_Note 2: The AI features require an Apple M chip._*
+
+*_Note 3: The current version is meant to be used to play around and give feedback to gear development. It's missing key features as a browser._*
 
 ## What's working
 
