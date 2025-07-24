@@ -341,7 +341,8 @@ class GemmaService {
         }
         
         if uniqueSentences.count < sentences.count {
-            cleaned = uniqueSentences.joined(separator: ".")
+            // Preserve natural line breaks between sentences to improve readability and markdown rendering
+            cleaned = uniqueSentences.joined(separator: ".\n")
         }
         
         // Dynamic response length based on memory availability
