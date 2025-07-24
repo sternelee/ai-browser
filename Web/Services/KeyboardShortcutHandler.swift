@@ -15,12 +15,14 @@ class KeyboardShortcutHandler: ObservableObject {
     @Published var showBookmarksPanel = false
     @Published var showDownloadsPanel = false
     @Published var showSettingsPanel = false
+    @Published var showAboutPanel = false
     
     // UI positioning for panels - using center-based coordinates that will be made safe by PanelManager
     @Published var historyPanelPosition = CGPoint(x: 400, y: 300)
     @Published var bookmarksPanelPosition = CGPoint(x: 450, y: 320)
     @Published var downloadsPanelPosition = CGPoint(x: 500, y: 340)
     @Published var settingsPanelPosition = CGPoint(x: 550, y: 360)
+    @Published var aboutPanelPosition = CGPoint(x: 600, y: 380)
     
     // Dependencies
     private let historyService = HistoryService.shared
@@ -57,6 +59,13 @@ class KeyboardShortcutHandler: ObservableObject {
         NotificationCenter.default.publisher(for: .showSettingsRequested)
             .sink { [weak self] _ in
                 self?.handleShowSettings()
+            }
+            .store(in: &cancellables)
+        
+        // About shortcut
+        NotificationCenter.default.publisher(for: .showAboutRequested)
+            .sink { [weak self] _ in
+                self?.handleShowAbout()
             }
             .store(in: &cancellables)
     }
@@ -105,6 +114,12 @@ class KeyboardShortcutHandler: ObservableObject {
     private func handleShowSettings() {
         showSettingsPanel.toggle()
         logger.info("Settings panel toggled: \(self.showSettingsPanel)")
+    }
+    
+    /// Handle About - Show About
+    private func handleShowAbout() {
+        showAboutPanel.toggle()
+        logger.info("About panel toggled: \(self.showAboutPanel)")
     }
     
     // MARK: - Public Interface
