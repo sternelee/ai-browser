@@ -27,7 +27,7 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 - **Privacy Settings**: Granular privacy controls
 
 ### AI Integration
-- **Local AI Models**: On-device AI powered by [Apple MLX](https://github.com/ml-explore/mlx)
+- **Local AI Models**: On-device AI powered by [Apple MLX](https://github.com/ml-explore/mlx) and [MLX Swift Examples](https://github.com/ml-explore/mlx-swift-examples)
 - **MLX Framework**: Apple Silicon optimized inference
 - **Privacy-First**: AI processing happens locally on your device
 - **Smart Assistance**: Integrated AI sidebar for web content analysis
@@ -79,9 +79,9 @@ Web/
 
 ## AI Features
 
-Web integrates local AI capabilities using Apple's MLX framework:
+Web integrates local AI capabilities using Apple's MLX framework and Swift examples:
 
-- **Framework**: [Apple MLX](https://github.com/ml-explore/mlx)
+- **Framework**: [Apple MLX](https://github.com/ml-explore/mlx) with [MLX Swift Examples](https://github.com/ml-explore/mlx-swift-examples)
 - **Models**: Gemma and other compatible models
 - **Inference**: MLX-optimized for Apple Silicon
 - **Privacy**: All AI processing happens locally
@@ -118,6 +118,7 @@ Web integrates local AI capabilities using Apple's MLX framework:
 ## Dependencies
 
 - [Apple MLX](https://github.com/ml-explore/mlx) - Machine learning framework for Apple Silicon
+- [MLX Swift Examples](https://github.com/ml-explore/mlx-swift-examples) - Swift examples and utilities for MLX
 - WebKit - Apple's web rendering engine
 - Core Data - Local data persistence
 - Combine - Reactive programming framework
@@ -129,6 +130,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - [Apple MLX](https://github.com/ml-explore/mlx) by Apple for optimized machine learning on Apple Silicon
+- [MLX Swift Examples](https://github.com/ml-explore/mlx-swift-examples) by Apple for Swift integration examples
 - Apple's WebKit team for the excellent web rendering engine
 - The Swift community for SwiftUI and modern iOS/macOS development patterns
 

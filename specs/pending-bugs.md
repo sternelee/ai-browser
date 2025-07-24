@@ -9,6 +9,9 @@
 [ ] Let's ensure there are 0 warnings when building
 [ ] Show favicon in history panel, autofill, bookmarks panel
 [ ] Open in new tab or cmd + link click should selected the new tab automatically
+[ ] Does full screen videos work?
+[ ] Double clicking window should expand the window to the whole screen and double clicking again should restore the previous size of the window
+[ ] The keyboard gets "locked" for some specific reason, cant select inputs from the browser app or even from pages like the google input, and like pressing "spacebar" to stop a video is also locked and doesnt work
 
 --
 

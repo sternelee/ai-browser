@@ -102,10 +102,8 @@ final class SimplifiedMLXRunner: ObservableObject {
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    // Accumulate all tokens
-                    if let token = tokens.last {
-                        allTokens.append(token)
-                    }
+                    // Accumulate ALL tokens from this callback
+                    allTokens.append(contentsOf: tokens)
                     return .more
                 }
                 
@@ -124,7 +122,7 @@ final class SimplifiedMLXRunner: ObservableObject {
     }
     
     /// Generate streaming response
-    nonisolated func generateStreamWithPrompt(prompt: String, modelId: String = "llama3_2_1B_4bit") -> AsyncThrowingStream<String, Error> {
+    nonisolated func generateStreamWithPrompt(prompt: String, modelId: String = "gemma3_2B_4bit") -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -147,28 +145,46 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
-                        var allTokens: [Int] = []
-                        var lastText = ""
+                        // Track all generated tokens and only yield new content
+                        var allGeneratedTokens: [Int] = []
+                        var lastDecodedLength = 0
+                        let maxTokens = 512 // Limit to prevent infinite generation
                         
                         let _ = try MLXLMCommon.generate(
                             input: input,
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            // Accumulate all tokens
-                            if let token = tokens.last {
-                                allTokens.append(token)
+                            // Add new tokens to our collection
+                            allGeneratedTokens.append(contentsOf: tokens)
+                            
+                            // Stop if we've reached the maximum token limit
+                            if allGeneratedTokens.count >= maxTokens {
+                                NSLog("🛑 Stopping generation: reached max tokens (\(allGeneratedTokens.count))")
+                                return .stop
                             }
                             
-                            // Decode all accumulated tokens to get properly spaced text
-                            let currentText = modelContext.tokenizer.decode(tokens: allTokens)
-                            
-                            // Only yield the new part
-                            if currentText.count > lastText.count {
-                                let newText = String(currentText.dropFirst(lastText.count))
-                                lastText = currentText
-                                continuation.yield(newText)
+                            // Check for EOS tokens that indicate generation should stop
+                            let eosTokens: Set<Int> = [2, 1, 0] // Common EOS token IDs
+                            for token in tokens {
+                                if eosTokens.contains(token) {
+                                    NSLog("🛑 Stopping generation: found EOS token (\(token))")
+                                    return .stop
+                                }
                             }
+                            
+                            // Decode all tokens to get the full text so far
+                            let fullText = modelContext.tokenizer.decode(tokens: allGeneratedTokens)
+                            
+                            // Only yield the new part that we haven't seen before
+                            if fullText.count > lastDecodedLength {
+                                let newText = String(fullText.suffix(fullText.count - lastDecodedLength))
+                                if !newText.isEmpty {
+                                    continuation.yield(newText)
+                                    lastDecodedLength = fullText.count
+                                }
+                            }
+                            
                             return .more
                         }
                     }
