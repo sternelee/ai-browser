@@ -388,7 +388,15 @@ class AIAssistant: ObservableObject {
                 // Fallback with simpler prompt
                 let fallbackPrompt = "Summarize this webpage in 2-3 bullet points (plain text, no HTML):\n\n\(context.title)\n\(context.text.prefix(800))"
                 let fallbackClean = try await gemmaService.generateRawResponse(prompt: fallbackPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
-                return isInvalidTLDRResponse(fallbackClean) ? "Unable to generate summary" : fallbackClean
+
+                // If fallback is still invalid, attempt a final post-processing pass that collapses
+                // repeated phrases to salvage the summary before giving up.
+                if isInvalidTLDRResponse(fallbackClean) {
+                    let salvaged = gemmaService.postProcessForTLDR(fallbackClean)
+                    return isInvalidTLDRResponse(salvaged) ? "Unable to generate summary" : salvaged
+                }
+
+                return fallbackClean
             }
             
             return cleanResponse
@@ -426,6 +434,20 @@ class AIAssistant: ObservableObject {
         // of token duplication errors during generation.
         if lowercased.range(of: "\\b(\\w+)(\\s+\\1)+\\b", options: .regularExpression) != nil {
             return true
+        }
+
+        // NEW: Detect **phrase**-level repetition where a 3-6-word chunk is repeated
+        // three or more times consecutively (e.g. "The provided text" pattern).
+        // This catches progressive prefix repetition that isn't matched by the
+        // simple duplicate-word regex above.
+        do {
+            let phrasePattern = "(\\b(?:\\w+\\s+){2,5}\\w+\\b)(?:\\s+\\1){2,}"
+            if lowercased.range(of: phrasePattern, options: [.regularExpression]) != nil {
+                return true
+            }
+        }
+        catch {
+            NSLog("⚠️ Regex error in phrase repetition detection: \(error)")
         }
 
         // Check for excessive repetition of bad patterns
