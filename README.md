@@ -8,29 +8,29 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 ![Swift](https://img.shields.io/badge/Swift-6-orange.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-*_Note: This is an experimental early access version, as AI models improve so will Web_*
+*_Note: This is an experimental early access version, as AI models improve so will Web.
+Note 2: The AI features require an Apple M chip.
+Note 3: The current version is meant to be used to play around and give feedback to gear the development. As a browser it's still missing key features._*
 
-## Features
+## What's working
 
 ### Core Browsing
 - **WebKit Integration**: Native WebKit rendering with WKWebView
 - **Tab Management**: Tab hibernation for optimal performance
-- **Glass Design**: Glass morphism UI with ultraThinMaterial effects
 - **Keyboard Shortcuts**: Comprehensive shortcuts (⌘T, ⌘W, ⌘R, etc.)
-- **Downloads**: Built-in download manager with progress tracking
+- **Downloads**: Built-in download manager with progress tracking (Need to test)
 
 ### Privacy & Security
 - **Incognito Mode**: Private browsing sessions
-- **Ad Blocking**: Integrated ad blocking service
-- **DNS over HTTPS**: Enhanced DNS privacy
-- **Password Management**: Secure password handling
-- **Privacy Settings**: Granular privacy controls
+- **Ad Blocking**: Integrated ad blocking service (Need to test if it can be disabled)
+- **Password Management**: Secure password handling (Need to test)
+- **Privacy Settings**: Granular privacy controls (Need to test)
 
 ### AI Integration
 - **Local AI Models**: On-device AI powered by [Apple MLX](https://github.com/ml-explore/mlx) and [MLX Swift Examples](https://github.com/ml-explore/mlx-swift-examples)
 - **MLX Framework**: Apple Silicon optimized inference
-- **Privacy-First**: AI processing happens locally on your device
-- **Smart Assistance**: Integrated AI sidebar for web content analysis
+- **Privacy-First**: AI processing happens locally on device
+- **Smart Assistance**: Integrated AI sidebar for web content analysis with TL;DR and page + history context. (Still rough with bugs, but nice to play and have fun)
 
 ## Requirements
 
