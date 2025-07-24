@@ -20,7 +20,7 @@ class PasswordManager: NSObject, ObservableObject {
     @Published var passwordGeneratorSettings = PasswordGeneratorSettings()
     
     private let serviceName = "com.web.browser.passwords"
-    private var encryptionKey: SymmetricKey
+    private var encryptionKey: SymmetricKey?
     private let context = LAContext()
     
     struct SavedPassword: Identifiable, Codable {
@@ -62,9 +62,8 @@ class PasswordManager: NSObject, ObservableObject {
     }
     
     override init() {
-        self.encryptionKey = SymmetricKey(size: .bits256) // Temporary key
+        // Don't initialize encryption key during app startup to avoid keychain access
         super.init()
-        self.encryptionKey = getOrCreateEncryptionKey()
         loadSavedPasswords()
         loadSettings()
     }
@@ -489,14 +488,24 @@ class PasswordManager: NSObject, ObservableObject {
     
     // MARK: - Encryption/Decryption
     private func encryptPassword(_ password: String) throws -> Data {
+        // Lazy initialization of encryption key when first needed
+        if encryptionKey == nil {
+            encryptionKey = getOrCreateEncryptionKey()
+        }
+        
         let passwordData = Data(password.utf8)
-        let sealedBox = try AES.GCM.seal(passwordData, using: encryptionKey)
+        let sealedBox = try AES.GCM.seal(passwordData, using: encryptionKey!)
         return sealedBox.combined!
     }
     
     private func decryptPassword(_ encryptedData: Data) throws -> String {
+        // Lazy initialization of encryption key when first needed
+        if encryptionKey == nil {
+            encryptionKey = getOrCreateEncryptionKey()
+        }
+        
         let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
-        let decryptedData = try AES.GCM.open(sealedBox, using: encryptionKey)
+        let decryptedData = try AES.GCM.open(sealedBox, using: encryptionKey!)
         return String(data: decryptedData, encoding: .utf8) ?? ""
     }
     
