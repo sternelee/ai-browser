@@ -1,7 +1,6 @@
 # PENDING TASKS and BUGS
 
-[ ] 'Page context available' im not sure if its taking all the text in the page correctly, please review, it doesnt seem like it, we need to do smart context engineering to optimize context but its important that we give all the important info to the model
-[ ] Missing 'Find' feature
+[ ] Missing 'Find in page' feature
 [ ] In the AI responses, before responding the 3 dots are duplicated, not animated properly, and badly layouted. Also after the AI responses the message flickers in a loop forever, and we still see one of the 3 dots moving up and down
 [ ] URL bar not working well, its not updating the url sometimes after clicking a link and stuff, shows the previous page url, should always show the current page, its critical that this is correct
 [ ] Overlay panels like history, settings, etc show a weird square with blue accent border wrapping them
@@ -12,6 +11,7 @@
 [ ] Does full screen videos work?
 [ ] Double clicking window should expand the window to the whole screen and double clicking again should restore the previous size of the window
 [ ] The keyboard gets "locked" for some specific reason, cant select inputs from the browser app or even from pages like the google input, and like pressing "spacebar" to stop a video is also locked and doesnt work
+[ ] If user puts a wrong link like youtube.om it loops infinitely trying to load
 
 --
 

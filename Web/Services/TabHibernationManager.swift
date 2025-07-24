@@ -139,17 +139,24 @@ class TabHibernationManager: ObservableObject {
         let memoryStats = MemoryMonitor.shared.getMemoryStats()
         let shouldAggressivelyHibernate = memoryStats.shouldHibernate
         let maxActiveWebViews = min(currentPolicy.maxActiveWebViews, memoryStats.maxActiveWebViews)
-        
+
+        // Determine whether the application is currently active (front-most)
+        let isAppActive = NSApplication.shared.isActive
+
         // Get non-hibernated tabs with WebViews
         let activeWebViewTabs = tabs.filter { !$0.isHibernated && $0.webView != nil }
-        
-        // If we're under the limit and not under memory pressure, no hibernation needed
-        if activeWebViewTabs.count <= maxActiveWebViews && !shouldAggressivelyHibernate {
+
+        // If we're under the limit and not under memory pressure **and** the app is active, no hibernation needed.
+        // When the app is in background we still want to consider freeing resources even if under the limit.
+        if isAppActive && activeWebViewTabs.count <= maxActiveWebViews && !shouldAggressivelyHibernate {
             return
         }
-        
+
+        // When the app is in background we treat `activeTab` as nil so it can also be hibernated unless protected.
+        let effectiveActiveTab: Tab? = isAppActive ? activeTab : nil
+
         // Sort tabs by hibernation priority (LRU with exclusions)
-        let hibernationCandidates = getHibernationCandidates(from: tabs, activeTab: activeTab)
+        let hibernationCandidates = getHibernationCandidates(from: tabs, activeTab: effectiveActiveTab)
         
         // Determine how many tabs need to be hibernated
         let excessTabs = max(0, activeWebViewTabs.count - maxActiveWebViews)
@@ -180,18 +187,33 @@ class TabHibernationManager: ObservableObject {
     }
     
     private func getHibernationCandidates(from tabs: [Tab], activeTab: Tab?) -> [Tab] {
+        let isAppActive = NSApplication.shared.isActive
+
         return tabs
             .filter { tab in
-                // Exclude active tab, already hibernated, or tabs that should be protected
-                return tab.id != activeTab?.id && 
-                       !tab.isHibernated && 
+                // Exclude active tab (only if app is active), already hibernated, or tabs that should be protected
+                return (isAppActive ? tab.id != activeTab?.id : true) &&
+                       !tab.isHibernated &&
                        tab.webView != nil &&
-                       !tab.shouldExcludeFromHibernation() &&
-                       !shouldExcludeDomain(tab.url)
+                       !shouldExcludeDomain(tab.url) &&
+                       {
+                           if isAppActive {
+                               // Normal protection rules
+                               return !tab.shouldExcludeFromHibernation()
+                           } else {
+                               // In background, only protect media playback & downloads
+                               return !(tab.hasMediaPlayback || tab.hasActiveDownloads)
+                           }
+                       }()
             }
             .filter { tab in
-                // Check time threshold
-                return Date().timeIntervalSince(tab.lastAccessed) > currentPolicy.timeThreshold
+                // If the app is backgrounded, ignore the usual time threshold and hibernate immediately.
+                // Otherwise honour the policy’s time threshold.
+                if isAppActive {
+                    return Date().timeIntervalSince(tab.lastAccessed) > currentPolicy.timeThreshold
+                } else {
+                    return true
+                }
             }
             .sorted { tab1, tab2 in
                 // Sort by last accessed time (oldest first) - LRU policy
