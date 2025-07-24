@@ -60,6 +60,8 @@ struct ContentView: View {
             isEdgeToEdgeMode.toggle()
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isExpanded)
+        // Allow the window chrome to cover the (now transparent) title-bar area
+        .ignoresSafeArea(.container, edges: .top)
     }
     
     private func toggleExpanded() {
