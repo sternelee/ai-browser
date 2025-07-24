@@ -366,47 +366,33 @@ class AIAssistant: ObservableObject {
         
         // Create clean, direct TL;DR prompt with sentiment analysis
         let tldrPrompt = """
-        Analyze this webpage content and provide:
-        1. A sentiment emoji that best represents the content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
-        2. A 2-3 bullet point summary of key takeaways
+        Analyze the following webpage **without returning any HTML or code** and reply ONLY with:
+        1. A single sentiment emoji that best represents the overall content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
+        2. Two-to-three concise bullet points (max 30 words each) describing the key take-aways.
 
-        Format: [EMOJI] 
-        • [Key point 1]
-        • [Key point 2]  
-        • [Key point 3 if needed]
+        Output **format** (plain text):
+        [EMOJI]\n• point 1\n• point 2\n• point 3 (optional)
 
         Title: \(context.title)
-        Content: \(context.text.prefix(3000))
+        Content: \(context.text.prefix(1500))
         """
-        
+
         do {
-            // Process with Gemma service WITHOUT adding to conversation history
-            let response = try await gemmaService.generateResponse(
-                query: tldrPrompt,
-                context: "",  // No additional context needed, it's in the prompt
-                conversationHistory: []  // Empty history to avoid affecting chat
-            )
-            
-            let cleanResponse = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Use RAW prompt generation to avoid chat template noise
+            let cleanResponse = try await gemmaService.generateRawResponse(prompt: tldrPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
             
             // VALIDATION: Check for repetitive or broken output
             if isInvalidTLDRResponse(cleanResponse) {
                 NSLog("⚠️ Invalid TL;DR response detected, retrying with simplified prompt")
                 
                 // Fallback with simpler prompt
-                let fallbackPrompt = "Summarize this webpage in 2-3 bullet points:\n\n\(context.title)\n\(context.text.prefix(1500))"
-                let fallbackResponse = try await gemmaService.generateResponse(
-                    query: fallbackPrompt,
-                    context: "",
-                    conversationHistory: []
-                )
-                
-                let fallbackClean = fallbackResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallbackPrompt = "Summarize this webpage in 2-3 bullet points (plain text, no HTML):\n\n\(context.title)\n\(context.text.prefix(800))"
+                let fallbackClean = try await gemmaService.generateRawResponse(prompt: fallbackPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
                 return isInvalidTLDRResponse(fallbackClean) ? "Unable to generate summary" : fallbackClean
             }
             
             return cleanResponse
-            
+
         } catch {
             NSLog("❌ TL;DR generation failed: \(error)")
             throw AIError.inferenceError("Failed to generate TL;DR: \(error.localizedDescription)")
@@ -431,6 +417,11 @@ class AIAssistant: ObservableObject {
             return true
         }
         
+        // Detect obvious HTML or code fragments which indicate a bad summary
+        if lowercased.contains("<html") || lowercased.contains("<div") || lowercased.contains("<span") {
+            return true
+        }
+
         // Check for excessive repetition of bad patterns
         for pattern in badPatterns {
             let occurrences = lowercased.components(separatedBy: pattern).count - 1

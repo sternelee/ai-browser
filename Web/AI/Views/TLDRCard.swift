@@ -262,7 +262,8 @@ struct TLDRCard: View {
             Text(tldrSummary)
                 .font(.system(size: 12, weight: .regular))
                 .foregroundColor(.primary.opacity(0.9))
-                .lineLimit(6)
+                // Allow the full summary to be visible when expanded
+                .lineLimit(nil)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
             

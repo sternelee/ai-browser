@@ -380,7 +380,27 @@ class GemmaService {
         
         return cleaned
     }
-    
+
+    /// Generate a response from a RAW prompt without adding the conversation chat template.
+    /// This is useful for utility features such as TL;DR summaries where the entire
+    /// instruction is contained in the prompt itself and we do **not** want the
+    /// additional <start_of_turn> metadata or prior conversation context.
+    /// - Parameter prompt: The raw prompt to send to the model.
+    /// - Returns: The model’s cleaned response string.
+    func generateRawResponse(prompt: String) async throws -> String {
+        guard isModelLoaded else {
+            throw GemmaError.modelNotLoaded
+        }
+
+        do {
+            let generated = try await SimplifiedMLXRunner.shared.generateWithPrompt(prompt: prompt, modelId: "gemma3_2B_4bit")
+            return postProcessResponse(generated)
+        } catch {
+            NSLog("❌ GemmaService raw generation failed: \(error)")
+            throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
+        }
+    }
+
     // Context reference processing will be added in Phase 11
 }
 
