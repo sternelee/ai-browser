@@ -452,8 +452,7 @@ class AIAssistant: ObservableObject {
 
         // Check for excessive repetition of bad patterns
         for pattern in badPatterns {
-            let occurrences = lowercased.components(separatedBy: pattern).count - 1
-            if occurrences > 2 {
+            if lowercased.contains(pattern) {
                 return true
             }
         }

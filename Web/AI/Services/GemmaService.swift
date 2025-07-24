@@ -237,7 +237,11 @@ class GemmaService {
         
         // System prompt as first user turn
         promptParts.append("<start_of_turn>user")
-        promptParts.append("You are a helpful AI assistant. Answer questions based on the provided webpage content when available. Be concise and direct.")
+
+        // ENHANCEMENT: Make it crystal-clear to the model that it ALREADY has the webpage content
+        // and should never ask the user to supply it again. This prevents answers like
+        // "Please provide me with the webpage URL or HTML code …" when the context was actually provided.
+        promptParts.append("You are a helpful AI assistant. You have already been given the current webpage\'s content in this prompt. NEVER ask the user to provide the webpage again. When answering, rely on the provided content. Be concise and direct.")
         
         // Add context if available 
         if let context = context, !context.isEmpty {
