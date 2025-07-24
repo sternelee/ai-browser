@@ -59,7 +59,7 @@ class ContextManager: ObservableObject {
         // Only throttle if we have *already* extracted context for the *same* page very recently.
         // This prevents scenarios where the user quickly navigates to a new URL but the previous
         // page's context is still returned because the interval has not expired (e.g. navigating
-        // from a weather page to a Reddit post within two seconds). [[Fixes stale-context bug]]
+        // from a weather page to a social media post within two seconds). [[Fixes stale-context bug]]
         if let lastTime = lastExtractionTime,
            Date().timeIntervalSince(lastTime) < minExtractionInterval,
            let lastContext = lastExtractedContext,
@@ -658,7 +658,7 @@ class ContextManager: ObservableObject {
         let headings = data["headings"] as? [String] ?? []
         let links = data["links"] as? [String] ?? []
 
-        // Re-compute word count on the Swift side to avoid under-count issues seen on some dynamic sites (e.g. Reddit).
+        // Re-compute word count on the Swift side to avoid under-count issues seen on some dynamic sites.
         let wordCount = truncatedText.split { $0.isWhitespace || $0.isNewline }.count
         let extractionMethod = data["extractionMethod"] as? String ?? "unknown"
         let postCount = data["postCount"] as? Int ?? 0
@@ -962,28 +962,25 @@ class ContextManager: ObservableObject {
                     }
                 }
                 
-                // Analyze Reddit-specific elements
-                if (window.location.href.includes('reddit.com')) {
-                    console.log('🔍 REDDIT ANALYSIS: Analyzing Reddit-specific structure');
-                    var redditSelectors = [
-                        '[data-testid="post-content"]',
-                        '[data-testid="comment"]', 
-                        '.Post',
-                        '.usertext-body',
-                        '[data-click-id="text"]',
-                        '.comment-body',
-                        '[class*="comment"]',
-                        '[class*="post"]'
-                    ];
-                    
-                    for (var r = 0; r < redditSelectors.length; r++) {
-                        var redditElements = document.querySelectorAll(redditSelectors[r]);
-                        console.log('🔍 Reddit selector', redditSelectors[r], 'found:', redditElements.length, 'elements');
+                // Analyze common content patterns across all sites
+                var commonContentSelectors = [
+                    '[data-testid*="post"]', '[data-testid*="content"]', '[data-testid*="comment"]',
+                    '.post', '.content', '.comment', '.message', '.article',
+                    '[class*="post"]', '[class*="content"]', '[class*="comment"]',
+                    '[role="article"]', '[role="main"]', 'article', 'main'
+                ];
+                
+                for (var cs = 0; cs < commonContentSelectors.length; cs++) {
+                    var elements = document.querySelectorAll(commonContentSelectors[cs]);
+                    if (elements.length > 0) {
+                        console.log('🔍 Found', elements.length, 'elements matching:', commonContentSelectors[cs]);
                         
-                        if (redditElements.length > 0 && redditElements.length <= 3) {
-                            for (var re = 0; re < redditElements.length; re++) {
-                                var text = redditElements[re].textContent || '';
-                                console.log('📝 Reddit element', re + 1, 'preview:', text.trim().substring(0, 100) + '...');
+                        if (elements.length > 0 && elements.length <= 5) {
+                            for (var e = 0; e < Math.min(elements.length, 3); e++) {
+                                var text = elements[e].textContent || '';
+                                if (text.trim().length > 50) {
+                                    console.log('📝 Element', e + 1, 'preview:', text.trim().substring(0, 100) + '...');
+                                }
                             }
                         }
                     }
@@ -1002,27 +999,27 @@ class ContextManager: ObservableObject {
                     console.log('❌ Strategy 1 FAILED: No framework content found');
                 }
                 
-                // STRATEGY 2: Enhanced multi-post extraction with Reddit-specific improvements
+                // STRATEGY 2: Enhanced multi-post extraction with platform-agnostic improvements
                 if (!contentFound) {
                     console.log('🔍 EXTRACTION DEBUG: Starting Strategy 2 - Multi-post extraction');
                     var multiPostSelectors = [
-                        // Reddit-specific selectors (2025 updated)
-                        '[data-testid="post-content"]', '[data-click-id="text"]',
-                        '.Post', '[data-adclicklocation="text"]',
-                        '.usertext-body', '[data-testid="comment"]',
+                        // Generic content selectors (platform-agnostic)
+                        '[data-testid*="post"]', '[data-testid*="content"]', '[data-testid*="comment"]',
+                        '[data-testid*="tweet"]', '[data-testid*="message"]',
                         
-                        // Generic forum selectors
+                        // Generic forum and discussion selectors
                         '.message-body', '.post-message', '.forum-post', '.bb-post',
                         '.post-content', '.message-content', '.topic-post',
-                        '.comment-body', '.reply-content',
+                        '.comment-body', '.reply-content', '.post-body',
                         
-                        // Social media selectors
-                        '[data-testid*="post"]', '[data-testid*="tweet"]',
+                        // Social media and feed selectors
                         '.feed-item', '.timeline-item', '.story-content',
+                        '.card-content', '.item-content', '.entry-content',
                         
                         // General content selectors
                         '.post', '.entry', '.article-item', '.content-item',
                         '[class*="post"]', '[class*="message"]', '[class*="comment"]',
+                        '[class*="content"]', '[class*="article"]',
                         '[role="article"]', '[itemtype*="Article"]'
                     ];
                     
