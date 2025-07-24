@@ -145,9 +145,8 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
-                        // Track all generated tokens and only yield new content
-                        var allGeneratedTokens: [Int] = []
-                        var lastDecodedLength = 0
+                        // Track tokens we've already sent to avoid duplication while preserving proper decoding
+                        var sentTokenCount = 0
                         let maxTokens = 512 // Limit to prevent infinite generation
                         
                         let _ = try MLXLMCommon.generate(
@@ -155,12 +154,9 @@ final class SimplifiedMLXRunner: ObservableObject {
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            // Add new tokens to our collection
-                            allGeneratedTokens.append(contentsOf: tokens)
-                            
                             // Stop if we've reached the maximum token limit
-                            if allGeneratedTokens.count >= maxTokens {
-                                NSLog("🛑 Stopping generation: reached max tokens (\(allGeneratedTokens.count))")
+                            if tokens.count >= maxTokens {
+                                NSLog("🛑 Stopping generation: reached max tokens (\(tokens.count))")
                                 return .stop
                             }
                             
@@ -173,16 +169,20 @@ final class SimplifiedMLXRunner: ObservableObject {
                                 }
                             }
                             
-                            // Decode all tokens to get the full text so far
-                            let fullText = modelContext.tokenizer.decode(tokens: allGeneratedTokens)
-                            
-                            // Only yield the new part that we haven't seen before
-                            if fullText.count > lastDecodedLength {
-                                let newText = String(fullText.suffix(fullText.count - lastDecodedLength))
+                            // Only process if we have new tokens
+                            if tokens.count > sentTokenCount {
+                                // Get only the NEW tokens we haven't sent yet
+                                let newTokens = Array(tokens[sentTokenCount..<tokens.count])
+                                
+                                // Decode only the new tokens to preserve proper spacing
+                                let newText = modelContext.tokenizer.decode(tokens: newTokens)
+                                
                                 if !newText.isEmpty {
                                     continuation.yield(newText)
-                                    lastDecodedLength = fullText.count
                                 }
+                                
+                                // Update our sent token count
+                                sentTokenCount = tokens.count
                             }
                             
                             return .more
