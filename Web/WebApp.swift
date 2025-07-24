@@ -10,6 +10,8 @@ struct WebApp: App {
         configureLogging()
         // Initialize keyboard shortcut handler
         _ = keyboardShortcutHandler
+        // Initialize application state observer to manage background resource policies
+        _ = ApplicationStateObserver.shared
     }
     
     var body: some Scene {
