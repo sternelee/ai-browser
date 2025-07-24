@@ -24,16 +24,17 @@ struct ChatBubbleView: View {
     /// Returns a SwiftUI `Text` view capable of rendering markdown while preserving line breaks.
     /// Falls back to plain text if markdown parsing fails or when streaming to avoid partial formatting.
     @ViewBuilder
-    private func formattedText() -> Text {
+    private func formattedText() -> some View {
         // Avoid markdown parsing while streaming to prevent crashes with incomplete syntax
-        guard !isStreaming else {
-            return Text(displayText)
-        }
-
-        if let attributed = try? AttributedString(markdown: displayText, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)) {
-            return Text(attributed)
+        if isStreaming {
+            Text(displayText)
         } else {
-            return Text(displayText)
+            // Use SwiftUI's native markdown renderer which better preserves new-line characters
+            // and list formatting compared to manual `AttributedString` parsing.
+            // This automatically handles bold/italic/bullets while respecting the
+            // original line breaks coming from the LLM.
+            Text(displayText)
+                .lineSpacing(2)
         }
     }
     

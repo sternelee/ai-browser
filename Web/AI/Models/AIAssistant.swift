@@ -422,6 +422,12 @@ class AIAssistant: ObservableObject {
             return true
         }
 
+        // Detect repeated adjacent words (e.g. "it it", "you you") which are a signal
+        // of token duplication errors during generation.
+        if lowercased.range(of: "\\b(\\w+)(\\s+\\1)+\\b", options: .regularExpression) != nil {
+            return true
+        }
+
         // Check for excessive repetition of bad patterns
         for pattern in badPatterns {
             let occurrences = lowercased.components(separatedBy: pattern).count - 1
