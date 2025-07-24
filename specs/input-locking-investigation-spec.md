@@ -434,3 +434,118 @@ After shipping both `WindowClipGuard` and the transparent full-size titlebar cha
 • Verified on macOS 14.5 & 14.6
 
 Status: **FIX CONFIRMED – ready to close investigation unless new regressions appear.**
+
+
+//////
+
+UPDATE 1 WEEK LATER:
+Read file: Web/Utils/FocusCoordinator.swift
+
+Read file: Web/Services/KeyboardShortcutHandler.swift
+
+Read file: Web/Views/Components/WebView.swift
+
+Ran tool
+
+Read file: Web/Utils/WindowDragArea.swift
+
+Read file: Web/Utils/WindowClipGuard.swift
+
+Ran tool
+
+Read file: Web/WebApp.swift
+
+Ran tool
+
+Ran tool
+
+Ran tool
+
+Ran tool
+
+Read file: Web/Views/Components/SimpleWebView.swift
+
+Ran tool
+
+Ran tool
+
+Ran tool
+
+Read file: Web/Views/Components/WindowConfigurator.swift
+
+Ran tool
+
+Ran tool
+
+Ran tool
+
+Root cause (what is actually happening)  
+1. The window is turned into a completely border-less, layer–backed NSWindow at runtime (`WindowConfigurator.configureWindow`).  
+2. Border-less windows can lose their “key / first-responder” status very easily when the system creates auxiliary windows (e.g. the full-screen video window that WebKit opens, the temporary window that appears while you drag a window, or even TUINSRemoteViewController – a private view-service that hosts parts of WKWebView).  
+3. When the auxiliary window disappears your own window sometimes fails to become key again.  At that point the app still draws, mouse clicks still arrive (because the window is “main”), but the keyboard focus is stuck on the Dead window so every key-press is silently dropped.  That is why:  
+   • typing in address bar does nothing,  
+   • DOM key events (space-bar to pause a video) never reach the page,  
+   • it only happens after triggers that spawn a temporary system window (enter/exit video full-screen, window drag, mission-control, etc.),  
+   • and the only reliable escape is closing / reopening the window (which recreates a healthy key window).
+
+Three independent ways to solve it
+
+──────────────────────────────────────────────────────────
+1. Give up the hard-borderless window and keep the system’s key-window management
+
+   • Build the window with the standard `.titled` mask plus `.fullSizeContentView` & `.toolbarStyle(.unifiedCompact)` instead of replacing the mask at runtime.  
+   • Hide the title-bar controls with `titleVisibility = .hidden` so the visual result is still “chromeless”, but macOS will now promote the window back to key automatically.  
+   • ⟶ 10-line change: remove `window.styleMask = [.borderless, .resizable]` and the custom drag area; add `.windowStyle(.hiddenTitleBar)` to the SwiftUI `WindowGroup`.  
+   • Fastest and safest fix; zero custom event code needed.
+
+──────────────────────────────────────────────────────────
+2. Keep the sexy border-less glass window but make it a *proper* key window
+
+   • Sub-class NSWindow:  
+
+     ```swift
+     class KeyableBorderlessWindow: NSWindow {
+         override var canBecomeKey  : Bool { true }
+         override var canBecomeMain : Bool { true }
+     }
+     ```
+
+   • In the SwiftUI lifecycle create this window type instead of letting SwiftUI build the default one (`NSApplication.shared.windows.first` replacement or use `.windowResizability(.contentSize)` API in macOS 15).  
+   • Add observers for `NSWindow.didExitFullScreenNotification`, `NSWindow.didEndLiveResizeNotification`, and `NSApplication.didResignActiveNotification`.  
+   • In every handler run
+
+     ```swift
+     if let w = NSApp.keyWindow ?? NSApp.mainWindow {
+         w.makeKey()
+         w.makeFirstResponder(w.contentView)
+     }
+     ```
+
+   • The window now willingly takes the key status back whenever the system steals it, so keyboard never gets stuck.
+
+──────────────────────────────────────────────────────────
+3. Detect the failure and self-heal instead of preventing it
+
+   • Leave the current architecture untouched, but add a tiny watcher:
+
+     ```swift
+     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+         nil   // we do not consume it, just notice
+     }
+     ```
+
+     If that closure is **not** called for >200 ms while the window is main → keyboard is lost.  
+   • Automatic recovery path:  
+
+     1. Iterate all windows; pick the frontmost visible one.  
+     2. Call `makeKeyAndOrderFront(nil)` then `makeFirstResponder(nil)` followed by `makeFirstResponder(desiredView)` (URL bar or the current WKWebView).  
+     3. If the first responder is a WKWebView that was embedded in a TUINSRemoteViewController which has died, destroy and recreate the web-view (3-4 lines thanks to the existing `Tab.webView` holder).  
+
+   • This approach is the least invasive (no window style changes) and gives the user a seamless “self-repair” in <½ s without losing the tab state.
+
+──────────────────────────────────────────────────────────
+Selecting one
+
+• If raw aesthetics can be slightly adjusted → pick Solution 1 (simplest & uses native behaviour).  
+• If the floating glass aesthetic is mandatory → Solution 2 gives you the same look with correct key-handling.  
+• Solution 3 is an insurance policy you can ship on top of either of the above to cover any remaining edge-cases (crashes inside WebKit process, etc.).
