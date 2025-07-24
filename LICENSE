@@ -27,3 +27,7 @@ This project includes the following third-party dependencies:
 Apple MLX (https://github.com/ml-explore/mlx)
 Licensed under the MIT License
 Copyright (c) 2023 Apple Inc.
+
+MLX Swift Examples (https://github.com/ml-explore/mlx-swift-examples)
+Licensed under the MIT License
+Copyright (c) 2023 Apple Inc.
