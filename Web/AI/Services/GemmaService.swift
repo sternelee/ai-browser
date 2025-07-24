@@ -376,7 +376,19 @@ class GemmaService {
         } catch {
             NSLog("⚠️ Regex error while collapsing repeated words without space: \(error)")
         }
-        
+
+        // NEW: Ensure common Markdown block tokens start on their own line so that downstream renderers
+        // (ChatBubbleView, TLDRCard, etc.) don’t mis-interpret them as inline emphasis and break.
+        cleaned = cleaned
+            // Bullets immediately following a colon ("We can:*" → "We can:\n* ")
+            .replacingOccurrences(of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
+            // Generic bullets/ordered list markers that are missing a leading newline
+            .replacingOccurrences(of: "(?<![\\n])([*+-]\\s+)", with: "\n$1", options: .regularExpression)
+            // Headings (e.g. "# Heading")
+            .replacingOccurrences(of: "(?<![\\n])(#+\\s+)", with: "\n$1", options: .regularExpression)
+            // Code fences (```)
+            .replacingOccurrences(of: "(?<![\\n])(```)", with: "\n$1", options: .regularExpression)
+ 
         // Dynamic response length based on memory availability
         let memoryPressure = ProcessInfo.processInfo.thermalState
         let maxResponseLength: Int
