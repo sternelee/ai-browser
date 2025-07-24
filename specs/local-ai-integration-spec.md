@@ -141,6 +141,7 @@ Web/
 
 #### Key Features Implemented
 - **Next-Generation UI**: Collapsible right sidebar (4px collapsed → 320px expanded)
+- **Markdown & Line-Break Support**: Chat bubbles now render Markdown formatting (bold, italics, lists, links) and preserve line breaks for improved readability.
 - **Glass Morphism Design**: Ultra-thin material with ambient gradients
 - **Smart Interactions**: Hover zones, auto-collapse, keyboard shortcuts
 - **AI Status Integration**: Real-time initialization, processing, and error states

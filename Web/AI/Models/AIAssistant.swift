@@ -346,6 +346,12 @@ class AIAssistant: ObservableObject {
             throw AIError.notInitialized
         }
         
+        // CONCURRENCY SAFETY: Check if AI is already processing to avoid conflicts
+        let currentlyProcessing = await MainActor.run { isProcessing }
+        guard !currentlyProcessing else {
+            throw AIError.inferenceError("AI is currently busy with another task")
+        }
+        
         // MEMORY SAFETY: Check if AI operations are safe to perform
         guard memoryMonitor.isAISafeToRun() else {
             let memoryStatus = memoryMonitor.getCurrentMemoryStatus()
@@ -358,14 +364,19 @@ class AIAssistant: ObservableObject {
             throw AIError.contextProcessingFailed("No content available to summarize")
         }
         
-        // Create TL;DR prompt that requests bullet point format
+        // Create clean, direct TL;DR prompt with sentiment analysis
         let tldrPrompt = """
-        Please create a concise TL;DR summary of the following webpage content in bullet point format. 
-        Focus on the 2-3 most important key points and main takeaways. 
-        Format your response as bullet points using • symbols.
-        
-        Webpage: \(context.title)
-        Content: \(context.text)
+        Analyze this webpage content and provide:
+        1. A sentiment emoji that best represents the content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
+        2. A 2-3 bullet point summary of key takeaways
+
+        Format: [EMOJI] 
+        • [Key point 1]
+        • [Key point 2]  
+        • [Key point 3 if needed]
+
+        Title: \(context.title)
+        Content: \(context.text.prefix(3000))
         """
         
         do {
@@ -376,12 +387,59 @@ class AIAssistant: ObservableObject {
                 conversationHistory: []  // Empty history to avoid affecting chat
             )
             
-            return response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanResponse = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // VALIDATION: Check for repetitive or broken output
+            if isInvalidTLDRResponse(cleanResponse) {
+                NSLog("⚠️ Invalid TL;DR response detected, retrying with simplified prompt")
+                
+                // Fallback with simpler prompt
+                let fallbackPrompt = "Summarize this webpage in 2-3 bullet points:\n\n\(context.title)\n\(context.text.prefix(1500))"
+                let fallbackResponse = try await gemmaService.generateResponse(
+                    query: fallbackPrompt,
+                    context: "",
+                    conversationHistory: []
+                )
+                
+                let fallbackClean = fallbackResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return isInvalidTLDRResponse(fallbackClean) ? "Unable to generate summary" : fallbackClean
+            }
+            
+            return cleanResponse
             
         } catch {
             NSLog("❌ TL;DR generation failed: \(error)")
             throw AIError.inferenceError("Failed to generate TL;DR: \(error.localizedDescription)")
         }
+    }
+    
+    /// Check if TL;DR response contains repetitive or invalid patterns
+    private func isInvalidTLDRResponse(_ response: String) -> Bool {
+        let lowercased = response.lowercased()
+        
+        // Check for repetitive patterns that indicate model confusion
+        let badPatterns = [
+            "understand",
+            "i'll help",
+            "please provide",
+            "let me know",
+            "what can i do"
+        ]
+        
+        // If response is too short or contains too many repetitive words
+        if response.count < 20 {
+            return true
+        }
+        
+        // Check for excessive repetition of bad patterns
+        for pattern in badPatterns {
+            let occurrences = lowercased.components(separatedBy: pattern).count - 1
+            if occurrences > 2 {
+                return true
+            }
+        }
+        
+        return false
     }
     
     /// Clear conversation history and context

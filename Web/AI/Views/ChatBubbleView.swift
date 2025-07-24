@@ -20,6 +20,22 @@ struct ChatBubbleView: View {
         }
         return message.content
     }
+
+    /// Returns a SwiftUI `Text` view capable of rendering markdown while preserving line breaks.
+    /// Falls back to plain text if markdown parsing fails or when streaming to avoid partial formatting.
+    @ViewBuilder
+    private func formattedText() -> Text {
+        // Avoid markdown parsing while streaming to prevent crashes with incomplete syntax
+        guard !isStreaming else {
+            return Text(displayText)
+        }
+
+        if let attributed = try? AttributedString(markdown: displayText, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full)) {
+            return Text(attributed)
+        } else {
+            return Text(displayText)
+        }
+    }
     
     // Configuration
     private let maxBubbleWidth: CGFloat = 260
@@ -55,7 +71,7 @@ struct ChatBubbleView: View {
         VStack(alignment: .trailing, spacing: 4) {
             HStack(alignment: .bottom, spacing: 6) {
                 // Message content
-                Text(displayText)
+                formattedText()
                     .font(.system(size: 14, weight: .regular))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
@@ -155,7 +171,7 @@ struct ChatBubbleView: View {
     
     @ViewBuilder
     private func messageContentView() -> some View {
-        Text(displayText)
+        formattedText()
             .font(.system(size: 14, weight: .regular))
             .foregroundColor(.primary)
             .multilineTextAlignment(.leading)
