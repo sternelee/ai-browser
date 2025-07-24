@@ -16,6 +16,10 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 
 ## What's working
 
+
+https://github.com/user-attachments/assets/e16842f8-fc2a-4984-91ee-9b012bd792f5
+
+
 ### Core Browsing
 - **WebKit Integration**: Native WebKit rendering with WKWebView
 - **Tab Management**: Tab hibernation for optimal performance
