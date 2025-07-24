@@ -12,6 +12,8 @@ struct WebApp: App {
         _ = keyboardShortcutHandler
         // Initialize application state observer to manage background resource policies
         _ = ApplicationStateObserver.shared
+        // Initialize update service and check for updates in background
+        setupUpdateChecker()
     }
     
     var body: some Scene {
@@ -39,6 +41,20 @@ struct WebApp: App {
         // Reduce logging for specific subsystems
         let logger = Logger(subsystem: "com.example.Web", category: "App")
         logger.info("Web browser started with reduced WebKit logging")
+    }
+    
+    private func setupUpdateChecker() {
+        let updateService = UpdateService.shared
+        
+        // Check for updates 3 seconds after app launch to allow for startup completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            updateService.checkForUpdates(manual: false)
+        }
+        
+        // Schedule periodic update checks every 24 hours
+        Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { _ in
+            updateService.checkForUpdates(manual: false)
+        }
     }
 }
 
@@ -147,6 +163,12 @@ struct BrowserCommands: Commands {
             .keyboardShortcut(",", modifiers: .command)
         }
         
+        CommandGroup(replacing: .appInfo) {
+            Button("About Web") {
+                NotificationCenter.default.post(name: .showAboutRequested, object: nil)
+            }
+        }
+        
         CommandMenu("AI Assistant") {
             Button("Toggle AI Sidebar") {
                 NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
@@ -200,10 +222,10 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .previousTabRequested, object: nil)
             }
             .keyboardShortcut(.leftArrow, modifiers: .command)
-        }
-        
-        // Tab selection shortcuts (Cmd+1 through Cmd+9)
-        CommandGroup(after: .windowArrangement) {
+            
+            Divider()
+            
+            // Tab selection shortcuts (Cmd+1 through Cmd+9)
             ForEach(1...9, id: \.self) { number in
                 Button("Go to Tab \(number)") {
                     NotificationCenter.default.post(name: .selectTabByNumber, object: number)
@@ -228,6 +250,7 @@ extension Notification.Name {
     static let bookmarkCurrentPageRequested = Notification.Name("bookmarkCurrentPageRequested")
     static let showDownloadsRequested = Notification.Name("showDownloadsRequested")
     static let showSettingsRequested = Notification.Name("showSettingsRequested")
+    static let showAboutRequested = Notification.Name("showAboutRequested")
     static let showDeveloperToolsRequested = Notification.Name("showDeveloperToolsRequested")
     static let dismissHoverableURLBar = Notification.Name("dismissHoverableURLBar")
     static let hoverableURLBarDismissed = Notification.Name("hoverableURLBarDismissed")
