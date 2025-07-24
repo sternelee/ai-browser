@@ -162,8 +162,8 @@ final class SimplifiedMLXRunner: ObservableObject {
                             topP: 0.9
                         )
                         
-                        // Track tokens we've already sent to avoid duplication
-                        var sentTokenCount = 0
+                        // Track the length of text we've already sent to avoid duplication
+                        var sentTextLength = 0
                         let maxTokens = 512
                         
                         let _ = try MLXLMCommon.generate(
@@ -171,7 +171,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            NSLog("🌊 Streaming token: \(tokens.count > sentTokenCount ? tokens[sentTokenCount..<tokens.count] : []) (total: \(tokens.count) chars)")
+                            NSLog("🌊 Streaming: received \(tokens.count) tokens (previously sent text: \(sentTextLength) chars)")
                             
                             // Stop if we've reached the maximum token limit
                             if tokens.count >= maxTokens {
@@ -187,19 +187,21 @@ final class SimplifiedMLXRunner: ObservableObject {
                             }
                             
                             // Only process if we have new tokens
-                            if tokens.count > sentTokenCount {
-                                // Get only the NEW tokens we haven't sent yet
-                                let newTokens = Array(tokens[sentTokenCount..<tokens.count])
+                            if tokens.count > 0 {
+                                // FIXED: Decode the complete token array for proper Unicode/word boundaries
+                                let fullText = modelContext.tokenizer.decode(tokens: tokens)
                                 
-                                // Decode only the new tokens to preserve proper spacing
-                                let newText = modelContext.tokenizer.decode(tokens: newTokens)
-                                
-                                if !newText.isEmpty {
-                                    continuation.yield(newText)
+                                // Extract only the new text portion we haven't sent yet
+                                if fullText.count > sentTextLength {
+                                    let newText = String(fullText.dropFirst(sentTextLength))
+                                    
+                                    NSLog("🌊 Streaming new text: '\(newText)' (length: \(newText.count))")
+                                    
+                                    if !newText.isEmpty {
+                                        continuation.yield(newText)
+                                        sentTextLength = fullText.count
+                                    }
                                 }
-                                
-                                // Update our sent token count
-                                sentTokenCount = tokens.count
                             }
                             
                             return .more
@@ -219,7 +221,25 @@ final class SimplifiedMLXRunner: ObservableObject {
     
     /// Reset conversation state
     func resetConversation() async {
-        NSLog("🔄 MLX conversation reset")
+        // FIXED: Implement proper conversation state reset
+        // For MLX, we need to clear the model's internal state by recreating the model container
+        guard let currentModelId = currentModelId else {
+            NSLog("🔄 MLX conversation reset: no model loaded")
+            return
+        }
+        
+        NSLog("🔄 MLX conversation reset: clearing model state...")
+        
+        // Clear current model state
+        modelContainer = nil
+        
+        // Reload the model to reset its internal conversation state
+        do {
+            try await ensureLoaded(modelId: currentModelId)
+            NSLog("✅ MLX conversation reset completed successfully")
+        } catch {
+            NSLog("❌ MLX conversation reset failed: \(error)")
+        }
     }
     
     /// Clear model from memory

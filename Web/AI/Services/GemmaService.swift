@@ -241,6 +241,21 @@ class GemmaService {
         conversationHistory: [ConversationMessage]
     ) throws -> String {
         
+        // VALIDATION: Ensure conversation history is clean and valid
+        let validatedHistory = conversationHistory.filter { message in
+            // Remove empty or corrupted messages
+            let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isValid = !content.isEmpty && content.count > 2
+            
+            if !isValid {
+                NSLog("⚠️ Filtered out invalid message: '\(message.content.prefix(50))...'")
+            }
+            
+            return isValid
+        }
+        
+        NSLog("📝 Conversation validation: \(conversationHistory.count) → \(validatedHistory.count) messages")
+        
         // ENHANCED: Build proper multi-turn conversation prompt with context placed strategically
         var promptParts: [String] = []
         
@@ -254,8 +269,8 @@ class GemmaService {
         promptParts.append("I'll help answer questions using the webpage content.")
         promptParts.append("<end_of_turn>")
         
-        // Add recent conversation history for continuity (limited to avoid context burial)
-        let recentHistory = Array(conversationHistory.suffix(4))  // Last 2 exchanges only
+        // Add recent conversation history for continuity (increased for better follow-up context)
+        let recentHistory = Array(validatedHistory.suffix(8))  // Last 4 exchanges for better continuity
         for message in recentHistory {
             if message.role == .user {
                 promptParts.append("<start_of_turn>user")

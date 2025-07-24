@@ -56,10 +56,15 @@ class ContextManager: ObservableObject {
             return nil
         }
         
-        // Throttle extractions to prevent performance issues
+        // Only throttle if we have *already* extracted context for the *same* page very recently.
+        // This prevents scenarios where the user quickly navigates to a new URL but the previous
+        // page's context is still returned because the interval has not expired (e.g. navigating
+        // from a weather page to a Reddit post within two seconds). [[Fixes stale-context bug]]
         if let lastTime = lastExtractionTime,
-           Date().timeIntervalSince(lastTime) < minExtractionInterval {
-            return lastExtractedContext
+           Date().timeIntervalSince(lastTime) < minExtractionInterval,
+           let lastContext = lastExtractedContext,
+           lastContext.url == webView.url?.absoluteString {
+            return lastContext
         }
         
         return await extractPageContext(from: webView, tab: activeTab)
@@ -941,16 +946,65 @@ class ContextManager: ObservableObject {
                 var postCount = 0;
                 var extractionMethod = 'fallback';
                 
+                // DOM ANALYSIS: Understand the page structure
+                console.log('🔍 DOM ANALYSIS: Starting comprehensive page analysis');
+                console.log('🔍 Page URL:', window.location.href);
+                console.log('🔍 Page title:', document.title);
+                console.log('🔍 Body classes:', document.body.className || 'none');
+                console.log('🔍 Total elements:', document.querySelectorAll('*').length);
+                
+                // Analyze common content containers
+                var commonContainers = ['main', 'article', '[role="main"]', '.content', '.main', '#content', '#main'];
+                for (var c = 0; c < commonContainers.length; c++) {
+                    var containers = document.querySelectorAll(commonContainers[c]);
+                    if (containers.length > 0) {
+                        console.log('🔍 Found', containers.length, 'elements matching:', commonContainers[c]);
+                    }
+                }
+                
+                // Analyze Reddit-specific elements
+                if (window.location.href.includes('reddit.com')) {
+                    console.log('🔍 REDDIT ANALYSIS: Analyzing Reddit-specific structure');
+                    var redditSelectors = [
+                        '[data-testid="post-content"]',
+                        '[data-testid="comment"]', 
+                        '.Post',
+                        '.usertext-body',
+                        '[data-click-id="text"]',
+                        '.comment-body',
+                        '[class*="comment"]',
+                        '[class*="post"]'
+                    ];
+                    
+                    for (var r = 0; r < redditSelectors.length; r++) {
+                        var redditElements = document.querySelectorAll(redditSelectors[r]);
+                        console.log('🔍 Reddit selector', redditSelectors[r], 'found:', redditElements.length, 'elements');
+                        
+                        if (redditElements.length > 0 && redditElements.length <= 3) {
+                            for (var re = 0; re < redditElements.length; re++) {
+                                var text = redditElements[re].textContent || '';
+                                console.log('📝 Reddit element', re + 1, 'preview:', text.trim().substring(0, 100) + '...');
+                            }
+                        }
+                    }
+                }
+                
                 // STRATEGY 1: Framework-aware extraction
+                console.log('🔍 EXTRACTION DEBUG: Starting Strategy 1 - Framework-aware extraction');
                 var frameworkResult = extractWithFrameworkSupport();
                 if (frameworkResult.content) {
+                    console.log('✅ Strategy 1 SUCCESS:', frameworkResult.method, 'extracted', frameworkResult.content.length, 'chars');
+                    console.log('📝 Strategy 1 Preview:', frameworkResult.content.substring(0, 200) + '...');
                     extractedContent = frameworkResult.content;
                     extractionMethod = frameworkResult.method;
                     contentFound = true;
+                } else {
+                    console.log('❌ Strategy 1 FAILED: No framework content found');
                 }
                 
                 // STRATEGY 2: Enhanced multi-post extraction with Reddit-specific improvements
                 if (!contentFound) {
+                    console.log('🔍 EXTRACTION DEBUG: Starting Strategy 2 - Multi-post extraction');
                     var multiPostSelectors = [
                         // Reddit-specific selectors (2025 updated)
                         '[data-testid="post-content"]', '[data-click-id="text"]',
@@ -974,24 +1028,37 @@ class ContextManager: ObservableObject {
                     
                     for (var s = 0; s < multiPostSelectors.length && postCount < 20; s++) {
                         var posts = document.querySelectorAll(multiPostSelectors[s]);
+                        console.log('🔍 Strategy 2 - Testing selector:', multiPostSelectors[s], 'found', posts.length, 'elements');
                         
                         for (var p = 0; p < posts.length && postCount < 20; p++) {
                             var post = posts[p];
                             var postText = post.textContent || post.innerText || '';
+                            var quality = calculateContentQuality(postText);
+                            
+                            console.log('📊 Strategy 2 - Post', p + 1, 'length:', postText.trim().length, 'quality:', quality);
+                            console.log('📝 Strategy 2 - Post preview:', postText.trim().substring(0, 100) + '...');
                             
                             // Enhanced content validation
-                            if (postText.trim().length > 50 && calculateContentQuality(postText) > 10) {
+                            if (postText.trim().length > 50 && quality > 10) {
                                 postCount++;
                                 extractedContent += 'POST ' + postCount + ': ' + postText.trim() + '\\n\\n';
                                 contentFound = true;
                                 extractionMethod = 'multi-post-enhanced';
+                                console.log('✅ Strategy 2 - Added post', postCount, 'with quality', quality);
                             }
                         }
+                    }
+                    
+                    if (contentFound) {
+                        console.log('✅ Strategy 2 SUCCESS: Extracted', postCount, 'posts, total', extractedContent.length, 'chars');
+                    } else {
+                        console.log('❌ Strategy 2 FAILED: No valid posts found');
                     }
                 }
                 
                 // STRATEGY 3: Single content extraction with semantic scoring
                 if (!contentFound) {
+                    console.log('🔍 EXTRACTION DEBUG: Starting Strategy 3 - Single content extraction');
                     var singleContentSelectors = [
                         // Primary content selectors (highest priority)
                         'article', 'main', '[role="main"]', '.main-content', '#main-content',
@@ -1014,13 +1081,19 @@ class ContextManager: ObservableObject {
                     
                     for (var i = 0; i < singleContentSelectors.length; i++) {
                         var elements = document.querySelectorAll(singleContentSelectors[i]);
+                        console.log('🔍 Strategy 3 - Testing selector:', singleContentSelectors[i], 'found', elements.length, 'elements');
+                        
                         for (var j = 0; j < elements.length; j++) {
                             var element = elements[j];
                             if (element && element.textContent) {
                                 var text = element.textContent.trim();
                                 var score = calculateContentQuality(text);
                                 
+                                console.log('📊 Strategy 3 - Element', j + 1, 'length:', text.length, 'score:', score);
+                                console.log('📝 Strategy 3 - Element preview:', text.substring(0, 100) + '...');
+                                
                                 if (score > bestContent.score && text.length > 200) {
+                                    console.log('🎯 Strategy 3 - New best content! Score:', score, 'vs previous:', bestContent.score);
                                     bestContent = { text: text, score: score, method: 'structured-semantic' };
                                 }
                             }
@@ -1028,15 +1101,20 @@ class ContextManager: ObservableObject {
                     }
                     
                     if (bestContent.text) {
+                        console.log('✅ Strategy 3 SUCCESS: Best content score', bestContent.score, 'length', bestContent.text.length);
                         extractedContent = bestContent.text;
                         extractionMethod = bestContent.method;
                         contentFound = true;
+                    } else {
+                        console.log('❌ Strategy 3 FAILED: No content found with score > 0 and length > 200');
                     }
                 }
                 
                 // STRATEGY 4: Intelligent paragraph extraction
                 if (!contentFound) {
+                    console.log('🔍 EXTRACTION DEBUG: Starting Strategy 4 - Paragraph extraction');
                     var paragraphs = document.querySelectorAll('p, div, span');
+                    console.log('🔍 Strategy 4 - Found', paragraphs.length, 'total elements');
                     var contentBlocks = [];
                     
                     for (var i = 0; i < paragraphs.length; i++) {
@@ -1046,20 +1124,84 @@ class ContextManager: ObservableObject {
                             if (quality > 5) {
                                 contentBlocks.push({
                                     text: p.textContent.trim(),
-                                    quality: quality
+                                    quality: quality,
+                                    tag: p.tagName,
+                                    classes: p.className || 'none'
                                 });
+                                
+                                if (contentBlocks.length <= 5) {
+                                    console.log('📊 Strategy 4 - Block', contentBlocks.length, 'quality:', quality, 'tag:', p.tagName, 'classes:', p.className || 'none');
+                                    console.log('📝 Strategy 4 - Block preview:', p.textContent.trim().substring(0, 100) + '...');
+                                }
                             }
                         }
                     }
+                    
+                    console.log('🔍 Strategy 4 - Found', contentBlocks.length, 'quality blocks');
                     
                     // Sort by quality and take the best content
                     contentBlocks.sort((a, b) => b.quality - a.quality);
                     var topBlocks = contentBlocks.slice(0, 10);
                     
                     if (topBlocks.length > 0) {
+                        console.log('✅ Strategy 4 SUCCESS: Using top', topBlocks.length, 'blocks');
+                        console.log('🎯 Strategy 4 - Top scores:', topBlocks.slice(0, 3).map(b => b.quality).join(', '));
                         extractedContent = topBlocks.map(block => block.text).join('\\n\\n');
                         extractionMethod = 'semantic-paragraphs';
                         contentFound = true;
+                    } else {
+                        console.log('❌ Strategy 4 FAILED: No quality blocks found');
+                    }
+                }
+                
+                // STRATEGY 5: Full DOM body extraction (robust fallback)
+                if (!contentFound) {
+                    console.log('🔍 EXTRACTION DEBUG: Starting Strategy 5 - Full body extraction');
+                    
+                    // Get the entire body content
+                    var bodyText = document.body.textContent || document.body.innerText || '';
+                    
+                    if (bodyText.trim().length > 500) {
+                        console.log('🔍 Strategy 5 - Raw body text length:', bodyText.length);
+                        
+                        // Clean and filter the content
+                        var cleanedText = bodyText
+                            .replace(/\\s+/g, ' ')  // Normalize whitespace
+                            .replace(/\\n\\s*\\n/g, '\\n')  // Remove excessive line breaks
+                            .trim();
+                        
+                        // Filter out common navigation patterns
+                        var navigationPatterns = [
+                            /Sort by:.*?/gi,
+                            /Open comment sort options/gi,
+                            /Best Top New Controversial Old Q&A/gi,
+                            /Show more comments/gi,
+                            /Load more/gi,
+                            /Sign in/gi,
+                            /Create Account/gi,
+                            /Privacy Policy/gi,
+                            /Terms of Service/gi
+                        ];
+                        
+                        for (var np = 0; np < navigationPatterns.length; np++) {
+                            cleanedText = cleanedText.replace(navigationPatterns[np], '');
+                        }
+                        
+                        // Calculate quality after filtering
+                        var bodyQuality = calculateContentQuality(cleanedText);
+                        console.log('🔍 Strategy 5 - Cleaned text length:', cleanedText.length, 'quality:', bodyQuality);
+                        console.log('📝 Strategy 5 - Preview:', cleanedText.substring(0, 200) + '...');
+                        
+                        if (bodyQuality > 15 && cleanedText.length > 200) {
+                            console.log('✅ Strategy 5 SUCCESS: Using full body extraction');
+                            extractedContent = cleanedText.substring(0, 8000); // Limit to reasonable size
+                            extractionMethod = 'full-body-filtered';
+                            contentFound = true;
+                        } else {
+                            console.log('❌ Strategy 5 FAILED: Body quality too low or too short');
+                        }
+                    } else {
+                        console.log('❌ Strategy 5 FAILED: Body text too short');
                     }
                 }
                 

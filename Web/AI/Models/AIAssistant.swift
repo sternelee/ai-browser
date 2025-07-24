@@ -287,7 +287,7 @@ class AIAssistant: ObservableObject {
                     )
                     conversationHistory.addMessage(userMessage)
                     
-                    // Create empty AI message that will be filled during streaming
+                    // CRITICAL FIX: Add empty AI message for UI streaming but will be updated
                     let aiMessage = ConversationMessage(
                         role: .assistant,
                         content: "", // Start empty for streaming
@@ -316,7 +316,7 @@ class AIAssistant: ObservableObject {
                         continuation.yield(chunk)
                     }
                     
-                    // FIX: Update the empty message with the final streamed content
+                    // Update the empty message with the final streamed content
                     conversationHistory.updateMessage(id: aiMessage.id, newContent: fullResponse)
                     
                     // Clear unified animation state when done
