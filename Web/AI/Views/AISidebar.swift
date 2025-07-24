@@ -195,9 +195,11 @@ struct AISidebar: View {
                     if !aiAssistant.isInitialized {
                         // Initialization status
                         aiInitializationView()
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else if aiAssistant.messages.isEmpty {
                         // Show placeholder when no messages
                         chatMessagesPlaceholder()
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else {
                         // Display actual chat messages with unified streaming support
                         ForEach(aiAssistant.messages) { message in
@@ -338,6 +340,7 @@ struct AISidebar: View {
             }
         }
         .padding(16)
+        .frame(minHeight: 120) // Fixed minimum height to prevent jumping
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
@@ -399,7 +402,7 @@ struct AISidebar: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading) // Fixed minimum height to match initialization view
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
