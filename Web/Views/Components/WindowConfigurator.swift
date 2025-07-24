@@ -85,8 +85,39 @@ struct WindowConfigurator: NSViewRepresentable {
             contentView.autoresizingMask = [.width, .height]
         }
         
+        // Ensure title-bar is hidden after layout so no dead-padding remains
+        DispatchQueue.main.async {
+            self.hideTitlebar(for: window)
+        }
+
+        // Remove the whole title-bar container so it no longer eats clicks at the very top edge
+        if let closeButton = window.standardWindowButton(.closeButton),
+           let titlebarContainer = closeButton.superview?.superview {
+            titlebarContainer.isHidden = true
+        }
+
+        // Also remove the hair-line separator below the (now hidden) title-bar
+        if #available(macOS 11.0, *) {
+            window.titlebarSeparatorStyle = .none
+        }
+        
         // No system window controls in borderless mode - we use custom implementations
         // This maintains the pure floating glass panel aesthetic
     }
-    
+
+    /// Walk the super-view chain until we find the NSTitlebarContainerView and hide it.
+    private func hideTitlebar(for window: NSWindow) {
+        guard let closeBtn = window.standardWindowButton(.closeButton) else { return }
+        var view: NSView? = closeBtn
+        while let v = view {
+            let className = String(describing: type(of: v))
+            if className.contains("Titlebar") {
+                v.isHidden = true
+                v.removeFromSuperview()
+                v.frame = .zero
+                break
+            }
+            view = v.superview
+        }
+    }
 }

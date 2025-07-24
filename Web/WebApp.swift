@@ -19,7 +19,8 @@ struct WebApp: App {
                 .background(WindowClipGuard()) // Guardrail: forces clipsToBounds=true to avoid TUINS crash
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
         }
-        .windowStyle(.automatic)
+        // Use hiddenTitleBar style to remove the system title bar entirely
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
             BrowserCommands()
