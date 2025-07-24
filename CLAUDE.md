@@ -19,6 +19,11 @@ Web is a next-generation macOS browser built with SwiftUI that delivers minimal,
 - Build the project: `xcodebuild -project Web.xcodeproj -scheme Web build`
 - Open in Xcode: `open Web.xcodeproj`
 - Run tests: `xcodebuild test -project Web.xcodeproj -scheme Web -destination 'platform=macOS'`
+- Clean build folder: `xcodebuild clean -project Web.xcodeproj -scheme Web`
+
+### AI Development Commands
+- Convert Gemma models: `./scripts/convert_gemma.sh`
+- Check MLX dependencies: Review `Package.resolved` for MLX Swift versions
 
 ### Development Requirements
 - **CRITICAL:** Every change must result in zero warnings and zero errors
@@ -56,6 +61,9 @@ Web/
 - **BrowserView**: Main UI orchestrating toolbar, tabs, and web content
 - **DownloadManager**: Handles file downloads with progress and security
 - **Keyboard Shortcuts**: Comprehensive shortcuts (Cmd+T, Cmd+W, etc.) defined in WebApp.swift
+- **MLX Integration**: Local AI models using Apple MLX framework for on-device inference
+- **ContextManager**: AI context processing and page content analysis
+- **IncognitoSession**: Private browsing session management
 
 ### Architecture Patterns
 - **MVVM**: ViewModels manage state, Views handle presentation
@@ -76,6 +84,12 @@ Web/
 | Downloads | ⇧⌘J | NotificationCenter.showDownloadsRequested |
 | Developer Tools | ⌥⌘I | NotificationCenter.showDeveloperToolsRequested |
 | Cycle Top Bar Mode | ⇧⌘H | NotificationCenter.toggleTopBar |
+| New Incognito Tab | ⇧⌘N | NotificationCenter.newIncognitoTabRequested |
+| Toggle AI Sidebar | ⇧⌘A | NotificationCenter.toggleAISidebar |
+| Focus AI Input | ⌥⌘A | NotificationCenter.focusAIInput |
+| Next Tab | ⌘→ or ⇧⌘] | NotificationCenter.nextTabRequested |
+| Previous Tab | ⌘← or ⇧⌘[ | NotificationCenter.previousTabRequested |
+| Tab 1-9 | ⌘1-9 | NotificationCenter.selectTabByNumber |
 
 ## Critical Implementation Notes
 
@@ -104,3 +118,33 @@ Web/
 3. **Update specs**: Mark completed tasks and add new discoveries
 4. **Zero-error builds**: Never proceed with warnings or errors
 5. **Test thoroughly**: Verify no crashes and proper functionality
+
+## Dependencies and External Packages
+
+The project uses Swift Package Manager with these key dependencies:
+- **MLX Swift**: Apple's machine learning framework for local AI inference
+- **MLX Swift Examples**: Reference implementations and utilities
+- **Swift Transformers**: Hugging Face transformers for Swift
+- **Swift Collections**: Apple's enhanced collection types
+- **Swift Numerics**: Numerical computing utilities
+- **GzipSwift**: Compression utilities
+- **Jinja**: Template engine for AI model configuration
+
+## AI Integration Architecture
+
+### MLX Framework Integration
+- **MLX Runner**: Core engine for running local AI models (Gemma, etc.)
+- **Model Management**: Download, convert, and cache AI models locally
+- **Privacy-First**: All AI processing happens on-device, no data sent to external servers
+- **Context Processing**: Intelligent page content analysis and summarization
+- **Hardware Requirements**: Apple Silicon Mac required for optimal AI performance
+
+### AI Services Structure
+```
+AI/
+├── Models/           # Data models for AI functionality
+├── Runners/          # MLX execution engines
+├── Services/         # AI business logic and privacy management
+├── Utils/           # Hardware detection and system monitoring
+└── Views/           # AI sidebar and chat interface
+```

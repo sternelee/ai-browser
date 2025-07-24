@@ -301,6 +301,8 @@ class AIAssistant: ObservableObject {
                     await MainActor.run {
                         animationState = .idle
                         streamingText = ""
+                        // Ensure processing flag resets so UI updates status correctly
+                        self.isProcessing = false
                     }
                     
                     continuation.finish()
@@ -336,6 +338,50 @@ class AIAssistant: ObservableObject {
     func getConversationSummary() async throws -> String {
         let messages = conversationHistory.getRecentMessages(limit: 20)
         return try await gemmaService.summarizeConversation(messages)
+    }
+    
+    /// Generate TL;DR summary of current page content without affecting conversation history
+    func generatePageTLDR() async throws -> String {
+        guard await isInitialized else {
+            throw AIError.notInitialized
+        }
+        
+        // MEMORY SAFETY: Check if AI operations are safe to perform
+        guard memoryMonitor.isAISafeToRun() else {
+            let memoryStatus = memoryMonitor.getCurrentMemoryStatus()
+            throw AIError.memoryPressure("AI operations suspended due to \(memoryStatus.pressureLevel.rawValue.lowercased()) memory pressure (\(String(format: "%.1f", memoryStatus.availableMemory))GB available)")
+        }
+        
+        // Extract context from current webpage
+        let webpageContext = await extractCurrentContext()
+        guard let context = webpageContext, !context.text.isEmpty else {
+            throw AIError.contextProcessingFailed("No content available to summarize")
+        }
+        
+        // Create TL;DR prompt that requests bullet point format
+        let tldrPrompt = """
+        Please create a concise TL;DR summary of the following webpage content in bullet point format. 
+        Focus on the 2-3 most important key points and main takeaways. 
+        Format your response as bullet points using • symbols.
+        
+        Webpage: \(context.title)
+        Content: \(context.text)
+        """
+        
+        do {
+            // Process with Gemma service WITHOUT adding to conversation history
+            let response = try await gemmaService.generateResponse(
+                query: tldrPrompt,
+                context: "",  // No additional context needed, it's in the prompt
+                conversationHistory: []  // Empty history to avoid affecting chat
+            )
+            
+            return response.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+        } catch {
+            NSLog("❌ TL;DR generation failed: \(error)")
+            throw AIError.inferenceError("Failed to generate TL;DR: \(error.localizedDescription)")
+        }
     }
     
     /// Clear conversation history and context
