@@ -120,7 +120,7 @@ Web integrates local AI capabilities using Apple's MLX framework and Swift examp
 | Downloads | ⇧⌘J | Show downloads |
 | Developer Tools | ⌥⌘I | Open developer tools |
 | Toggle Top Bar | ⇧⌘H | Cycle top bar modes |
-| Toggle Sidebar | ⌘s | Sidebar vs Top tabs |
+| Toggle Sidebar | ⌘S | Sidebar vs Top tabs |
 | Open AI Panel | ⇧⌘A | Open AI Sidebar |
 
 ## Dependencies
