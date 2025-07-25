@@ -147,3 +147,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Website: [Nuanc.me](https://nuanc.me)
 - Report issues: [GitHub Issues](https://github.com/nuance-dev/Web/issues)
 - Follow updates: [@Nuanced](https://x.com/Nuancedev)
+- [Buy me a coffee](https://buymeacoffee.com/nuanced)
