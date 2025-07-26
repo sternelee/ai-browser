@@ -62,9 +62,11 @@ class ContextManager: ObservableObject {
         // from a weather page to a social media post within two seconds). [[Fixes stale-context bug]]
         if let lastTime = lastExtractionTime,
            Date().timeIntervalSince(lastTime) < minExtractionInterval,
-           let lastContext = lastExtractedContext,
-           lastContext.url == webView.url?.absoluteString {
-            return lastContext
+           let lastContext = lastExtractedContext {
+            let currentURL = await webView.url?.absoluteString
+            if lastContext.url == currentURL {
+                return lastContext
+            }
         }
         
         return await extractPageContext(from: webView, tab: activeTab)
@@ -72,7 +74,7 @@ class ContextManager: ObservableObject {
     
     /// Extract context from specific WebView with intelligent caching
     func extractPageContext(from webView: WKWebView, tab: Tab) async -> WebpageContext? {
-        guard let url = webView.url?.absoluteString else {
+        guard let url = await webView.url?.absoluteString else {
             NSLog("⚠️ No URL available for context extraction")
             return nil
         }
@@ -239,8 +241,11 @@ class ContextManager: ObservableObject {
     /// Check if context extraction is available for the current tab
     func canExtractContext(from tabManager: TabManager) -> Bool {
         guard let activeTab = tabManager.activeTab,
-              let webView = activeTab.webView,
-              let url = webView.url else {
+              let webView = activeTab.webView else {
+            return false
+        }
+        
+        guard let url = webView.url else {
             return false
         }
         
@@ -720,8 +725,31 @@ class ContextManager: ObservableObject {
     }
     
     private func cleanExtractedContent(_ text: String) -> String {
+        // Remove CSS and HTML artifacts first
+        var cleaned = text
+        
+        // Remove CSS rules and selectors
+        cleaned = cleaned.replacingOccurrences(of: "\\.[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "#[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        
+        // Remove CSS property patterns
+        cleaned = cleaned.replacingOccurrences(of: "[a-zA-Z-]+:\\s*[^;]+;", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\.([-_a-zA-Z0-9]+)", with: "", options: .regularExpression)
+        
+        // Remove HTML tags
+        cleaned = cleaned.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        
+        // Remove JavaScript patterns
+        cleaned = cleaned.replacingOccurrences(of: "function\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\([^)]*\\)\\s*=>\\s*[^;\\n]+[;\\n]?", with: "", options: .regularExpression)
+        
+        // Remove common web artifacts
+        cleaned = cleaned.replacingOccurrences(of: "\\b(fill|stroke|url|rgba?|#[0-9a-fA-F]{3,8})\\b", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\b(px|em|rem|vh|vw|%|deg)\\b", with: "", options: .regularExpression)
+        
         // Remove excessive whitespace and clean up content
-        let cleaned = text
+        cleaned = cleaned
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "\\n+", with: "\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1215,13 +1243,23 @@ class ContextManager: ObservableObject {
                                 parent.tagName === 'SCRIPT' || 
                                 parent.tagName === 'STYLE' || 
                                 parent.tagName === 'NOSCRIPT' ||
+                                parent.tagName === 'HEAD' ||
                                 parent.style.display === 'none' || 
                                 parent.hidden ||
-                                parent.getAttribute('aria-hidden') === 'true'
+                                parent.getAttribute('aria-hidden') === 'true' ||
+                                parent.className.includes('sr-only') ||
+                                parent.className.includes('visually-hidden')
                             )) {
                                 return NodeFilter.FILTER_REJECT;
                             }
                             var text = node.textContent.trim();
+                            // Filter out CSS-like content
+                            if (text.match(/^\\.[a-zA-Z0-9_-]+/) || 
+                                text.match(/[a-zA-Z-]+:\\s*[^;]+;/) ||
+                                text.match(/\\{[^}]*\\}/) ||
+                                text.match(/function\\s*\\(/)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
                             return text.length > 20 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
                         }
                     );
@@ -1245,10 +1283,23 @@ class ContextManager: ObservableObject {
                     .replace(/[ \\t]+/g, ' ')
                     .replace(/\\n\\s*\\n/g, '\\n\\n')
                     .replace(/\\n{3,}(?!POST|COMMENT)/g, '\\n\\n')
+                    // Remove CSS and style artifacts
+                    .replace(/\\.[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}/g, '')
+                    .replace(/#[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}/g, '')
+                    .replace(/[a-zA-Z-]+:\\s*[^;\\n]+;?/g, '')
+                    .replace(/\\.([-_a-zA-Z0-9]+)/g, '')
+                    .replace(/\\b(fill|stroke|url|rgba?|#[0-9a-fA-F]{3,8})\\b/g, '')
+                    .replace(/\\b(px|em|rem|vh|vw|%|deg)\\b/g, '')
+                    // Remove HTML tags and attributes
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/\\b(id|class|data-[a-z-]+)=["\'][^"\']*["\']/g, '')
                     // Remove common web artifacts with context awareness
                     .replace(/(?:Share|Copy link|Advertisement|Skip to content|Continue reading|Read more|Vote|Reply|permalink|embed|save|context|full comments)\\s*/gi, '')
                     // Remove navigation elements
                     .replace(/(?:Home|About|Contact|Menu|Navigation|Search|Login|Register)\\s*(?:\\||•|-)\\s*/gi, '')
+                    // Remove function declarations and JavaScript
+                    .replace(/function\\s*\\([^)]*\\)\\s*\\{[^}]*\\}/g, '')
+                    .replace(/\\([^)]*\\)\\s*=>\\s*[^;\\n]+[;\\n]?/g, '')
                     .trim();
                 
                 // Extract enhanced links with quality scoring

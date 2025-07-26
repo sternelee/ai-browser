@@ -19,14 +19,14 @@ final class SimplifiedMLXRunner: ObservableObject {
     private let defaultModelId = "gemma3_2B_4bit"
     
     private init() {
-        NSLog("🤖 SimplifiedMLXRunner initialized")
+        // SimplifiedMLXRunner initialized
     }
     
     /// Ensure model is loaded using ModelRegistry ID
     func ensureLoaded(modelId: String = "gemma3_2B_4bit") async throws {
         // If already loaded with same model, return immediately
         if modelContainer != nil && currentModelId == modelId {
-            NSLog("♻️ MLX model already loaded: \(modelId)")
+            // MLX model already loaded
             return
         }
         
@@ -83,7 +83,7 @@ final class SimplifiedMLXRunner: ObservableObject {
             throw SimplifiedMLXError.modelNotLoaded
         }
         
-        NSLog("🤖 Generating with MLX...")
+        // Generating with MLX
         
         do {
             // Use MLX-Swift ModelContainer.perform API with ModelContext
@@ -167,7 +167,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                 return fullResponse
             }
             
-            NSLog("✅ MLX response generated: \(result.count) characters")
+            // MLX response generated
             return result
         } catch {
             NSLog("❌ MLX generation failed: \(error)")
@@ -189,7 +189,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                     
                     let container = await modelContainer!
                     
-                    NSLog("🌊 Starting MLX streaming...")
+                    // Starting MLX streaming
                     
                     try await container.perform { modelContext in
                         let input = try await modelContext.processor.prepare(input: .init(prompt: prompt))
@@ -212,13 +212,17 @@ final class SimplifiedMLXRunner: ObservableObject {
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            // Removed excessive streaming logs for cleaner output
+                            // Debug: Log first few iterations to understand what's happening
+                            if previousTokenCount < 3 {
+                                NSLog("🔍 Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens")
+                            }
                             
                             // IMPROVED: Stop if no progress is being made (token count not increasing)
+                            // Increased threshold for TL;DR tasks that might need more "thinking" time
                             if tokens.count == previousTokenCount {
                                 stagnantCount += 1
-                                if stagnantCount >= 5 {
-                                    NSLog("🛑 Stopping streaming: no token progress for 5 iterations")
+                                if stagnantCount >= 15 {  // Increased from 5 to 15 for better TL;DR generation
+                                    NSLog("🛑 Stopping streaming: no token progress for 15 iterations")
                                     return .stop
                                 }
                             } else {
@@ -295,7 +299,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                     }
                     
                     continuation.finish()
-                    NSLog("✅ MLX streaming completed")
+                    // Reduced logging for cleaner output
                     
                 } catch {
                     NSLog("❌ MLX streaming failed: \(error)")
@@ -310,11 +314,11 @@ final class SimplifiedMLXRunner: ObservableObject {
         // FIXED: Implement proper conversation state reset
         // For MLX, we need to clear the model's internal state by recreating the model container
         guard let currentModelId = currentModelId else {
-            NSLog("🔄 MLX conversation reset: no model loaded")
+            // MLX conversation reset: no model loaded
             return
         }
         
-        NSLog("🔄 MLX conversation reset: clearing model state...")
+        // MLX conversation reset: clearing model state
         
         // Clear current model state
         modelContainer = nil
@@ -322,7 +326,7 @@ final class SimplifiedMLXRunner: ObservableObject {
         // Reload the model to reset its internal conversation state
         do {
             try await ensureLoaded(modelId: currentModelId)
-            NSLog("✅ MLX conversation reset completed successfully")
+            // MLX conversation reset completed successfully
         } catch {
             NSLog("❌ MLX conversation reset failed: \(error)")
         }
@@ -332,7 +336,7 @@ final class SimplifiedMLXRunner: ObservableObject {
     func clearModel() async {
         modelContainer = nil
         currentModelId = nil
-        NSLog("🗑️ MLX model cleared")
+        // MLX model cleared
     }
 }
 

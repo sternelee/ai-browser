@@ -97,12 +97,12 @@ class AIAssistant: ObservableObject {
             // Wait without timeout since MLX handles downloads internally
             while !(await mlxModelService.isAIReady()) {
                 // Check if download failed
-                if case .failed(let error) = await mlxModelService.downloadState {
+                if case .failed(let error) = mlxModelService.downloadState {
                     throw MLXModelError.downloadFailed("MLX model download failed: \(error)")
                 }
                 
                 // Update UI with progress
-                let progress = await mlxModelService.downloadProgress
+                let progress = mlxModelService.downloadProgress
                 if progress > 0 {
                     updateStatus("Loading MLX AI model... (\(Int(progress * 100))%)")
                 } else {
@@ -487,12 +487,8 @@ class AIAssistant: ObservableObject {
                     // Log full TLDR prompt for debugging
                     NSLog("📜 FULL TLDR PROMPT FOR DEBUGGING:\n\(tldrPrompt)")
                     
-                    // Use streaming response with post-processing for TL;DR
-                    let stream = try await gemmaService.generateStreamingResponse(
-                        query: tldrPrompt,
-                        context: nil, // Context already embedded in prompt
-                        conversationHistory: [] // No conversation history for TL;DR
-                    )
+                    // Use raw streaming response (no chat template) for TL;DR
+                    let stream = try await gemmaService.generateRawStreamingResponse(prompt: tldrPrompt)
                     
                     var accumulatedResponse = ""
                     var hasYieldedContent = false
@@ -573,15 +569,10 @@ class AIAssistant: ObservableObject {
 
         // IMPROVED: Only flag phrase repetition if it's very excessive (5+ times instead of 3+)
         // This allows some natural repetition while catching obvious loops
-        do {
-            let phrasePattern = "(\\b(?:\\w+\\s+){2,5}\\w+\\b)(?:\\s+\\1){4,}"  // 5+ repetitions instead of 3+
-            if lowercased.range(of: phrasePattern, options: [.regularExpression]) != nil {
-                NSLog("⚠️ TL;DR rejected due to excessive phrase repetition")
-                return true
-            }
-        }
-        catch {
-            NSLog("⚠️ Regex error in phrase repetition detection: \(error)")
+        let phrasePattern = "(\\b(?:\\w+\\s+){2,5}\\w+\\b)(?:\\s+\\1){4,}"  // 5+ repetitions instead of 3+
+        if lowercased.range(of: phrasePattern, options: [.regularExpression]) != nil {
+            NSLog("⚠️ TL;DR rejected due to excessive phrase repetition")
+            return true
         }
 
         // NEW: Check if response is ONLY repetitive content (more than 80% repetitive)
