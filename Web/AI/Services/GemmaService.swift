@@ -310,6 +310,9 @@ class GemmaService {
         }
         NSLog("📝 Full prompt preview: \(String(fullPrompt.suffix(500)))")
         
+        // Log full prompt for debugging
+        NSLog("📜 FULL PROMPT FOR DEBUGGING:\n\(fullPrompt)")
+        
         return fullPrompt
     }
     

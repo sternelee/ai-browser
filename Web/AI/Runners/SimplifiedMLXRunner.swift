@@ -97,15 +97,32 @@ final class SimplifiedMLXRunner: ObservableObject {
                 
                 var allTokens: [Int] = []
                 
+                var previousTokenCount = 0
+                var stagnantCount = 0
+                var lastTokenSequence: [Int] = []
+                let repetitionDetectionWindow = 10
+                
                 let _ = try MLXLMCommon.generate(
                     input: input,
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
-                    NSLog("🔍 MLX callback received \(tokens.count) tokens: \(tokens.prefix(5))")
+                    // Removed excessive logging for cleaner output
                     
                     // Store the complete token array - MLX gives us all tokens accumulated so far
                     allTokens = tokens
+                    
+                    // IMPROVED: Stop if no progress is being made (token count not increasing)
+                    if tokens.count == previousTokenCount {
+                        stagnantCount += 1
+                        if stagnantCount >= 5 {
+                            NSLog("🛑 Stopping: no token progress for 5 iterations")
+                            return .stop
+                        }
+                    } else {
+                        stagnantCount = 0
+                        previousTokenCount = tokens.count
+                    }
                     
                     // Stop if we have enough tokens or find EOS
                     if tokens.count >= 512 {
@@ -113,11 +130,31 @@ final class SimplifiedMLXRunner: ObservableObject {
                         return .stop
                     }
                     
-                    // Check for EOS tokens
-                    let eosTokens: Set<Int> = [2, 1, 0] // Common EOS token IDs
+                    // IMPROVED: Enhanced EOS token detection with more tokens
+                    let eosTokens: Set<Int> = [2, 1, 0, 128001, 128008, 128009] // Include more common EOS tokens
                     if let lastToken = tokens.last, eosTokens.contains(lastToken) {
                         NSLog("🛑 Stopping: found EOS token \(lastToken)")
                         return .stop
+                    }
+                    
+                    // NEW: Detect token sequence repetition to prevent infinite loops
+                    if tokens.count >= repetitionDetectionWindow {
+                        let recentTokens = Array(tokens.suffix(repetitionDetectionWindow))
+                        if recentTokens == lastTokenSequence {
+                            NSLog("🛑 Stopping: detected repeated token sequence \(recentTokens)")
+                            return .stop
+                        }
+                        lastTokenSequence = recentTokens
+                    }
+                    
+                    // NEW: Detect if the same token is being repeated excessively
+                    if tokens.count >= 5 {
+                        let lastFiveTokens = Array(tokens.suffix(5))
+                        let uniqueTokens = Set(lastFiveTokens)
+                        if uniqueTokens.count == 1 {
+                            NSLog("🛑 Stopping: same token repeated 5 times: \(uniqueTokens.first!)")
+                            return .stop
+                        }
                     }
                     
                     return .more
@@ -165,13 +202,29 @@ final class SimplifiedMLXRunner: ObservableObject {
                         // Track the length of text we've already sent to avoid duplication
                         var sentTextLength = 0
                         let maxTokens = 512
+                        var previousTokenCount = 0
+                        var stagnantCount = 0
+                        var lastTokenSequence: [Int] = []
+                        var repetitionDetectionWindow = 10
                         
                         let _ = try MLXLMCommon.generate(
                             input: input,
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            NSLog("🌊 Streaming: received \(tokens.count) tokens (previously sent text: \(sentTextLength) chars)")
+                            // Removed excessive streaming logs for cleaner output
+                            
+                            // IMPROVED: Stop if no progress is being made (token count not increasing)
+                            if tokens.count == previousTokenCount {
+                                stagnantCount += 1
+                                if stagnantCount >= 5 {
+                                    NSLog("🛑 Stopping streaming: no token progress for 5 iterations")
+                                    return .stop
+                                }
+                            } else {
+                                stagnantCount = 0
+                                previousTokenCount = tokens.count
+                            }
                             
                             // Stop if we've reached the maximum token limit
                             if tokens.count >= maxTokens {
@@ -179,11 +232,31 @@ final class SimplifiedMLXRunner: ObservableObject {
                                 return .stop
                             }
                             
-                            // Check for EOS tokens in the latest tokens
-                            let eosTokens: Set<Int> = [2, 1, 0]
+                            // IMPROVED: Enhanced EOS token detection with more tokens
+                            let eosTokens: Set<Int> = [2, 1, 0, 128001, 128008, 128009] // Include more common EOS tokens
                             if let lastToken = tokens.last, eosTokens.contains(lastToken) {
                                 NSLog("🛑 Stopping streaming: found EOS token \(lastToken)")
                                 return .stop
+                            }
+                            
+                            // NEW: Detect token sequence repetition to prevent infinite loops
+                            if tokens.count >= repetitionDetectionWindow {
+                                let recentTokens = Array(tokens.suffix(repetitionDetectionWindow))
+                                if recentTokens == lastTokenSequence {
+                                    NSLog("🛑 Stopping streaming: detected repeated token sequence \(recentTokens)")
+                                    return .stop
+                                }
+                                lastTokenSequence = recentTokens
+                            }
+                            
+                            // NEW: Detect if the same token is being repeated excessively
+                            if tokens.count >= 5 {
+                                let lastFiveTokens = Array(tokens.suffix(5))
+                                let uniqueTokens = Set(lastFiveTokens)
+                                if uniqueTokens.count == 1 {
+                                    NSLog("🛑 Stopping streaming: same token repeated 5 times: \(uniqueTokens.first!)")
+                                    return .stop
+                                }
                             }
                             
                             // Only process if we have new tokens
@@ -191,11 +264,24 @@ final class SimplifiedMLXRunner: ObservableObject {
                                 // FIXED: Decode the complete token array for proper Unicode/word boundaries
                                 let fullText = modelContext.tokenizer.decode(tokens: tokens)
                                 
-                                // Extract only the new text portion we haven't sent yet
+                                // NEW: Check for obvious repetitive text patterns in the decoded output
                                 if fullText.count > sentTextLength {
                                     let newText = String(fullText.dropFirst(sentTextLength))
                                     
-                                    NSLog("🌊 Streaming new text: '\(newText)' (length: \(newText.count))")
+                                    // Simple repetition check for new text
+                                    if newText.count > 20 {
+                                        let words = newText.components(separatedBy: .whitespacesAndNewlines)
+                                        if words.count >= 4 {
+                                            let lastFourWords = Array(words.suffix(4))
+                                            let uniqueWords = Set(lastFourWords)
+                                            if uniqueWords.count <= 2 && words.count > 6 {
+                                                NSLog("🛑 Stopping streaming: detected repetitive text pattern")
+                                                return .stop
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Removed token streaming logs for cleaner output
                                     
                                     if !newText.isEmpty {
                                         continuation.yield(newText)

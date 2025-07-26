@@ -17,6 +17,10 @@ struct TLDRCard: View {
     @State private var errorMessage: String = ""
     @State private var isCancelled: Bool = false
     
+    // Streaming state for real-time TL;DR generation
+    @State private var isStreaming: Bool = false
+    @State private var streamingText: String = ""
+    
     // Animation states
     @State private var pulseOpacity: Double = 0.3
     @State private var shimmerOffset: CGFloat = -200
@@ -184,11 +188,11 @@ struct TLDRCard: View {
             }
             
             // Content area
-            if isGenerating && tldrSummary.isEmpty {
+            if (isGenerating && tldrSummary.isEmpty && !isStreaming) {
                 generatingView()
             } else if showError {
                 errorView()
-            } else if tldrSummary.isEmpty {
+            } else if tldrSummary.isEmpty && !isStreaming {
                 emptyStateView()
             } else {
                 summaryView()
@@ -288,15 +292,21 @@ struct TLDRCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             
-            // Render TLDR summary with markdown support
+            // Render TLDR summary with markdown support (streaming or final)
             Group {
+                // Use streaming text if currently streaming, otherwise use final summary
+                let displayText = isStreaming ? streamingText : tldrSummary
+                
                 // Preprocess to fix missing spaces that break markdown
-                let processedSummary = tldrSummary
+                let processedSummary = displayText
                     .replacingOccurrences(of: "(?<=[.!?:])(?=[A-Z])", with: " ", options: .regularExpression)
                     // Insert a line-break before list markers that directly follow a colon ("We can:*" → "We can:\n* ")
                     .replacingOccurrences(of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
                 
-                if let attributedString = try? AttributedString(markdown: processedSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                // Only parse markdown for final text to avoid crashes with incomplete syntax during streaming
+                if isStreaming {
+                    Text(processedSummary)
+                } else if let attributedString = try? AttributedString(markdown: processedSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
                     Text(attributedString)
                 } else {
                     // Fallback to plain text if markdown parsing fails
@@ -309,13 +319,47 @@ struct TLDRCard: View {
             .lineLimit(nil)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+            .overlay(
+                // Streaming indicator like chat messages
+                streamingIndicator(),
+                alignment: .bottomTrailing
+            )
             
-            // Word count indicator
-            if !tldrSummary.isEmpty {
-                Text("\(tldrSummary.split(separator: " ").count) words")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.secondary.opacity(0.6))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            // Word count indicator (show for streaming text or final summary)
+            if !tldrSummary.isEmpty || isStreaming {
+                let displayText = isStreaming ? streamingText : tldrSummary
+                if !displayText.isEmpty {
+                    HStack {
+                        Text("\(displayText.split(separator: " ").count) words")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary.opacity(0.6))
+                        
+                        if isStreaming {
+                            Text("• streaming")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.blue.opacity(0.8))
+                        }
+                        
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Streaming Indicator
+    
+    @ViewBuilder
+    private func streamingIndicator() -> some View {
+        if isStreaming {
+            HStack {
+                Spacer()
+                VStack {
+                    Spacer()
+                    LoadingDotsView(dotColor: .blue.opacity(0.6), dotSize: 3, spacing: 2)
+                        .padding(.trailing, 4)
+                        .padding(.bottom, 4)
+                }
             }
         }
     }
@@ -405,8 +449,10 @@ struct TLDRCard: View {
         isCancelled = false
         lastProcessedURL = currentURL
         isGenerating = true
+        isStreaming = false
+        streamingText = ""
         
-        NSLog("🔄 TL;DR: Auto-generating for \(currentURL)")
+        NSLog("🔄 TL;DR: Auto-generating with streaming for \(currentURL)")
         
         Task {
             do {
@@ -417,33 +463,57 @@ struct TLDRCard: View {
                 if await MainActor.run(body: { isCancelled }) || aiAssistant.isProcessing {
                     await MainActor.run {
                         isGenerating = false
+                        isStreaming = false
                         NSLog("⚠️ TL;DR: Generation cancelled - AI became busy or was cancelled")
                     }
                     return
                 }
                 
-                // Generate TL;DR using the dedicated method that doesn't affect chat history
-                let fullResponse = try await aiAssistant.generatePageTLDR()
+                // Start streaming generation
+                await MainActor.run {
+                    isStreaming = true
+                    isGenerating = false // Switch from loading to streaming
+                }
                 
-                // Parse emoji and summary from response
-                let (emoji, summary) = parseTLDRResponse(fullResponse)
+                // Generate TL;DR using the new streaming method
+                let stream = aiAssistant.generatePageTLDRStreaming()
+                
+                var accumulatedResponse = ""
+                var hasReceivedContent = false
+                
+                // Process streaming response
+                for try await chunk in stream {
+                    accumulatedResponse += chunk
+                    hasReceivedContent = true
+                    
+                    await MainActor.run {
+                        streamingText = accumulatedResponse
+                    }
+                }
+                
+                // Parse final response and update UI
+                let (emoji, summary) = parseTLDRResponse(accumulatedResponse)
                 
                 await MainActor.run {
+                    isStreaming = false
                     isGenerating = false
                     sentimentEmoji = emoji
                     tldrSummary = summary
+                    streamingText = ""
                     showError = false
                     
-                    NSLog("✅ TL;DR: Generated summary with emoji \(emoji) (\(tldrSummary.count) chars)")
+                    NSLog("✅ TL;DR: Streaming completed with emoji \(emoji) (\(summary.count) chars)")
                 }
                 
             } catch {
                 await MainActor.run {
                     isGenerating = false
+                    isStreaming = false
+                    streamingText = ""
                     showError = true
                     errorMessage = error.localizedDescription
                     
-                    NSLog("❌ TL;DR: Generation failed - \(error.localizedDescription)")
+                    NSLog("❌ TL;DR: Streaming generation failed - \(error.localizedDescription)")
                 }
             }
         }
@@ -492,9 +562,11 @@ struct TLDRCard: View {
     
     /// Cancel TL;DR generation if user starts interacting with chat
     func cancelTLDRIfGenerating() {
-        if isGenerating {
+        if isGenerating || isStreaming {
             isCancelled = true
             isGenerating = false
+            isStreaming = false
+            streamingText = ""
             NSLog("🚫 TL;DR: Generation cancelled due to user interaction")
         }
     }

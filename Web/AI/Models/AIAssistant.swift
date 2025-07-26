@@ -417,11 +417,19 @@ class AIAssistant: ObservableObject {
                 // If fallback is still invalid, attempt a final post-processing pass that collapses
                 // repeated phrases to salvage the summary before giving up.
                 if isInvalidTLDRResponse(fallbackClean) {
+                    NSLog("⚠️ Fallback response also invalid, attempting post-processing")
                     let salvaged = gemmaService.postProcessForTLDR(fallbackClean)
-                    return isInvalidTLDRResponse(salvaged) ? "Unable to generate summary" : salvaged
+                    if isInvalidTLDRResponse(salvaged) {
+                        NSLog("❌ All TL;DR generation attempts failed")
+                        // IMPROVED: Give a more informative message instead of generic error
+                        return "📄 Page content detected but summary generation encountered issues. Try refreshing the page."
+                    }
+                    return salvaged
                 }
 
                 return fallbackClean
+            } else {
+                NSLog("✅ TL;DR generation successful on first attempt")
             }
             
             return cleanResponse
@@ -429,6 +437,106 @@ class AIAssistant: ObservableObject {
         } catch {
             NSLog("❌ TL;DR generation failed: \(error)")
             throw AIError.inferenceError("Failed to generate TL;DR: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Generate TL;DR summary of current page content with streaming support
+    /// This provides real-time feedback like chat messages for better UX
+    func generatePageTLDRStreaming() -> AsyncThrowingStream<String, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    guard await isInitialized else {
+                        throw AIError.notInitialized
+                    }
+                    
+                    // CONCURRENCY SAFETY: Check if AI is already processing to avoid conflicts
+                    let currentlyProcessing = await MainActor.run { isProcessing }
+                    guard !currentlyProcessing else {
+                        throw AIError.inferenceError("AI is currently busy with another task")
+                    }
+                    
+                    // MEMORY SAFETY: Check if AI operations are safe to perform
+                    guard memoryMonitor.isAISafeToRun() else {
+                        let memoryStatus = memoryMonitor.getCurrentMemoryStatus()
+                        throw AIError.memoryPressure("AI operations suspended due to \(memoryStatus.pressureLevel.rawValue.lowercased()) memory pressure (\(String(format: "%.1f", memoryStatus.availableMemory))GB available)")
+                    }
+                    
+                    // Extract context from current webpage
+                    let webpageContext = await extractCurrentContext()
+                    guard let context = webpageContext, !context.text.isEmpty else {
+                        NSLog("⚠️ TL;DR Streaming: No context available - webpageContext: \(webpageContext != nil ? "exists but empty" : "nil")")
+                        throw AIError.contextProcessingFailed("No content available to summarize")
+                    }
+                    
+                    NSLog("🌊 TL;DR Streaming: Using context with \(context.text.count) characters, quality: \(context.contentQuality)")
+                    
+                    // Create clean, direct TL;DR prompt with sentiment analysis for streaming
+                    let tldrPrompt = """
+                    Analyze the following webpage **without returning any HTML or code** and reply ONLY with:
+                    1. A single sentiment emoji that best represents the overall content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
+                    2. Two-to-three concise bullet points (max 30 words each) describing the key take-aways.
+
+                    Output **format** (plain text):
+                    [EMOJI]\n• point 1\n• point 2\n• point 3 (optional)
+
+                    Title: \(context.title)
+                    Content: \(context.text.prefix(1500))
+                    """
+                    
+                    // Log full TLDR prompt for debugging
+                    NSLog("📜 FULL TLDR PROMPT FOR DEBUGGING:\n\(tldrPrompt)")
+                    
+                    // Use streaming response with post-processing for TL;DR
+                    let stream = try await gemmaService.generateStreamingResponse(
+                        query: tldrPrompt,
+                        context: nil, // Context already embedded in prompt
+                        conversationHistory: [] // No conversation history for TL;DR
+                    )
+                    
+                    var accumulatedResponse = ""
+                    var hasYieldedContent = false
+                    
+                    // Stream the response with real-time updates
+                    for try await chunk in stream {
+                        accumulatedResponse += chunk
+                        hasYieldedContent = true
+                        
+                        // Yield each chunk for real-time display
+                        continuation.yield(chunk)
+                    }
+                    
+                    // Post-process the final accumulated response
+                    let finalResponse = accumulatedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    // If we got a response but it's invalid, try to salvage it
+                    if !finalResponse.isEmpty && isInvalidTLDRResponse(finalResponse) {
+                        NSLog("⚠️ TL;DR Streaming: Invalid response detected, post-processing...")
+                        let salvaged = gemmaService.postProcessForTLDR(finalResponse)
+                        
+                        if !isInvalidTLDRResponse(salvaged) && salvaged != finalResponse {
+                            // Send the difference as a correction
+                            let correction = salvaged.replacingOccurrences(of: finalResponse, with: "")
+                            if !correction.isEmpty {
+                                continuation.yield(correction)
+                            }
+                        }
+                    }
+                    
+                    // If no content was streamed, provide a helpful fallback
+                    if !hasYieldedContent {
+                        NSLog("⚠️ TL;DR Streaming: No content streamed, providing fallback")
+                        continuation.yield("📄 Page content detected but summary generation is processing...")
+                    }
+                    
+                    continuation.finish()
+                    NSLog("✅ TL;DR Streaming completed: \(accumulatedResponse.count) characters")
+                    
+                } catch {
+                    NSLog("❌ TL;DR Streaming failed: \(error)")
+                    continuation.finish(throwing: error)
+                }
+            }
         }
     }
     
@@ -445,8 +553,8 @@ class AIAssistant: ObservableObject {
             "what can i do"
         ]
         
-        // If response is too short or contains too many repetitive words
-        if response.count < 20 {
+        // If response is too short (but allow shorter responses)
+        if response.count < 10 {
             return true
         }
         
@@ -455,19 +563,20 @@ class AIAssistant: ObservableObject {
             return true
         }
 
-        // Detect repeated adjacent words (e.g. "it it", "you you") which are a signal
-        // of token duplication errors during generation.
-        if lowercased.range(of: "\\b(\\w+)(\\s+\\1)+\\b", options: .regularExpression) != nil {
+        // IMPROVED: Only flag as invalid if there are MANY repeated adjacent words
+        // Allow some repetition but catch excessive cases
+        let wordRepetitionPattern = "\\b(\\w+)(\\s+\\1){3,}\\b"  // 4+ repetitions instead of 2+
+        if lowercased.range(of: wordRepetitionPattern, options: .regularExpression) != nil {
+            NSLog("⚠️ TL;DR rejected due to excessive word repetition")
             return true
         }
 
-        // NEW: Detect **phrase**-level repetition where a 3-6-word chunk is repeated
-        // three or more times consecutively (e.g. "The provided text" pattern).
-        // This catches progressive prefix repetition that isn't matched by the
-        // simple duplicate-word regex above.
+        // IMPROVED: Only flag phrase repetition if it's very excessive (5+ times instead of 3+)
+        // This allows some natural repetition while catching obvious loops
         do {
-            let phrasePattern = "(\\b(?:\\w+\\s+){2,5}\\w+\\b)(?:\\s+\\1){2,}"
+            let phrasePattern = "(\\b(?:\\w+\\s+){2,5}\\w+\\b)(?:\\s+\\1){4,}"  // 5+ repetitions instead of 3+
             if lowercased.range(of: phrasePattern, options: [.regularExpression]) != nil {
+                NSLog("⚠️ TL;DR rejected due to excessive phrase repetition")
                 return true
             }
         }
@@ -475,13 +584,30 @@ class AIAssistant: ObservableObject {
             NSLog("⚠️ Regex error in phrase repetition detection: \(error)")
         }
 
-        // Check for excessive repetition of bad patterns
-        for pattern in badPatterns {
-            if lowercased.contains(pattern) {
+        // NEW: Check if response is ONLY repetitive content (more than 80% repetitive)
+        let words = lowercased.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        if words.count > 5 {
+            let uniqueWords = Set(words)
+            let repetitionRatio = Double(words.count - uniqueWords.count) / Double(words.count)
+            if repetitionRatio > 0.8 {
+                NSLog("⚠️ TL;DR rejected due to high repetition ratio: \(repetitionRatio)")
                 return true
             }
         }
+
+        // Check for excessive repetition of bad patterns (only if multiple patterns present)
+        var badPatternCount = 0
+        for pattern in badPatterns {
+            if lowercased.contains(pattern) {
+                badPatternCount += 1
+            }
+        }
+        if badPatternCount >= 2 {  // Only reject if multiple bad patterns present
+            NSLog("⚠️ TL;DR rejected due to multiple bad patterns: \(badPatternCount)")
+            return true
+        }
         
+        NSLog("✅ TL;DR response validation passed")
         return false
     }
     
