@@ -36,7 +36,7 @@ final class SimplifiedMLXRunner: ObservableObject {
             isLoading = false
         }
         
-        NSLog("🚀 Loading MLX model: \(modelId)")
+NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
         
         do {
             // Use MLX-Swift ModelRegistry for predefined models
@@ -48,6 +48,7 @@ final class SimplifiedMLXRunner: ObservableObject {
                 modelConfig = LLMRegistry.llama3_2_3B_4bit
             case "gemma3_2B_4bit":
                 modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-2b-it-4bit")
+                NSLog("🔧 Using MLX model: mlx-community/gemma-2-2b-it-4bit")
             case "gemma3_9B_4bit":
                 modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-9b-it-4bit")
             default:
@@ -60,7 +61,9 @@ final class SimplifiedMLXRunner: ObservableObject {
             ) { progress in
                 Task { @MainActor in
                     self.loadProgress = Float(progress.fractionCompleted)
+        if Int(progress.fractionCompleted * 100) % 10 == 0 { // Only log every 10%
                     NSLog("📈 MLX model download progress: \(Int(progress.fractionCompleted * 100))%")
+                }
                 }
             }
             
@@ -115,8 +118,8 @@ final class SimplifiedMLXRunner: ObservableObject {
                     // IMPROVED: Stop if no progress is being made (token count not increasing)
                     if tokens.count == previousTokenCount {
                         stagnantCount += 1
-                        if stagnantCount >= 5 {
-                            NSLog("🛑 Stopping: no token progress for 5 iterations")
+                        if stagnantCount >= 8 { // Increased from 5 to 8 for more patient generation
+                            NSLog("🛑 Stopping: no token progress for 8 iterations")
                             return .stop
                         }
                     } else {
@@ -163,6 +166,9 @@ final class SimplifiedMLXRunner: ObservableObject {
                 NSLog("🔤 Decoding \(allTokens.count) total tokens...")
                 let fullResponse = modelContext.tokenizer.decode(tokens: allTokens)
                 NSLog("📝 Final decoded response: \(fullResponse.count) characters")
+                if fullResponse.isEmpty {
+                    NSLog("⚠️ WARNING: MLX tokenizer returned empty response despite \(allTokens.count) tokens")
+                }
                 
                 return fullResponse
             }
@@ -212,9 +218,9 @@ final class SimplifiedMLXRunner: ObservableObject {
                             parameters: parameters,
                             context: modelContext
                         ) { tokens in
-                            // Debug: Log first few iterations to understand what's happening
-                            if previousTokenCount < 3 {
-                                NSLog("🔍 Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens")
+                            // Enhanced debug logging for TLDR streaming issues
+                            if previousTokenCount < 5 {
+                                NSLog("🔍 MLX Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens, last token: \(tokens.last ?? -1)")
                             }
                             
                             // IMPROVED: Stop if no progress is being made (token count not increasing)
@@ -285,11 +291,13 @@ final class SimplifiedMLXRunner: ObservableObject {
                                         }
                                     }
                                     
-                                    // Removed token streaming logs for cleaner output
+                                    NSLog("📝 MLX Streaming yielding: '\(newText.prefix(50))...' (\(newText.count) chars)")
                                     
                                     if !newText.isEmpty {
                                         continuation.yield(newText)
                                         sentTextLength = fullText.count
+                                    } else {
+                                        NSLog("⚠️ MLX Streaming: newText is empty despite tokens")
                                     }
                                 }
                             }

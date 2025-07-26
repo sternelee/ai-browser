@@ -177,22 +177,12 @@ class GemmaService {
                         }
                         
                         // If no content was streamed, provide a helpful fallback
-                        // If no content was streamed, synchronously generate a fallback response using the non-streaming pipeline.
                         if !hasYieldedContent {
-                            NSLog("⚠️ No content streamed, falling back to synchronous generation")
-
-                            do {
-                                // Re-use the same prompt but without the chat template overhead for better results.
-                                let fallbackRaw = try await self.generateRawResponse(prompt: query)
-
-                                // Ensure we return at least some content – fall back to generic message only if empty.
-                                let safeFallback = fallbackRaw.isEmpty ? "I'm ready to help you with questions about the current webpage content." : fallbackRaw
-
-                                continuation.yield(safeFallback)
-                            } catch {
-                                NSLog("❌ Fallback raw generation failed: \(error)")
-                                continuation.yield("I'm ready to help you with questions about the current webpage content.")
-                            }
+                            NSLog("⚠️ No content streamed, providing fallback response")
+                            NSLog("🔍 DEBUG: accumulatedResponse length: \(accumulatedResponse.count)")
+                            NSLog("🔍 DEBUG: accumulatedResponse preview: '\(accumulatedResponse.prefix(200))'")
+                            let fallbackResponse = "I'm ready to help you with questions about the current webpage content."
+                            continuation.yield(fallbackResponse)
                         }
                         
                         continuation.finish()
@@ -217,30 +207,6 @@ class GemmaService {
                         continuation.finish()
                     }
                     
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-    
-    /// Generate a streaming response **without** adding the chat template. Useful for utilities like TL;DR where the entire instruction is in the prompt already.
-    func generateRawStreamingResponse(prompt: String) async throws -> AsyncThrowingStream<String, Error> {
-        guard isModelLoaded else {
-            throw GemmaError.modelNotLoaded
-        }
-
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    // Start a raw stream directly via the MLX runner
-                    let stream = await SimplifiedMLXRunner.shared.generateStreamWithPrompt(prompt: prompt, modelId: "gemma3_2B_4bit")
-
-                    for try await chunk in stream {
-                        continuation.yield(chunk)
-                    }
-
-                    continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }

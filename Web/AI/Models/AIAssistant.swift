@@ -487,8 +487,12 @@ class AIAssistant: ObservableObject {
                     // Log full TLDR prompt for debugging
                     NSLog("📜 FULL TLDR PROMPT FOR DEBUGGING:\n\(tldrPrompt)")
                     
-                    // Use raw streaming response (no chat template) for TL;DR
-                    let stream = try await gemmaService.generateRawStreamingResponse(prompt: tldrPrompt)
+                    // Use streaming response with post-processing for TL;DR
+                    let stream = try await gemmaService.generateStreamingResponse(
+                        query: tldrPrompt,
+                        context: nil, // Context already embedded in prompt
+                        conversationHistory: [] // No conversation history for TL;DR
+                    )
                     
                     var accumulatedResponse = ""
                     var hasYieldedContent = false
@@ -540,6 +544,8 @@ class AIAssistant: ObservableObject {
     private func isInvalidTLDRResponse(_ response: String) -> Bool {
         let lowercased = response.lowercased()
         
+        NSLog("🔍 TLDR Validation: Checking response (\(response.count) chars): '\(response.prefix(100))...'")
+        
         // Check for repetitive patterns that indicate model confusion
         let badPatterns = [
             "understand",
@@ -550,7 +556,8 @@ class AIAssistant: ObservableObject {
         ]
         
         // If response is too short (but allow shorter responses)
-        if response.count < 10 {
+        if response.count < 5 {
+            NSLog("⚠️ TLDR Validation: Response too short (\(response.count) chars)")
             return true
         }
         
@@ -598,7 +605,7 @@ class AIAssistant: ObservableObject {
             return true
         }
         
-        NSLog("✅ TL;DR response validation passed")
+        NSLog("✅ TLDR Validation: Response passed all checks")
         return false
     }
     
