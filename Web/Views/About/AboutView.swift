@@ -1,10 +1,3 @@
-//
-//  AboutView.swift
-//  Web
-//
-//  Created by Claude Code on 7/24/25.
-//
-
 import SwiftUI
 import OSLog
 

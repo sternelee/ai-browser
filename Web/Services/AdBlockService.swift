@@ -1,10 +1,3 @@
-//
-//  AdBlockService.swift
-//  Web
-//
-//  Created by Claude on 2025-07-21.
-//
-
 import WebKit
 import Network
 import Foundation
@@ -89,7 +82,7 @@ class AdBlockService: NSObject, ObservableObject {
         setupDailyStatsReset()
     }
     
-    // MARK: - WebView Configuration
+    // MARK: - WebView Configuration (CSP-Protected)
     func configureWebView(_ webView: WKWebView) {
         guard isEnabled else { return }
         
@@ -98,8 +91,16 @@ class AdBlockService: NSObject, ObservableObject {
         }
         
         let blockingScript = generateBlockingScript()
-        let script = WKUserScript(source: blockingScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        webView.configuration.userContentController.addUserScript(script)
+        
+        // SECURITY: Use CSP-protected script injection for adblocking
+        if let secureScript = CSPManager.shared.secureScriptInjection(
+            script: blockingScript,
+            type: .adBlock,
+            webView: webView
+        ) {
+            webView.configuration.userContentController.addUserScript(secureScript)
+        }
+        
         webView.configuration.userContentController.add(self, name: "adBlockHandler")
         
         setupRequestInterception(for: webView)
@@ -517,30 +518,36 @@ class AdBlockService: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Script Message Handler
+// MARK: - Script Message Handler (CSP-Protected)
 extension AdBlockService: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "adBlockHandler",
-              let body = message.body as? [String: Any],
-              let type = body["type"] as? String else { return }
+        let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "adBlockHandler")
         
-        DispatchQueue.main.async {
-            switch type {
-            case "blocked":
-                self.blockedRequestsCount += 1
-                self.blockedRequestsToday += 1
-                self.saveSettings()
-                
-            case "stats":
-                if let totalBlocked = body["totalBlocked"] as? Int {
-                    self.blockedRequestsCount += totalBlocked
-                    self.blockedRequestsToday += totalBlocked
+        switch validationResult {
+        case .valid(let sanitizedBody):
+            guard let type = sanitizedBody["type"] as? String else { return }
+            
+            DispatchQueue.main.async {
+                switch type {
+                case "blocked":
+                    self.blockedRequestsCount += 1
+                    self.blockedRequestsToday += 1
                     self.saveSettings()
+                    
+                case "stats":
+                    if let totalBlocked = sanitizedBody["totalBlocked"] as? Int {
+                        self.blockedRequestsCount += totalBlocked
+                        self.blockedRequestsToday += totalBlocked
+                        self.saveSettings()
+                    }
+                    
+                default:
+                    break
                 }
-                
-            default:
-                break
             }
+            
+        case .invalid(let error):
+            NSLog("🔒 CSP: AdBlock message validation failed: \(error.description)")
         }
     }
 }

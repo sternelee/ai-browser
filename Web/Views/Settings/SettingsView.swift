@@ -157,7 +157,7 @@ struct SettingsView: View {
                 case .privacy:
                     PrivacySettingsView()
                 case .security:
-                    SecuritySettingsView()
+                    BasicSecuritySettingsView()
                 case .appearance:
                     AppearanceSettingsView()
                 case .advanced:
@@ -226,11 +226,13 @@ struct GeneralSettingsView: View {
     }
 }
 
-struct SecuritySettingsView: View {
+struct BasicSecuritySettingsView: View {
     @AppStorage("enablePasswordManager") private var enablePasswordManager = true
     @AppStorage("enableAdBlocker") private var enableAdBlocker = true
     @AppStorage("enableDNSOverHTTPS") private var enableDNSOverHTTPS = true
     @AppStorage("dnsProvider") private var dnsProvider = "Cloudflare"
+    @StateObject private var safeBrowsingManager = SafeBrowsingManager.shared
+    @State private var showSafeBrowsingSettings = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -240,6 +242,34 @@ struct SecuritySettingsView: View {
                 .foregroundColor(.primary)
             
             VStack(alignment: .leading, spacing: 16) {
+                // Safe Browsing (new section at top)
+                settingsGroup("Safe Browsing") {
+                    HStack {
+                        Toggle("Protect against malware and phishing", isOn: $safeBrowsingManager.isEnabled)
+                        
+                        Spacer()
+                        
+                        Button("Configure...") {
+                            showSafeBrowsingSettings = true
+                        }
+                        .font(.callout)
+                    }
+                    
+                    HStack {
+                        Image(systemName: safeBrowsingManager.isEnabled ? "shield.checkered" : "shield.slash")
+                            .foregroundColor(safeBrowsingManager.isEnabled ? .green : .red)
+                        
+                        Text(safeBrowsingManager.isEnabled ? 
+                             "\(safeBrowsingManager.totalThreatsBlocked) threats blocked" : 
+                             "Malware protection disabled")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .sheet(isPresented: $showSafeBrowsingSettings) {
+                    SafeBrowsingSettingsView()
+                }
+                
                 // Password Manager
                 settingsGroup("Password Manager") {
                     Toggle("Enable built-in password manager", isOn: $enablePasswordManager)

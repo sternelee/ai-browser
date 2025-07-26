@@ -4,6 +4,7 @@ import AppKit
 struct URLBar: View {
     let tabID: UUID
     let themeColor: NSColor?
+    let mixedContentStatus: MixedContentManager.MixedContentStatus?
     let onSubmit: (String) -> Void
     @FocusState private var isURLBarFocused: Bool
     @State private var hovering: Bool = false
@@ -55,7 +56,10 @@ struct URLBar: View {
     var body: some View {
         HStack(spacing: 12) {
             // Security indicator with enhanced design
-            SecurityIndicator(urlString: urlSynchronizer.currentURL)
+            SecurityIndicator(
+                urlString: urlSynchronizer.currentURL,
+                mixedContentStatus: mixedContentStatus
+            )
             
             // Main input field with simplified state management
             TextField("Search or enter website", text: editableText)
@@ -308,9 +312,84 @@ struct URLBar: View {
 // Security indicator component
 struct SecurityIndicator: View {
     let urlString: String
+    let mixedContentStatus: MixedContentManager.MixedContentStatus?
+    @State private var certificateStatus: CertificateStatus = .unknown
+    @State private var showingSecurityDetails = false
     
-    private var isSecure: Bool {
-        urlString.hasPrefix("https://")
+    enum CertificateStatus {
+        case secure
+        case insecure
+        case warning
+        case error
+        case mixedContent
+        case mixedContentBlocked
+        case unknown
+        
+        var icon: String {
+            switch self {
+            case .secure:
+                return "lock.fill"
+            case .insecure:
+                return "lock.open.fill"
+            case .warning:
+                return "exclamationmark.triangle.fill"
+            case .error:
+                return "xmark.shield.fill"
+            case .mixedContent:
+                return "exclamationmark.shield.fill"
+            case .mixedContentBlocked:
+                return "shield.slash.fill"
+            case .unknown:
+                return "magnifyingglass"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .secure:
+                return .green.opacity(0.8)
+            case .insecure:
+                return .red.opacity(0.8)
+            case .warning:
+                return .orange.opacity(0.8)
+            case .error:
+                return .red
+            case .mixedContent:
+                return .orange.opacity(0.9)
+            case .mixedContentBlocked:
+                return .blue.opacity(0.8)
+            case .unknown:
+                return .textSecondary
+            }
+        }
+        
+        var tooltip: String {
+            switch self {
+            case .secure:
+                return "Connection is secure - all content loaded over HTTPS"
+            case .insecure:
+                return "Connection is not secure"
+            case .warning:
+                return "Certificate has issues"
+            case .error:
+                return "Certificate validation failed"
+            case .mixedContent:
+                return "Mixed content detected - some resources loaded over HTTP"
+            case .mixedContentBlocked:
+                return "Mixed content blocked for security"
+            case .unknown:
+                return "Search or enter website"
+            }
+        }
+        
+        var hasSecurityIssue: Bool {
+            switch self {
+            case .secure, .unknown:
+                return false
+            case .insecure, .warning, .error, .mixedContent, .mixedContentBlocked:
+                return true
+            }
+        }
     }
     
     private var hasURL: Bool {
@@ -318,20 +397,235 @@ struct SecurityIndicator: View {
     }
     
     var body: some View {
-        Group {
-            if hasURL {
-                Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isSecure ? .green.opacity(0.8) : .orange.opacity(0.8))
-            } else {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.textSecondary)
+        Button(action: { showingSecurityDetails.toggle() }) {
+            Image(systemName: certificateStatus.icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(certificateStatus.color)
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.plain)
+        .help(certificateStatus.tooltip)
+        .animation(.easeInOut(duration: 0.2), value: certificateStatus)
+        .onChange(of: urlString) { _, newURL in
+            updateCertificateStatus(for: newURL)
+        }
+        .onChange(of: mixedContentStatus) { _, _ in
+            updateCertificateStatus(for: urlString)
+        }
+        .onAppear {
+            updateCertificateStatus(for: urlString)
+        }
+        .popover(isPresented: $showingSecurityDetails) {
+            SecurityDetailsPopover(
+                urlString: urlString,
+                certificateStatus: certificateStatus,
+                mixedContentStatus: mixedContentStatus
+            )
+        }
+    }
+    
+    private func updateCertificateStatus(for url: String) {
+        guard hasURL else {
+            certificateStatus = .unknown
+            return
+        }
+        
+        // SECURITY: Check mixed content status first for HTTPS pages
+        if url.hasPrefix("https://"), let mixedStatus = mixedContentStatus {
+            if mixedStatus.mixedContentDetected {
+                // Determine if mixed content is being blocked or allowed
+                let policy = MixedContentManager.shared.mixedContentPolicy
+                switch policy {
+                case .block:
+                    certificateStatus = .mixedContentBlocked
+                case .warn, .allow:
+                    certificateStatus = .mixedContent
+                }
+                return
             }
         }
-        .frame(width: 16, height: 16)
-        .animation(.easeInOut(duration: 0.2), value: hasURL)
-        .animation(.easeInOut(duration: 0.2), value: isSecure)
+        
+        // Basic URL scheme checking
+        if url.hasPrefix("https://") {
+            // For HTTPS URLs, we start with secure but will update based on actual validation
+            certificateStatus = .secure
+            
+            // Check if there are any certificate exceptions for this host
+            if let urlObj = URL(string: url), let host = urlObj.host {
+                let port = urlObj.port ?? 443
+                
+                if CertificateManager.shared.hasException(for: host, port: port) {
+                    certificateStatus = .warning
+                }
+                
+                // Mixed content status takes precedence over certificate issues
+                // for better user understanding of the security context
+            }
+        } else if url.hasPrefix("http://") {
+            certificateStatus = .insecure
+        } else {
+            certificateStatus = .unknown
+        }
+    }
+}
+
+// MARK: - Security Details Popover
+
+struct SecurityDetailsPopover: View {
+    let urlString: String
+    let certificateStatus: SecurityIndicator.CertificateStatus
+    let mixedContentStatus: MixedContentManager.MixedContentStatus?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                Image(systemName: certificateStatus.icon)
+                    .foregroundColor(certificateStatus.color)
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connection Security")
+                        .font(.headline)
+                    Text(certificateStatus.tooltip)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            
+            Divider()
+            
+            // URL Information
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Website", systemImage: "globe")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                if let url = URL(string: urlString), let host = url.host {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(host)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.primary)
+                        
+                        if url.port != nil && url.port != 80 && url.port != 443 {
+                            Text("Port: \(url.port!)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } else {
+                    Text(urlString)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+            }
+            
+            // Security Status Details
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Security Status", systemImage: "shield")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(securityStatusDescription)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Certificate Exception Info (if applicable)
+            if let url = URL(string: urlString),
+               let host = url.host,
+               CertificateManager.shared.hasException(for: host, port: url.port ?? 443) {
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Certificate Exception", systemImage: "exclamationmark.triangle")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.orange)
+                    
+                    Text("You have granted a security exception for this website. This may pose security risks.")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                    
+                    Button("Revoke Exception") {
+                        CertificateManager.shared.revokeException(for: host, port: url.port ?? 443)
+                    }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.red)
+                }
+            }
+            
+            // Mixed Content Information (if applicable)
+            if let mixedStatus = mixedContentStatus,
+               mixedStatus.mixedContentDetected {
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Mixed Content Detected", systemImage: "exclamationmark.shield")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.orange)
+                    
+                    Text("This HTTPS page contains HTTP resources, which compromises the security of the connection.")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                    
+                    // Show current policy
+                    let policy = MixedContentManager.shared.mixedContentPolicy
+                    HStack {
+                        Text("Policy:")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Text(policy.rawValue)
+                            .font(.caption)
+                            .foregroundColor(policy.securityLevel.color)
+                    }
+                    
+                    // Show violation count if available
+                    if mixedStatus.violationCount > 0 {
+                        Text("\(mixedStatus.violationCount) mixed content \(mixedStatus.violationCount == 1 ? "resource" : "resources") detected")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Button("Mixed Content Settings...") {
+                        NotificationCenter.default.post(name: .showSettingsRequested, object: "mixedContent")
+                    }
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.blue)
+                }
+            }
+            
+            // Security Settings Link
+            Divider()
+            
+            Button("Security Settings...") {
+                NotificationCenter.default.post(name: .showSettingsRequested, object: "security")
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.accentColor)
+        }
+        .padding(16)
+        .frame(width: 300)
+    }
+    
+    private var securityStatusDescription: String {
+        switch certificateStatus {
+        case .secure:
+            return "Your connection to this site is encrypted and authenticated."
+        case .insecure:
+            return "Your connection to this site is not encrypted. Information you send can be intercepted."
+        case .warning:
+            return "This site's certificate has issues, but you've chosen to trust it."
+        case .error:
+            return "This site's certificate could not be validated. Avoid entering sensitive information."
+        case .unknown:
+            return "No security information available."
+        case .mixedContent:
+            return "This HTTPS site contains HTTP resources, which may compromise your security."
+        case .mixedContentBlocked:
+            return "HTTP resources on this HTTPS page have been blocked for your security."
+        }
     }
 }
 
@@ -476,5 +770,5 @@ struct AIToggleButton: View {
 }
 
 #Preview {
-    URLBar(tabID: UUID(), themeColor: nil, onSubmit: { _ in })
+    URLBar(tabID: UUID(), themeColor: nil, mixedContentStatus: nil, onSubmit: { _ in })
 }

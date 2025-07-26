@@ -1,10 +1,3 @@
-//
-//  PasswordManager.swift
-//  Web
-//
-//  Created by Claude on 2025-07-21.
-//
-
 import Security
 import CryptoKit
 import LocalAuthentication
@@ -292,13 +285,21 @@ class PasswordManager: NSObject, ObservableObject {
         return commonPatterns.contains { lowercasePassword.contains($0) }
     }
     
-    // MARK: - Autofill Support
+    // MARK: - Autofill Support (CSP-Protected)
     func configureAutofill(for webView: WKWebView) {
         guard isAutofillEnabled else { return }
         
         let autofillScript = generateAutofillScript()
-        let script = WKUserScript(source: autofillScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        webView.configuration.userContentController.addUserScript(script)
+        
+        // SECURITY: Use CSP-protected script injection for autofill
+        if let secureScript = CSPManager.shared.secureScriptInjection(
+            script: autofillScript,
+            type: .autofill,
+            webView: webView
+        ) {
+            webView.configuration.userContentController.addUserScript(secureScript)
+        }
+        
         webView.configuration.userContentController.add(self, name: "autofillHandler")
     }
     
@@ -572,31 +573,37 @@ class PasswordManager: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Script Message Handler
+// MARK: - Script Message Handler (CSP-Protected)
 extension PasswordManager: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "autofillHandler",
-              let body = message.body as? [String: Any],
-              let type = body["type"] as? String else { return }
+        let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "autofillHandler")
         
-        switch type {
-        case "requestCredentials":
-            if let website = body["website"] as? String {
-                showAutofillSuggestions(for: website, in: message.webView)
-            }
+        switch validationResult {
+        case .valid(let sanitizedBody):
+            guard let type = sanitizedBody["type"] as? String else { return }
             
-        case "saveCredentials":
-            if let website = body["website"] as? String,
-               let username = body["username"] as? String,
-               let password = body["password"] as? String {
-                
-                Task {
-                    await savePassword(website: website, username: username, password: password)
+            switch type {
+            case "requestCredentials":
+                if let website = sanitizedBody["website"] as? String {
+                    showAutofillSuggestions(for: website, in: message.webView)
                 }
+                
+            case "saveCredentials":
+                if let website = sanitizedBody["website"] as? String,
+                   let username = sanitizedBody["username"] as? String,
+                   let password = sanitizedBody["password"] as? String {
+                    
+                    Task {
+                        await savePassword(website: website, username: username, password: password)
+                    }
+                }
+                
+            default:
+                break
             }
             
-        default:
-            break
+        case .invalid(let error):
+            NSLog("🔒 CSP: Autofill message validation failed: \(error.description)")
         }
     }
     

@@ -12,6 +12,8 @@ struct WebApp: App {
         _ = keyboardShortcutHandler
         // Initialize application state observer to manage background resource policies
         _ = ApplicationStateObserver.shared
+        // SECURITY: Initialize runtime security monitor for JIT entitlement risk mitigation
+        _ = RuntimeSecurityMonitor.shared
         // Initialize update service and check for updates in background
         setupUpdateChecker()
     }

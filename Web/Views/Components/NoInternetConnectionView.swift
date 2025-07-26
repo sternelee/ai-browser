@@ -127,7 +127,7 @@ struct NoInternetConnectionView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+            NoInternetVisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .ignoresSafeArea()
         )
         .onAppear {
@@ -339,7 +339,7 @@ struct NoInternetConnectionView: View {
 
 // MARK: - Visual Effect View for Glass Morphism
 
-struct VisualEffectView: NSViewRepresentable {
+struct NoInternetVisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
     

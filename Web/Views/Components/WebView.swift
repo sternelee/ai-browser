@@ -45,6 +45,7 @@ struct WebView: NSViewRepresentable {
     @Binding var title: String?
     @Binding var favicon: NSImage?
     @Binding var hoveredLink: String?
+    @Binding var mixedContentStatus: MixedContentManager.MixedContentStatus?
     
     let tab: Tab?
     let onNavigationAction: ((WKNavigationAction) -> WKNavigationActionPolicy)?
@@ -74,23 +75,25 @@ struct WebView: NSViewRepresentable {
         // User agent customization - Use standard Safari user agent to prevent Google's embedded browser detection
         config.applicationNameForUserAgent = ""
         
-        // Add link hover detection and context menu script to existing user content controller
-        let linkHoverScript = WKUserScript(
-            source: linkHoverJavaScript,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
-        )
-        config.userContentController.addUserScript(linkHoverScript)
+        // SECURITY: Use CSP-protected script injection for all JavaScript
+        if let linkHoverScript = CSPManager.shared.secureScriptInjection(
+            script: linkHoverJavaScript,
+            type: .linkHover,
+            webView: createTemporaryWebView(with: config)
+        ) {
+            config.userContentController.addUserScript(linkHoverScript)
+        }
         config.userContentController.add(context.coordinator, name: "linkHover")
         config.userContentController.add(context.coordinator, name: "linkContextMenu")
         
-        // Add timer cleanup script to prevent memory leaks and CPU issues
-        let timerCleanupScript = WKUserScript(
-            source: timerCleanupJavaScript,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
-        )
-        config.userContentController.addUserScript(timerCleanupScript)
+        // SECURITY: Use CSP-protected timer cleanup script
+        if let timerCleanupScript = CSPManager.shared.secureScriptInjection(
+            script: timerCleanupJavaScript,
+            type: .timerCleanup,
+            webView: createTemporaryWebView(with: config)
+        ) {
+            config.userContentController.addUserScript(timerCleanupScript)
+        }
         config.userContentController.add(context.coordinator, name: "timerCleanup")
         
         // Create WebView using WebKitManager for optimal memory usage
@@ -130,6 +133,11 @@ struct WebView: NSViewRepresentable {
         
         // Set up observers with error handling
         context.coordinator.setupObservers(for: webView)
+        
+        // SECURITY: Set up mixed content monitoring if tab exists
+        if let tab = tab {
+            context.coordinator.setupMixedContentMonitoring(for: webView, tabID: tab.id)
+        }
         
         // Store webView reference for coordinator and tab with ownership validation
         context.coordinator.webView = webView
@@ -183,6 +191,11 @@ struct WebView: NSViewRepresentable {
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+    
+    // SECURITY: Helper function to create temporary WebView for CSP script injection
+    private func createTemporaryWebView(with config: WKWebViewConfiguration) -> WKWebView {
+        return WKWebView(frame: CGRect(x: 0, y: 0, width: 100, height: 100), configuration: config)
     }
     
     // JavaScript for comprehensive timer cleanup to prevent CPU issues
@@ -451,11 +464,19 @@ struct WebView: NSViewRepresentable {
         private var progressObserver: NSKeyValueObservation?
         private var titleObserver: NSKeyValueObservation?
         private var urlObserver: NSKeyValueObservation?
+        private var mixedContentObserver: NSKeyValueObservation?
         var lastLoadedURL: URL?
         var lastLoadTime: Date?
         
         // Context menu state
         var rightClickedLinkURL: String?
+        
+        // Mixed content monitoring state
+        private var mixedContentNotificationObserver: AnyCancellable?
+        
+        // Certificate validation state
+        private var pendingChallenges: [URLAuthenticationChallenge] = []
+        private var certificateNotificationObserver: AnyCancellable?
         
         // Network error handling and circuit breaker
         private let circuitBreaker = NetworkConnectivityMonitor.CircuitBreakerState()
@@ -471,6 +492,39 @@ struct WebView: NSViewRepresentable {
         
         init(_ parent: WebView) {
             self.parent = parent
+            super.init()
+            setupCertificateNotificationObservers()
+        }
+        
+        private func setupCertificateNotificationObservers() {
+            // Handle user responses to certificate security warnings
+            certificateNotificationObserver = NotificationCenter.default.publisher(for: .userGrantedCertificateException)
+                .sink { [weak self] notification in
+                    self?.handleCertificateExceptionGranted(notification)
+                }
+        }
+        
+        private func handleCertificateExceptionGranted(_ notification: Notification) {
+            guard let challenge = notification.userInfo?["challenge"] as? URLAuthenticationChallenge,
+                  let host = notification.userInfo?["host"] as? String,
+                  let port = notification.userInfo?["port"] as? Int else {
+                return
+            }
+            
+            // Remove from pending challenges and retry with exception
+            if let index = pendingChallenges.firstIndex(where: { $0.protectionSpace.host == host && $0.protectionSpace.port == port }) {
+                let pendingChallenge = pendingChallenges.remove(at: index)
+                
+                // Retry validation with exception now granted
+                let (disposition, credential) = CertificateManager.shared.validateChallenge(pendingChallenge)
+                
+                // This should now succeed because the exception was granted
+                // Note: In practice, we'd need to store the completion handler and call it here
+                // For now, we'll trigger a reload to retry the navigation
+                DispatchQueue.main.async { [weak self] in
+                    self?.webView?.reload()
+                }
+            }
         }
         
         func setupObservers(for webView: WKWebView) {
@@ -491,6 +545,13 @@ struct WebView: NSViewRepresentable {
                             tabID: tab.id
                         )
                     }
+                }
+            }
+            
+            // SECURITY: Mixed content monitoring observer
+            mixedContentObserver = webView.observe(\.hasOnlySecureContent, options: [.new, .old]) { [weak self] webView, change in
+                DispatchQueue.main.async {
+                    self?.handleMixedContentStatusChange(webView: webView)
                 }
             }
             
@@ -528,6 +589,39 @@ struct WebView: NSViewRepresentable {
                         }
                     }
                 }
+            }
+        }
+        
+        // MARK: - Mixed Content Monitoring
+        
+        func setupMixedContentMonitoring(for webView: WKWebView, tabID: UUID) {
+            // Set up mixed content status change notifications
+            mixedContentNotificationObserver = NotificationCenter.default.publisher(for: .mixedContentStatusChanged)
+                .sink { [weak self] notification in
+                    if let notificationTabID = notification.object as? UUID,
+                       notificationTabID == tabID,
+                       let status = notification.userInfo?["status"] as? MixedContentManager.MixedContentStatus {
+                        DispatchQueue.main.async {
+                            self?.parent.mixedContentStatus = status
+                        }
+                    }
+                }
+            
+            NSLog("🔒 Mixed content monitoring enabled for tab \(tabID)")
+        }
+        
+        private func handleMixedContentStatusChange(webView: WKWebView) {
+            guard let tab = parent.tab else { return }
+            
+            // Check mixed content status using MixedContentManager
+            let status = MixedContentManager.shared.checkMixedContentStatus(for: webView, tabID: tab.id)
+            
+            // Update parent binding
+            parent.mixedContentStatus = status
+            
+            // Log security event if mixed content detected
+            if status.mixedContentDetected {
+                NSLog("⚠️ Mixed content detected on \(status.url?.host ?? "unknown") - hasOnlySecureContent: \(status.hasOnlySecureContent)")
             }
         }
         
@@ -573,6 +667,14 @@ struct WebView: NSViewRepresentable {
             parent.canGoBack = webView.canGoBack
             parent.canGoForward = webView.canGoForward
             parent.tab?.notifyLoadingStateChanged()
+            
+            // SECURITY: Check mixed content status after navigation completes
+            if let tab = parent.tab {
+                let mixedContentStatus = MixedContentManager.shared.checkMixedContentStatus(for: webView, tabID: tab.id)
+                DispatchQueue.main.async {
+                    self.parent.mixedContentStatus = mixedContentStatus
+                }
+            }
             
             // Reset network error state on successful navigation
             currentNetworkError = nil
@@ -1102,11 +1204,99 @@ struct WebView: NSViewRepresentable {
                 return
             }
             
-            if let customAction = parent.onNavigationAction {
-                let policy = customAction(navigationAction)
-                decisionHandler(policy)
-            } else {
+            // SECURITY: Safe Browsing threat detection for navigation requests
+            guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
+                return
+            }
+            
+            // Skip Safe Browsing checks for local/internal URLs
+            if shouldSkipSafeBrowsingCheck(for: url) {
+                // Proceed with custom navigation action if present
+                if let customAction = parent.onNavigationAction {
+                    let policy = customAction(navigationAction)
+                    decisionHandler(policy)
+                } else {
+                    decisionHandler(.allow)
+                }
+                return
+            }
+            
+            // Perform asynchronous Safe Browsing check
+            performSafeBrowsingCheck(for: url, navigationAction: navigationAction, decisionHandler: decisionHandler)
+        }
+        
+        // MARK: - Safe Browsing Integration
+        
+        private func shouldSkipSafeBrowsingCheck(for url: URL) -> Bool {
+            guard let scheme = url.scheme?.lowercased() else { return true }
+            
+            // Skip for non-web schemes
+            if !["http", "https"].contains(scheme) {
+                return true
+            }
+            
+            // Skip for localhost and development domains
+            if let host = url.host?.lowercased() {
+                let developmentHosts = ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
+                if developmentHosts.contains(host) || host.hasSuffix(".local") || host.hasSuffix(".dev") {
+                    return true
+                }
+            }
+            
+            return false
+        }
+        
+        private func performSafeBrowsingCheck(
+            for url: URL,
+            navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            // Perform Safe Browsing check asynchronously to avoid blocking navigation
+            Task { @MainActor in
+                let safetyResult = await SafeBrowsingManager.shared.checkURLSafety(url)
+                
+                switch safetyResult {
+                case .safe:
+                    // URL is safe - proceed with navigation
+                    if let customAction = self.parent.onNavigationAction {
+                        let policy = customAction(navigationAction)
+                        decisionHandler(policy)
+                    } else {
+                        decisionHandler(.allow)
+                    }
+                    
+                case .unsafe(let threat):
+                    // URL is malicious - block navigation and show warning
+                    NSLog("🛡️ Safe Browsing blocked malicious URL: \(url.absoluteString) (Threat: \(threat.threatType.userFriendlyName))")
+                    
+                    // Post notification to show threat warning
+                    NotificationCenter.default.post(
+                        name: .safeBrowsingThreatDetected,
+                        object: nil,
+                        userInfo: [
+                            "url": url,
+                            "threat": threat,
+                            "navigationAction": navigationAction,
+                            "webView": self.webView as Any
+                        ]
+                    )
+                    
+                    // Block navigation
+                    decisionHandler(.cancel)
+                    
+                case .unknown:
+                    // Unable to determine safety (API error, offline, etc.)
+                    // Allow navigation but log the issue
+                    NSLog("⚠️ Safe Browsing check failed for URL: \(url.absoluteString) - allowing navigation")
+                    
+                    if let customAction = self.parent.onNavigationAction {
+                        let policy = customAction(navigationAction)
+                        decisionHandler(policy)
+                    } else {
+                        decisionHandler(.allow)
+                    }
+                }
             }
         }
         
@@ -1129,55 +1319,118 @@ struct WebView: NSViewRepresentable {
             decisionHandler(.allow)
         }
         
-        // MARK: - WKScriptMessageHandler
+        // MARK: - TLS Certificate Validation
+        
+        /**
+         * Handles TLS authentication challenges for comprehensive certificate validation
+         * 
+         * This method is critical for browser security and handles:
+         * - Server trust validation (TLS certificates)
+         * - Certificate pinning for high-value domains  
+         * - User consent for certificate exceptions
+         * - Security logging and audit trails
+         * 
+         * Security Implementation:
+         * - Never bypasses certificate errors without user consent
+         * - Implements certificate pinning for critical domains
+         * - Provides clear security warnings to users
+         * - Logs all certificate validation events
+         */
+        func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            
+            // Use CertificateManager for comprehensive validation
+            let (disposition, credential) = CertificateManager.shared.validateChallenge(challenge)
+            
+            // Handle the result based on CertificateManager's decision
+            switch disposition {
+            case .useCredential:
+                // Certificate validation passed - proceed with credential
+                completionHandler(.useCredential, credential)
+                
+            case .cancelAuthenticationChallenge:
+                // Certificate validation failed or requires user intervention
+                // CertificateManager will handle showing security warnings via notifications
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                
+            case .performDefaultHandling:
+                // Use WebKit's default handling (for non-server-trust challenges)
+                completionHandler(.performDefaultHandling, nil)
+                
+            case .rejectProtectionSpace:
+                // Reject the protection space entirely
+                completionHandler(.rejectProtectionSpace, nil)
+                
+            @unknown default:
+                // Future-proof handling for new challenge disposition types
+                NSLog("⚠️ Unknown URLSession.AuthChallengeDisposition: \(disposition)")
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
+        }
+        
+        // MARK: - WKScriptMessageHandler (CSP-Protected)
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             switch message.name {
             case "linkHover":
-                guard let body = message.body as? [String: Any] else { return }
+                let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "linkHover")
                 
-                DispatchQueue.main.async {
-                    if let type = body["type"] as? String {
-                        switch type {
-                        case "hover":
-                            if let url = body["url"] as? String {
-                                self.parent.hoveredLink = url
+                switch validationResult {
+                case .valid(let sanitizedBody):
+                    DispatchQueue.main.async {
+                        if let type = sanitizedBody["type"] as? String {
+                            switch type {
+                            case "hover":
+                                if let url = sanitizedBody["url"] as? String {
+                                    self.parent.hoveredLink = url
+                                }
+                            case "clear":
+                                self.parent.hoveredLink = nil
+                            default:
+                                break
                             }
-                        case "clear":
-                            self.parent.hoveredLink = nil
-                        default:
-                            break
                         }
                     }
+                case .invalid(let error):
+                    NSLog("🔒 CSP: Link hover message validation failed: \(error.description)")
                 }
                 
             case "linkContextMenu":
-                guard let body = message.body as? [String: Any] else { return }
+                let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "linkContextMenu")
                 
-                DispatchQueue.main.async {
-                    if let type = body["type"] as? String {
-                        switch type {
-                        case "rightClick":
-                            if let url = body["url"] as? String {
-                                self.rightClickedLinkURL = url
-                                // The context menu will be shown by WKUIDelegate method
+                switch validationResult {
+                case .valid(let sanitizedBody):
+                    DispatchQueue.main.async {
+                        if let type = sanitizedBody["type"] as? String {
+                            switch type {
+                            case "rightClick":
+                                if let url = sanitizedBody["url"] as? String {
+                                    self.rightClickedLinkURL = url
+                                    // The context menu will be shown by WKUIDelegate method
+                                }
+                            default:
+                                break
                             }
-                        default:
-                            break
                         }
                     }
+                case .invalid(let error):
+                    NSLog("🔒 CSP: Link context menu message validation failed: \(error.description)")
                 }
                 
             case "timerCleanup":
-                guard let body = message.body as? [String: Any],
-                      let type = body["type"] as? String else { return }
+                let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "timerCleanup")
                 
-                if type == "cleanupComplete" {
-                    let intervalsCleared = body["intervalsCleared"] as? Int ?? 0
-                    let timeoutsCleared = body["timeoutsCleared"] as? Int ?? 0
-                    print("✅ Timer cleanup completed - Intervals: \(intervalsCleared), Timeouts: \(timeoutsCleared)")
+                switch validationResult {
+                case .valid(let sanitizedBody):
+                    if let type = sanitizedBody["type"] as? String, type == "cleanupComplete" {
+                        let intervalsCleared = sanitizedBody["intervalsCleared"] as? Int ?? 0
+                        let timeoutsCleared = sanitizedBody["timeoutsCleared"] as? Int ?? 0
+                        print("✅ Timer cleanup completed - Intervals: \(intervalsCleared), Timeouts: \(timeoutsCleared)")
+                    }
+                case .invalid(let error):
+                    NSLog("🔒 CSP: Timer cleanup message validation failed: \(error.description)")
                 }
                 
             default:
+                NSLog("🔒 CSP: Unexpected message handler: \(message.name)")
                 break
             }
         }
@@ -1292,9 +1545,24 @@ struct WebView: NSViewRepresentable {
             progressObserver?.invalidate()
             titleObserver?.invalidate()
             urlObserver?.invalidate()
+            mixedContentObserver?.invalidate()
             progressObserver = nil
             titleObserver = nil
             urlObserver = nil
+            mixedContentObserver = nil
+            
+            // Clean up certificate notification observers
+            certificateNotificationObserver?.cancel()
+            certificateNotificationObserver = nil
+            pendingChallenges.removeAll()
+            
+            // SECURITY: Clean up mixed content monitoring
+            mixedContentNotificationObserver?.cancel()
+            mixedContentNotificationObserver = nil
+            
+            if let webView = webView, let tab = parent.tab {
+                MixedContentManager.shared.removeMixedContentMonitoring(for: webView, tabID: tab.id)
+            }
             
             // Clean up WebView references
             if let webView = webView {

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Basic App Information -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Web</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	
+	<!-- App Category and Copyright -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>NSHumanReadableCopyright</key>
+	<string></string>
+	
+	<!-- macOS Requirements -->
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSRequiresNativeExecution</key>
+	<true/>
+	
+	<!-- SwiftUI Configuration -->
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	
+	<!-- 
+	===========================================================================
+	CRITICAL SECURITY CONFIGURATION: App Transport Security (ATS)
+	===========================================================================
+	
+	SECURITY RATIONALE:
+	This configuration implements defense-in-depth security for a WebKit-based browser:
+	
+	1. NSAllowsArbitraryLoadsInWebContent = true
+	   - Allows WebKit to load HTTP content (required for browser functionality)
+	   - Only affects WKWebView/UIWebView traffic, NOT app-level networking
+	   - App-level networking remains protected by ATS (HTTPS/TLS 1.2+ required)
+	   - This is Apple's recommended approach for browsers per NSAllowsArbitraryLoadsInWebContent documentation
+	
+	2. NSAllowsArbitraryLoadsForMedia = true
+	   - Allows loading of HTTP media resources (images, videos, audio)
+	   - Prevents broken media experience on HTTP sites
+	   - Also scoped to WebView content only
+	
+	3. NSAllowsArbitraryLoads is NOT set (defaults to false)
+	   - Maintains ATS protection for all app-level network requests
+	   - Requires TLS 1.2+ for app's own API calls, updates, etc.
+	   - Provides protection against MITM attacks on app infrastructure
+	
+	4. TLS Requirements (enforced by default ATS):
+	   - TLS 1.2+ required for all non-WebView connections
+	   - Forward secrecy cipher suites required
+	   - Certificate validation enforced
+	   - HSTS respected
+	
+	APP STORE COMPLIANCE:
+	- This configuration is App Store compliant for browser applications
+	- Uses targeted exceptions rather than blanket disabling
+	- Follows Apple's recommended practice for WebKit-based apps
+	- May require justification during App Review (standard for browsers)
+	
+	ALTERNATIVE APPROACHES REJECTED:
+	- NSAllowsArbitraryLoads = true: Too broad, disables ALL ATS protection
+	- Domain-specific exceptions: Impractical for general-purpose browser
+	- No ATS configuration: Current state, exposes users to MITM attacks
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allow HTTP content in WebView for browser functionality -->
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		
+		<!-- Allow HTTP media resources to prevent broken content -->
+		<key>NSAllowsArbitraryLoadsForMedia</key>
+		<true/>
+		
+		<!-- Optional: Example of domain-specific exceptions if needed
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSTemporaryExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+			</dict>
+		</dict>
+		-->
+	</dict>
+	
+	<!-- 
+	===========================================================================
+	PRIVACY AND SECURITY FEATURES
+	===========================================================================
+	-->
+	
+	<!-- Required for WebKit JavaScript execution and performance -->
+	<key>NSSupportsAutomaticTermination</key>
+	<true/>
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
+	
+	<!-- Camera and Microphone Access (for web applications) -->
+	<key>NSCameraUsageDescription</key>
+	<string>Web sites may request camera access for video calls and content creation.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Web sites may request microphone access for voice calls and audio recording.</string>
+	
+	<!-- Location Services (for web applications) -->
+	<key>NSLocationUsageDescription</key>
+	<string>Web sites may request location access for maps and location-based services.</string>
+	
+	<!-- File Access (for downloads and file uploads) -->
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Web sites may request access to save files to your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Downloaded files are saved to your Downloads folder.</string>
+	
+	<!-- 
+	===========================================================================
+	ADVANCED SECURITY CONFIGURATIONS
+	===========================================================================
+	-->
+	
+	<!-- Prevent automatic app launch -->
+	<key>LSUIElement</key>
+	<false/>
+	
+	<!-- File type associations for security -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Web Page</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.html</string>
+			</array>
+		</dict>
+	</array>
+	
+	<!-- URL Schemes for browser functionality -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>HTTP URL</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>http</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>HTTPS URL</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>https</string>
+			</array>
+		</dict>
+	</array>
+	
+	<!-- Performance and Compatibility -->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	
+	<!-- Accessibility -->
+	<key>NSSupportsAccessibility</key>
+	<true/>
+</dict>
+</plist>

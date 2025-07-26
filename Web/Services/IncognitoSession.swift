@@ -1,10 +1,3 @@
-//
-//  IncognitoSession.swift
-//  Web
-//
-//  Created by Claude on 2025-07-21.
-//
-
 import WebKit
 import Network
 import Foundation
@@ -47,13 +40,15 @@ class IncognitoSession: NSObject, ObservableObject {
             config.defaultWebpagePreferences.preferredContentMode = .desktop
         }
         
-        // Add enhanced privacy JavaScript
-        let privacyScript = WKUserScript(
-            source: generatePrivacyEnhancementScript(),
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
-        )
-        config.userContentController.addUserScript(privacyScript)
+        // SECURITY: Add CSP-protected privacy JavaScript
+        let privacyScript = generatePrivacyEnhancementScript()
+        if let secureScript = CSPManager.shared.secureScriptInjection(
+            script: privacyScript,
+            type: .incognito,
+            webView: WKWebView(frame: .zero, configuration: config)
+        ) {
+            config.userContentController.addUserScript(secureScript)
+        }
         
         incognitoWebViewConfiguration = config
     }
@@ -284,6 +279,7 @@ class IncognitoSession: NSObject, ObservableObject {
     }
     
     func configureWebViewForIncognito(_ webView: WKWebView) {
+        // SECURITY: CSP protection is already applied during configuration setup
         webView.configuration.userContentController.add(self, name: "incognitoHandler")
         
         // Additional incognito-specific configuration
@@ -333,23 +329,29 @@ class IncognitoSession: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Script Message Handler
+// MARK: - Script Message Handler (CSP-Protected)
 extension IncognitoSession: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "incognitoHandler",
-              let body = message.body as? [String: Any],
-              let type = body["type"] as? String else { return }
+        let validationResult = CSPManager.shared.validateMessageInput(message, expectedHandler: "incognitoHandler")
         
-        DispatchQueue.main.async {
-            switch type {
-            case "trackingBlocked":
-                if let count = body["count"] as? Int {
-                    self.totalBlockedTrackers += count
+        switch validationResult {
+        case .valid(let sanitizedBody):
+            guard let type = sanitizedBody["type"] as? String else { return }
+            
+            DispatchQueue.main.async {
+                switch type {
+                case "trackingBlocked":
+                    if let count = sanitizedBody["count"] as? Int {
+                        self.totalBlockedTrackers += count
+                    }
+                    
+                default:
+                    break
                 }
-                
-            default:
-                break
             }
+            
+        case .invalid(let error):
+            NSLog("🔒 CSP: Incognito message validation failed: \(error.description)")
         }
     }
 }

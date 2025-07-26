@@ -73,7 +73,7 @@ struct HoverableURLBar: View {
                 if isVisible {
                     HStack(spacing: 12) {
                         // Security indicator
-                        SecurityIndicator(urlString: urlSynchronizer.currentURL)
+                        SecurityIndicator(urlString: urlSynchronizer.currentURL, mixedContentStatus: nil)
                         
                         // URL input field
                         TextField("Search Google or enter website", text: editableText)

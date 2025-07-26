@@ -214,6 +214,7 @@ struct PersistentWebView: View {
                         set: { tab.favicon = $0 }
                     ),
                     hoveredLink: $hoveredLink,
+                    mixedContentStatus: .constant(nil),
                     tab: tab,
                     onNavigationAction: nil,
                     onDownloadRequest: nil

@@ -109,6 +109,12 @@ struct TabDisplayView: View {
             ZStack {
                 contentArea
                 urlBarOverlay
+                
+                // Security warning overlay for certificate validation issues
+                SecurityWarningSheet()
+                
+                // Safe Browsing threat warning overlay for malware/phishing protection
+                SafeBrowsingWarningSheet()
             }
         }
     }
@@ -450,12 +456,14 @@ struct WebContentArea: View {
                             URLBar(
                                 tabID: activeTab.id,
                                 themeColor: activeTab.themeColor,
+                                mixedContentStatus: nil,
                                 onSubmit: navigateToURL
                             )
                         } else {
                             URLBar(
                                 tabID: UUID(), // Temporary ID for new tab creation
                                 themeColor: nil,
+                                mixedContentStatus: nil,
                                 onSubmit: navigateToURL
                             )
                         }

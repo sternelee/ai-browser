@@ -1,10 +1,3 @@
-//
-//  UpdateService.swift
-//  Web
-//
-//  Created by Claude Code on 7/24/25.
-//
-
 import Foundation
 import SwiftUI
 import OSLog
