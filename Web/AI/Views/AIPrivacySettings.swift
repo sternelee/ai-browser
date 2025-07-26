@@ -6,6 +6,7 @@ struct AIPrivacySettings: View {
     
     // MARK: - State
     
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var contextManager = ContextManager.shared
     @State private var showingHistoryDetails = false
     
@@ -21,6 +22,14 @@ struct AIPrivacySettings: View {
                 Text("AI Privacy Settings")
                     .font(.headline)
                 Spacer()
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.title2)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .accessibilityLabel("Close")
             }
             
             Divider()
