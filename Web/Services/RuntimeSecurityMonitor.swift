@@ -33,8 +33,8 @@ class RuntimeSecurityMonitor: ObservableObject {
     // MARK: - Security Thresholds
     
     private struct SecurityThresholds {
-        static let maxMemoryGrowthRate: Double = 50.0 // MB/second
         static let maxExecutableMemory: UInt64 = 500 * 1024 * 1024 // 500MB
+        static let maxExecutableMemoryWithAI: UInt64 = 50 * 1024 * 1024 * 1024 // 50GB for AI models
         static let maxJITAllocationsPerSecond: Int = 100
         static let anomalyDetectionWindow: TimeInterval = 60.0 // 60 seconds
     }
@@ -138,43 +138,29 @@ class RuntimeSecurityMonitor: ObservableObject {
     }
     
     private func checkMemoryAnomalies() {
-        guard let baseline = baselineMetrics else { return }
-        
-        let current = getCurrentProcessMetrics()
-        let memoryGrowth = Double(current.memoryUsage - baseline.memoryUsage) / (1024 * 1024) // MB
-        let timeElapsed = Date().timeIntervalSince(baseline.timestamp)
-        
-        if timeElapsed > 0 {
-            let growthRate = memoryGrowth / timeElapsed
-            
-            if growthRate > SecurityThresholds.maxMemoryGrowthRate {
-                let threat = SecurityThreat(
-                    type: .memoryAnomaly,
-                    severity: .high,
-                    description: "Abnormal memory growth rate: \(String(format: "%.2f", growthRate)) MB/s",
-                    details: [
-                        "growth_rate": String(growthRate),
-                        "memory_usage": String(current.memoryUsage),
-                        "baseline_memory": String(baseline.memoryUsage)
-                    ]
-                )
-                
-                handleSecurityThreat(threat)
-            }
-        }
+        // Memory growth rate monitoring disabled due to AI model interference
+        // AI models can cause legitimate rapid memory growth that triggers false positives
+        // Keeping function for future potential enhancements but not performing checks
+        return
     }
     
     private func checkExecutableMemoryUsage() {
         let current = getCurrentProcessMetrics()
         
-        if current.executableMemory > SecurityThresholds.maxExecutableMemory {
+        // Determine if this looks like AI model usage (very high executable memory)
+        let isLikelyAIUsage = current.executableMemory > SecurityThresholds.maxExecutableMemory * 10
+        let threshold = isLikelyAIUsage ? SecurityThresholds.maxExecutableMemoryWithAI : SecurityThresholds.maxExecutableMemory
+        
+        if current.executableMemory > threshold {
+            let executableMemoryMB = current.executableMemory / (1024*1024)
             let threat = SecurityThreat(
                 type: .executableMemoryAbuse,
-                severity: .critical,
-                description: "Excessive executable memory allocation: \(current.executableMemory / (1024*1024)) MB",
+                severity: isLikelyAIUsage ? .medium : .critical,
+                description: "Excessive executable memory allocation: \(executableMemoryMB) MB\(isLikelyAIUsage ? " (likely AI model)" : "")",
                 details: [
                     "executable_memory": String(current.executableMemory),
-                    "threshold": String(SecurityThresholds.maxExecutableMemory)
+                    "threshold": String(threshold),
+                    "likely_ai_usage": String(isLikelyAIUsage)
                 ]
             )
             

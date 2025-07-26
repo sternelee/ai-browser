@@ -51,7 +51,7 @@ class SecurityMonitor: ObservableObject {
     // MARK: - Private Properties
     
     private let logDirectory: URL
-    private let encryptionKey: SymmetricKey
+    private lazy var encryptionKey: SymmetricKey = Self.getOrCreateEncryptionKey()
     private var currentLogFile: URL?
     private let logQueue = DispatchQueue(label: "security.monitor.logging", qos: .utility)
     internal let analysisQueue = DispatchQueue(label: "security.monitor.analysis", qos: .background)
@@ -197,9 +197,6 @@ class SecurityMonitor: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         logDirectory = appSupport.appendingPathComponent("Web/SecurityLogs")
         
-        // Generate or load encryption key
-        encryptionKey = Self.getOrCreateEncryptionKey()
-        
         // Create log directory
         try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
         
@@ -211,7 +208,7 @@ class SecurityMonitor: ObservableObject {
         // Setup log rotation timer
         setupLogRotation()
         
-        logger.info("SecurityMonitor initialized with encrypted logging")
+        logger.info("SecurityMonitor initialized - encryption key will be loaded when needed")
     }
     
     // MARK: - Public API
