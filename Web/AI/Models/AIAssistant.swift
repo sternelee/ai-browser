@@ -180,6 +180,8 @@ class AIAssistant: ObservableObject {
             throw AIError.notInitialized
         }
         
+        NSLog("💬 AI Chat: Processing query '\(query.prefix(100))...' (includeContext: \(includeContext))")
+        
         // MEMORY SAFETY: Check if AI operations are safe to perform
         guard memoryMonitor.isAISafeToRun() else {
             let memoryStatus = memoryMonitor.getCurrentMemoryStatus()
@@ -193,16 +195,21 @@ class AIAssistant: ObservableObject {
             // Extract context from current webpage with optional history
             let webpageContext = await extractCurrentContext()
             if let webpageContext = webpageContext {
-                NSLog("🔍 AIAssistant extracted webpage context: \(webpageContext.text.count) chars, quality: \(webpageContext.contentQuality)")
+                NSLog("💬 AI Chat: Extracted webpage context: \(webpageContext.text.count) chars, quality: \(webpageContext.contentQuality)")
+                
+                // Check if content is garbage for chat queries too
+                if includeContext && isContentTooGarbled(webpageContext.text) {
+                    NSLog("💬 AI Chat: Content detected as garbage, using title-only context")
+                }
             } else {
-                NSLog("⚠️ AIAssistant: No webpage context extracted")
+                NSLog("💬 AI Chat: No webpage context extracted")
             }
             
-            let context = contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
+            let context = includeContext ? contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory) : nil
             if let context = context {
-                NSLog("🔍 AIAssistant formatted context: \(context.count) characters")
+                NSLog("💬 AI Chat: Using formatted context: \(context.count) characters")
             } else {
-                NSLog("⚠️ AIAssistant: No formatted context returned")
+                NSLog("💬 AI Chat: No context provided to model")
             }
             
             // Create conversation entry
@@ -387,19 +394,26 @@ class AIAssistant: ObservableObject {
             throw AIError.contextProcessingFailed("No content available to summarize")
         }
         
+        // Check for low-quality content that would confuse the model
+        if isContentTooGarbled(context.text) {
+            NSLog("⚠️ TL;DR: Content appears to be garbled JavaScript/HTML, attempting simplified extraction")
+            return "📄 Page content detected but contains mostly code/markup. Unable to generate meaningful summary."
+        }
+        
         NSLog("🔍 TL;DR: Using context with \(context.text.count) characters, quality: \(context.contentQuality)")
         
-        // Create clean, direct TL;DR prompt with sentiment analysis
+        // Create clean, direct TL;DR prompt - simplified for better model performance
+        let cleanedContent = cleanContentForTLDR(context.text)
         let tldrPrompt = """
-        Analyze the following webpage **without returning any HTML or code** and reply ONLY with:
-        1. A single sentiment emoji that best represents the overall content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
-        2. Two-to-three concise bullet points (max 30 words each) describing the key take-aways.
-
-        Output **format** (plain text):
-        [EMOJI]\n• point 1\n• point 2\n• point 3 (optional)
+        Summarize this webpage in 3 bullet points:
 
         Title: \(context.title)
-        Content: \(context.text.prefix(1500))
+        Content: \(cleanedContent)
+
+        Format:
+        • point 1
+        • point 2  
+        • point 3
         """
 
         do {
@@ -411,7 +425,8 @@ class AIAssistant: ObservableObject {
                 NSLog("⚠️ Invalid TL;DR response detected, retrying with simplified prompt")
                 
                 // Fallback with simpler prompt
-                let fallbackPrompt = "Summarize this webpage in 2-3 bullet points (plain text, no HTML):\n\n\(context.title)\n\(context.text.prefix(800))"
+                let simplifiedContent = cleanContentForTLDR(context.text)
+                let fallbackPrompt = "Summarize this webpage in 2-3 bullet points:\n\nTitle: \(context.title)\nContent: \(simplifiedContent)"
                 let fallbackClean = try await gemmaService.generateRawResponse(prompt: fallbackPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
 
                 // If fallback is still invalid, attempt a final post-processing pass that collapses
@@ -471,17 +486,18 @@ class AIAssistant: ObservableObject {
                     
                     NSLog("🌊 TL;DR Streaming: Using context with \(context.text.count) characters, quality: \(context.contentQuality)")
                     
-                    // Create clean, direct TL;DR prompt with sentiment analysis for streaming
+                    // Create clean, direct TL;DR prompt - simplified for better streaming performance
+                    let cleanedContent = cleanContentForTLDR(context.text)
                     let tldrPrompt = """
-                    Analyze the following webpage **without returning any HTML or code** and reply ONLY with:
-                    1. A single sentiment emoji that best represents the overall content (📰 news, 🔬 tech, 💼 business, 🎬 entertainment, ⚠️ controversial, 😊 positive, 😐 neutral, 😟 negative)
-                    2. Two-to-three concise bullet points (max 30 words each) describing the key take-aways.
-
-                    Output **format** (plain text):
-                    [EMOJI]\n• point 1\n• point 2\n• point 3 (optional)
+                    Summarize this webpage in 3 bullet points:
 
                     Title: \(context.title)
-                    Content: \(context.text.prefix(1500))
+                    Content: \(cleanedContent)
+
+                    Format:
+                    • point 1
+                    • point 2  
+                    • point 3
                     """
                     
                     // Log full TLDR prompt for debugging
@@ -538,6 +554,139 @@ class AIAssistant: ObservableObject {
                 }
             }
         }
+    }
+    
+    /// Check if content is too garbled with JavaScript/HTML to be useful
+    private func isContentTooGarbled(_ content: String) -> Bool {
+        let lowercased = content.lowercased()
+        let totalLength = content.count
+        
+        NSLog("🔍 Garbage detection for content (\(totalLength) chars): '\(content.prefix(100))...'")
+        
+        // Check for high ratio of JavaScript/HTML artifacts - be more aggressive
+        let jsPatterns = [
+            "function", "var ", "let ", "const ", "document.", "window.", "console.", 
+            ".js", "(){", "});", "@keyframes", "html[", "div>", "span>", 
+            "}.}", "@media", "Date()", "google=", "window=", "getElementById",
+            "innerHTML", "addEventListener", "querySelector", "textContent"
+        ]
+        
+        var jsCount = 0
+        var detectedPatterns: [String] = []
+        
+        for pattern in jsPatterns {
+            let count = lowercased.components(separatedBy: pattern).count - 1
+            if count > 0 {
+                jsCount += count
+                detectedPatterns.append("\(pattern)(\(count))")
+            }
+        }
+        
+        // Also check for excessive punctuation that indicates code
+        let punctuationChars = content.filter { "{}();.,=[]".contains($0) }
+        let punctuationRatio = Double(punctuationChars.count) / Double(max(totalLength, 1))
+        
+        // Check for lack of readable words
+        let words = content.components(separatedBy: .whitespacesAndNewlines)
+            .filter { word in
+                let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
+                return trimmed.count >= 3 && trimmed.rangeOfCharacter(from: .letters) != nil
+            }
+        let readableWordsRatio = Double(words.count * 5) / Double(max(totalLength, 1)) // Avg word length
+        
+        let jsRatio = Double(jsCount * 8) / Double(max(totalLength, 1)) // Multiply by avg pattern length
+        
+        // More aggressive thresholds
+        let isGarbage = jsRatio > 0.08 || // Reduced from 0.15 to 0.08
+                       punctuationRatio > 0.3 || 
+                       readableWordsRatio < 0.2 || 
+                       totalLength < 50 // Reduced from 100
+        
+        NSLog("🔍 Garbage analysis:")
+        NSLog("   - JS patterns detected: \(detectedPatterns.joined(separator: ", "))")
+        NSLog("   - JS ratio: \(jsRatio) (threshold: 0.08)")
+        NSLog("   - Punctuation ratio: \(punctuationRatio) (threshold: 0.3)")
+        NSLog("   - Readable words ratio: \(readableWordsRatio) (threshold: 0.2)")
+        NSLog("   - Length: \(totalLength) (min: 50)")
+        NSLog("   - Is garbage: \(isGarbage)")
+        
+        return isGarbage
+    }
+    
+    /// Clean and prepare content specifically for TLDR generation
+    private func cleanContentForTLDR(_ content: String) -> String {
+        var cleaned = content
+        
+        NSLog("🧹 Content cleaning input: '\(content.prefix(200))...' (\(content.count) chars)")
+        
+        // AGGRESSIVE cleaning for the specific garbage we're seeing
+        let aggressivePatterns = [
+            // Remove the specific garbage patterns we see in logs
+            ("\\}\\.[\\}\\w]+", ""), // }.} patterns
+            ("html\\[dir='[^']*'\\]", ""), // html[dir='rtl']
+            ("@keyframes[^\\s]*", ""), // @keyframes
+            ("\\(\\)[\\;\\)\\{\\}]*", ""), // ()(); patterns
+            ("document\\([^\\)]*\\)", ""), // document() calls
+            ("Date\\(\\)[\\;\\}]*", ""), // Date(); patterns
+            ("@media[^\\}]*\\}", ""), // CSS @media rules
+            ("\\{[^\\}]*\\}", ""), // Any remaining {...} blocks
+            ("\\([^\\)]*\\)\\s*\\{", ""), // function() { patterns
+            ("var\\s+[^\\;\\s]*", ""), // var declarations
+            ("function\\s*[^\\{]*\\{", ""), // function declarations
+            ("window\\s*=\\s*[^\\;]*", ""), // window assignments
+            ("google\\s*=\\s*[^\\;]*", ""), // google assignments
+            ("[\\w]+\\[\\w+\\]\\s*=", ""), // array/object assignments
+            ("\\s*;\\s*", " "), // semicolons
+            ("\\s*,\\s*", " "), // commas
+            ("\\&[a-zA-Z]+;", ""), // HTML entities
+            ("<[^>]*>", ""), // HTML tags - CRITICAL FIX
+            ("trackPageView\\(\\)", ""), // tracking functions
+        ]
+        
+        var removedCount = 0
+        for (pattern, replacement) in aggressivePatterns {
+            let before = cleaned.count
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+            let removed = before - cleaned.count
+            if removed > 0 {
+                removedCount += removed
+                NSLog("🧹 Pattern '\(pattern)' removed \(removed) chars")
+            }
+        }
+        
+        NSLog("🧹 Total aggressive cleaning removed: \(removedCount) characters")
+        
+        // Clean up multiple spaces and normalize
+        cleaned = cleaned.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Filter to actual readable words only
+        let words = cleaned.components(separatedBy: .whitespacesAndNewlines)
+            .filter { word in
+                let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
+                // Keep words that are mostly letters and at least 2 chars
+                return trimmed.count >= 2 && 
+                       trimmed.rangeOfCharacter(from: .letters) != nil &&
+                       !trimmed.contains("{") && 
+                       !trimmed.contains("}") &&
+                       !trimmed.contains("(") &&
+                       !trimmed.contains(")") &&
+                       !trimmed.contains("=") &&
+                       !trimmed.contains(";")
+            }
+        
+        cleaned = words.joined(separator: " ")
+        
+        NSLog("🧹 After word filtering: '\(cleaned.prefix(200))...' (\(cleaned.count) chars)")
+        
+        // Limit length for better model performance
+        if cleaned.count > 600 { // Reduced from 800 for better performance
+            cleaned = String(cleaned.prefix(600))
+            NSLog("🧹 Truncated to 600 characters")
+        }
+        
+        NSLog("🧹 Final cleaned content: '\(cleaned.prefix(100))...' (\(cleaned.count) chars)")
+        return cleaned
     }
     
     /// Check if TL;DR response contains repetitive or invalid patterns

@@ -36,7 +36,7 @@ final class SimplifiedMLXRunner: ObservableObject {
             isLoading = false
         }
         
-NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
+NSLog("🚀 Loading MLX model: \(modelId)")
         
         do {
             // Use MLX-Swift ModelRegistry for predefined models
@@ -91,7 +91,10 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
         do {
             // Use MLX-Swift ModelContainer.perform API with ModelContext
             let result = try await context.perform { modelContext in
+                NSLog("🔍 MLX DEBUG: Preparing input for prompt (\(prompt.count) chars)")
+                NSLog("🔍 MLX DEBUG: Prompt preview: '\(prompt.prefix(200))...'")
                 let input = try await modelContext.processor.prepare(input: .init(prompt: prompt))
+                NSLog("🔍 MLX DEBUG: Input prepared successfully")
                 let parameters = GenerateParameters(
                     maxTokens: 512,
                     temperature: 0.7,
@@ -105,11 +108,15 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                 var lastTokenSequence: [Int] = []
                 let repetitionDetectionWindow = 10
                 
+                NSLog("🔍 MLX DEBUG: Starting generation with maxTokens=\(parameters.maxTokens), temp=\(parameters.temperature)")
                 let _ = try MLXLMCommon.generate(
                     input: input,
                     parameters: parameters,
                     context: modelContext
                 ) { tokens in
+                    if allTokens.isEmpty {
+                        NSLog("🔍 MLX DEBUG: First token callback - \(tokens.count) tokens")
+                    }
                     // Removed excessive logging for cleaner output
                     
                     // Store the complete token array - MLX gives us all tokens accumulated so far
@@ -168,6 +175,9 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                 NSLog("📝 Final decoded response: \(fullResponse.count) characters")
                 if fullResponse.isEmpty {
                     NSLog("⚠️ WARNING: MLX tokenizer returned empty response despite \(allTokens.count) tokens")
+                    NSLog("🔍 MLX DEBUG: Sample tokens: \(Array(allTokens.prefix(10)))")
+                } else {
+                    NSLog("🔍 MLX DEBUG: Successfully decoded \(allTokens.count) tokens to \(fullResponse.count) characters")
                 }
                 
                 return fullResponse
@@ -198,7 +208,9 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                     // Starting MLX streaming
                     
                     try await container.perform { modelContext in
+                        NSLog("🔍 MLX STREAMING DEBUG: Preparing input for prompt (\(prompt.count) chars)")
                         let input = try await modelContext.processor.prepare(input: .init(prompt: prompt))
+                        NSLog("🔍 MLX STREAMING DEBUG: Input prepared successfully")
                         let parameters = GenerateParameters(
                             maxTokens: 512,
                             temperature: 0.7,
@@ -213,6 +225,7 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                         var lastTokenSequence: [Int] = []
                         var repetitionDetectionWindow = 10
                         
+                        NSLog("🔍 MLX STREAMING DEBUG: Starting generation...")
                         let _ = try MLXLMCommon.generate(
                             input: input,
                             parameters: parameters,
@@ -221,6 +234,10 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                             // Enhanced debug logging for TLDR streaming issues
                             if previousTokenCount < 5 {
                                 NSLog("🔍 MLX Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens, last token: \(tokens.last ?? -1)")
+                                if tokens.count > 0 {
+                                    let decodedSample = modelContext.tokenizer.decode(tokens: Array(tokens.prefix(min(10, tokens.count))))
+                                    NSLog("🔍 MLX Streaming sample decode: '\(decodedSample)'")
+                                }
                             }
                             
                             // IMPROVED: Stop if no progress is being made (token count not increasing)
@@ -298,6 +315,7 @@ NSLog("🚀 Loading MLX model: \(modelId) (MLX \(MLX.version))")
                                         sentTextLength = fullText.count
                                     } else {
                                         NSLog("⚠️ MLX Streaming: newText is empty despite tokens")
+                                        NSLog("🔍 MLX Streaming DEBUG: fullText='\(fullText)', sentTextLength=\(sentTextLength)")
                                     }
                                 }
                             }
