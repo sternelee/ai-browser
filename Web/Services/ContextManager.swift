@@ -5,6 +5,7 @@ import CoreData
 
 /// Manages webpage content extraction and context generation for AI integration
 /// Provides cleaned, summarized webpage content to enhance AI responses
+@MainActor
 class ContextManager: ObservableObject {
     
     // MARK: - Published Properties
@@ -540,7 +541,7 @@ class ContextManager: ObservableObject {
             }
 
             // Execute JavaScript on main thread
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 webView.evaluateJavaScript(script) { result, error in
                     timeoutTask.cancel()
                     if let error = error {
@@ -552,7 +553,9 @@ class ContextManager: ObservableObject {
                         return
                     }
                     do {
-                        let context = try self.parseExtractionResult(data, from: webView, tab: tab)
+                        let context = try self?.parseExtractionResult(data, from: webView, tab: tab) ?? 
+                            WebpageContext(url: webView.url?.absoluteString ?? "", title: "", text: "", 
+                                         headings: [], links: [], wordCount: 0, extractionDate: Date(), tabId: tab.id)
                         cont.resume(returning: context)
                     } catch {
                         cont.resume(throwing: error)
@@ -627,7 +630,7 @@ class ContextManager: ObservableObject {
         """
         
         return try await withCheckedThrowingContinuation { cont in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 webView.evaluateJavaScript(emergencyScript) { result, error in
                     if let error = error {
                         cont.resume(throwing: ContextError.javascriptError(error.localizedDescription))
@@ -638,7 +641,9 @@ class ContextManager: ObservableObject {
                         return
                     }
                     do {
-                        let context = try self.parseExtractionResult(data, from: webView, tab: tab)
+                        let context = try self?.parseExtractionResult(data, from: webView, tab: tab) ?? 
+                            WebpageContext(url: webView.url?.absoluteString ?? "", title: "", text: "", 
+                                         headings: [], links: [], wordCount: 0, extractionDate: Date(), tabId: tab.id)
                         cont.resume(returning: context)
                     } catch {
                         cont.resume(throwing: error)
@@ -1381,9 +1386,11 @@ class ContextManager: ObservableObject {
     /// Programmatically scrolls the page to the bottom (and briefly back to top) to trigger lazy-loaded content like virtualised lists.
     /// Must be called on the main actor because it touches the WebView JS runtime.
     private func triggerLazyLoadScroll(on webView: WKWebView) async {
-        await MainActor.run {
-            let js = "(function(){ const scrollBottom = () => window.scrollTo(0, document.body.scrollHeight); scrollBottom(); setTimeout(scrollBottom, 200); setTimeout(() => window.scrollTo(0,0), 400); })();"
-            webView.evaluateJavaScript(js, completionHandler: nil)
+        let js = "(function(){ const scrollBottom = () => window.scrollTo(0, document.body.scrollHeight); scrollBottom(); setTimeout(scrollBottom, 200); setTimeout(() => window.scrollTo(0,0), 400); })();"
+        do {
+            _ = try await webView.evaluateJavaScript(js)
+        } catch {
+            // Ignore JavaScript errors during lazy load scrolling
         }
     }
 }
@@ -1415,6 +1422,11 @@ struct WebpageContext: Identifiable, Codable {
     let frameworksDetected: [String]
     let isContentStable: Bool
     let shouldRetry: Bool
+    
+    private enum CodingKeys: String, CodingKey {
+        case url, title, text, headings, links, wordCount, extractionDate, tabId
+        case extractionMethod, contentQuality, frameworksDetected, isContentStable, shouldRetry
+    }
     
     // Default initializer for backward compatibility
     init(url: String, title: String, text: String, headings: [String], links: [String], 

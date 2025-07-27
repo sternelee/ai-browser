@@ -34,7 +34,7 @@ class OAuthManager: NSObject, ObservableObject {
     // MARK: - OAuth Configuration Models
     
     /// OAuth provider configuration
-    struct OAuthProvider: Identifiable, Codable {
+    struct OAuthProvider: Identifiable, Codable, Sendable {
         let id: UUID
         let name: String
         let clientId: String
@@ -99,7 +99,7 @@ class OAuthManager: NSObject, ObservableObject {
     }
     
     /// Internal auth request tracking
-    private struct AuthRequest {
+    private struct AuthRequest: Sendable {
         let id: String
         let provider: OAuthProvider
         let state: String
@@ -107,7 +107,7 @@ class OAuthManager: NSObject, ObservableObject {
         let codeChallenge: String?
         let nonce: String?
         let timestamp: Date
-        let completion: (Result<AuthenticationResult, AuthenticationError>) -> Void
+        let completion: @Sendable (Result<AuthenticationResult, AuthenticationError>) -> Void
         
         var isExpired: Bool {
             Date().timeIntervalSince(timestamp) > 600 // 10 minutes timeout
@@ -115,7 +115,7 @@ class OAuthManager: NSObject, ObservableObject {
     }
     
     /// Authentication result
-    struct AuthenticationResult {
+    struct AuthenticationResult: Sendable {
         let provider: OAuthProvider
         let authorizationCode: String?
         let accessToken: String?
@@ -128,7 +128,7 @@ class OAuthManager: NSObject, ObservableObject {
     }
     
     /// Authentication errors
-    enum AuthenticationError: LocalizedError {
+    enum AuthenticationError: LocalizedError, Sendable {
         case invalidProvider
         case invalidRedirectUri
         case pkceRequired
@@ -246,7 +246,9 @@ class OAuthManager: NSObject, ObservableObject {
                 codeChallenge: codeChallenge,
                 nonce: nonce,
                 timestamp: Date(),
-                completion: continuation.resume(returning:)
+                completion: { result in
+                    continuation.resume(returning: result)
+                }
             )
             
             pendingAuthRequests[requestId] = request

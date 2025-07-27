@@ -4,6 +4,7 @@ import WebKit
 import CryptoKit
 import os.log
 
+@MainActor
 class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
     
@@ -476,7 +477,7 @@ class DownloadManager: NSObject, ObservableObject {
             // Update quarantine info
             download.quarantineInfo = await quarantineManager.getQuarantineInfo(for: download.destinationURL)
             
-            await securityMonitor.logDownloadSecurityEvent(
+            securityMonitor.logDownloadSecurityEvent(
                 filename: download.filename,
                 sourceURL: download.url,
                 eventType: .quarantineRemoved,
@@ -503,7 +504,7 @@ class DownloadManager: NSObject, ObservableObject {
         
         download.securityScanTimestamp = Date()
         
-        await securityMonitor.logDownloadSecurityEvent(
+        securityMonitor.logDownloadSecurityEvent(
             filename: download.filename,
             sourceURL: download.url,
             eventType: .securityScanCompleted,
@@ -712,11 +713,10 @@ struct DownloadHistoryItem: Codable, Identifiable {
 
 // Download manager URLSession delegate
 extension DownloadManager: URLSessionDownloadDelegate {
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let download = downloads.first(where: { $0.task == downloadTask }) else { return }
-        
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         // ENHANCED SECURITY: Comprehensive post-download validation
         Task { @MainActor in
+            guard let download = self.downloads.first(where: { $0.task == downloadTask }) else { return }
             do {
                 // Step 1: Calculate file hash for integrity verification
                 let fileData = try Data(contentsOf: location)
@@ -900,10 +900,9 @@ extension DownloadManager: URLSessionDownloadDelegate {
         }
     }
     
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let download = downloads.first(where: { $0.task == downloadTask }) else { return }
-        
-        DispatchQueue.main.async {
+    nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        Task { @MainActor in
+            guard let download = self.downloads.first(where: { $0.task == downloadTask }) else { return }
             download.downloadedBytes = totalBytesWritten
             download.totalBytes = totalBytesExpectedToWrite
             

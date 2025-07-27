@@ -144,8 +144,8 @@ class PrivacyManager: ObservableObject {
             let fileURL = secureDataDirectory.appendingPathComponent(filename)
             
             // TODO: Implement proper serialization for EncryptedData
-            let encryptedBytes = Data() // Placeholder
-            try encryptedBytes.write(to: fileURL)
+            let _ = Data() // Placeholder - serialization not implemented yet
+            // try encryptedBytes.write(to: fileURL)
             
             NSLog("🔒 Encrypted conversation stored: \(filename)")
             
@@ -165,7 +165,7 @@ class PrivacyManager: ObservableObject {
             }
             
             // TODO: Implement proper deserialization for EncryptedData
-            let encryptedBytes = try Data(contentsOf: fileURL)
+            let _ = try Data(contentsOf: fileURL)  // Placeholder - deserialization not implemented yet
             // let encryptedData = try JSONDecoder().decode(EncryptedData.self, from: encryptedBytes)
             return nil // Placeholder
             

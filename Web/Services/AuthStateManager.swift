@@ -68,7 +68,7 @@ class AuthStateManager: ObservableObject {
     }
     
     /// Authenticated user information
-    struct AuthenticatedUser: Codable, Identifiable {
+    struct AuthenticatedUser: Identifiable, Codable {
         let id: String
         let email: String?
         let name: String?
@@ -175,30 +175,20 @@ class AuthStateManager: ObservableObject {
     func checkAuthenticationStatus() async {
         authenticationState = .authenticating
         
-        do {
-            // Check for stored tokens across all providers
-            let hasValidSession = await checkForValidSessions()
+        // Check for stored tokens across all providers
+        let hasValidSession = await checkForValidSessions()
+        
+        if hasValidSession {
+            await loadCurrentUser()
+            authenticationState = .authenticated
+            isAuthenticated = true
             
-            if hasValidSession {
-                await loadCurrentUser()
-                authenticationState = .authenticated
-                isAuthenticated = true
-                
-                logSecurityEvent(.authStatusRestored, details: [
-                    "user_id": currentUser?.id ?? "unknown",
-                    "provider": currentUser?.provider.rawValue ?? "unknown"
-                ])
-            } else {
-                await signOut(silent: true)
-            }
-            
-        } catch {
-            authenticationState = .authenticationFailed
-            lastAuthenticationError = error as? AuthenticationError ?? .securityValidationFailed
-            
-            logSecurityEvent(.authStatusCheckFailed, details: [
-                "error": error.localizedDescription
+            logSecurityEvent(.authStatusRestored, details: [
+                "user_id": currentUser?.id ?? "unknown",
+                "provider": currentUser?.provider.rawValue ?? "unknown"
             ])
+        } else {
+            await signOut(silent: true)
         }
     }
     
@@ -208,11 +198,11 @@ class AuthStateManager: ObservableObject {
         authenticationState = .authenticating
         lastAuthenticationError = nil
         
-        do {
-            let result = await oauthManager.authenticate(with: provider)
-            
-            switch result {
-            case .success(let authResult):
+        let result = await oauthManager.authenticate(with: provider)
+        
+        switch result {
+        case .success(let authResult):
+            do {
                 // Create authenticated user from OAuth result
                 let user = try await createAuthenticatedUser(from: authResult)
                 
@@ -232,23 +222,23 @@ class AuthStateManager: ObservableObject {
                 
                 return .success(user)
                 
-            case .failure(let error):
+            } catch {
                 authenticationState = .authenticationFailed
-                let authError = mapOAuthError(error)
+                let authError = AuthenticationError.securityValidationFailed
                 lastAuthenticationError = authError
-                
-                logSecurityEvent(.authFailed, details: [
-                    "provider": provider.name,
-                    "error": error.localizedDescription
-                ])
                 
                 return .failure(authError)
             }
             
-        } catch {
+        case .failure(let error):
             authenticationState = .authenticationFailed
-            let authError = AuthenticationError.securityValidationFailed
+            let authError = mapOAuthError(error)
             lastAuthenticationError = authError
+            
+            logSecurityEvent(.authFailed, details: [
+                "provider": provider.name,
+                "error": error.localizedDescription
+            ])
             
             return .failure(authError)
         }
@@ -300,38 +290,30 @@ class AuthStateManager: ObservableObject {
         
         authenticationState = .tokenRefreshing
         
-        do {
-            let success = await tokenManager.refreshToken(
-                provider: user.provider,
-                identifier: user.id
-            )
+        let success = await tokenManager.refreshToken(
+            provider: user.provider,
+            identifier: user.id
+        )
+        
+        if success {
+            // Reload user with new token info
+            await loadCurrentUser()
+            authenticationState = .authenticated
             
-            if success {
-                // Reload user with new token info
-                await loadCurrentUser()
-                authenticationState = .authenticated
-                
-                logSecurityEvent(.tokenRefreshed, details: [
-                    "user_id": user.id,
-                    "provider": user.provider.rawValue
-                ])
-                
-                return true
-            } else {
-                authenticationState = .sessionExpired
-                lastAuthenticationError = .refreshFailed("Token refresh returned false")
-                
-                logSecurityEvent(.tokenRefreshFailed, details: [
-                    "user_id": user.id,
-                    "provider": user.provider.rawValue
-                ])
-                
-                return false
-            }
+            logSecurityEvent(.tokenRefreshed, details: [
+                "user_id": user.id,
+                "provider": user.provider.rawValue
+            ])
             
-        } catch {
+            return true
+        } else {
             authenticationState = .sessionExpired
-            lastAuthenticationError = .refreshFailed(error.localizedDescription)
+            lastAuthenticationError = .refreshFailed("Token refresh returned false")
+            
+            logSecurityEvent(.tokenRefreshFailed, details: [
+                "user_id": user.id,
+                "provider": user.provider.rawValue
+            ])
             
             return false
         }
@@ -345,10 +327,10 @@ class AuthStateManager: ObservableObject {
         }
         
         // Check if token exists and is valid
-        if let token = await tokenManager.retrieveToken(
+        if await tokenManager.retrieveToken(
             provider: user.provider,
             identifier: user.id
-        ) {
+        ) != nil {
             // TODO: Validate token using JWTValidator if it's a JWT
             // For now, we assume token is valid if it exists
             

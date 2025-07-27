@@ -270,8 +270,8 @@ class SecurityMonitor: ObservableObject {
         }
         
         // Process event asynchronously
-        logQueue.async { [weak self] in
-            self?.processSecurityEvent(event)
+        Task { [weak self] in
+            await self?.processSecurityEvent(event)
         }
     }
     
@@ -296,8 +296,10 @@ class SecurityMonitor: ObservableObject {
                     return
                 }
                 
-                let metrics = self.calculateSecurityMetrics()
-                continuation.resume(returning: metrics)
+                Task { @MainActor in
+                    let metrics = self.calculateSecurityMetrics()
+                    continuation.resume(returning: metrics)
+                }
             }
         }
     }
@@ -322,7 +324,7 @@ class SecurityMonitor: ObservableObject {
      */
     func acknowledgeThreat(threatId: UUID) {
         if let index = recentThreats.firstIndex(where: { $0.id == threatId }) {
-            var threat = recentThreats[index]
+            let threat = recentThreats[index]
             recentThreats[index] = ThreatDetection(
                 id: threat.id,
                 pattern: threat.pattern,
@@ -347,7 +349,7 @@ class SecurityMonitor: ObservableObject {
      */
     func exportSecurityLogs(dateRange: ClosedRange<Date>) async -> Data? {
         return await withCheckedContinuation { continuation in
-            analysisQueue.async { [weak self] in
+            Task { [weak self] in
                 guard let self = self else {
                     continuation.resume(returning: nil)
                     return
@@ -383,31 +385,40 @@ class SecurityMonitor: ObservableObject {
     
     // MARK: - Private Implementation
     
-    private func processSecurityEvent(_ event: SecurityEvent) {
-        // Add to buffer
-        eventBuffer.append(event)
-        if eventBuffer.count > maxBufferSize {
-            eventBuffer.removeFirst()
+    private func processSecurityEvent(_ event: SecurityEvent) async {
+        // Add to buffer (main actor access)
+        await MainActor.run {
+            eventBuffer.append(event)
+            if eventBuffer.count > maxBufferSize {
+                eventBuffer.removeFirst()
+            }
         }
         
-        // Write to encrypted log file
-        writeEventToLog(event)
+        // Write to encrypted log file (background operation)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { [weak self] in
+                await self?.writeEventToLog(event)
+            }
+            
+            group.addTask { [weak self] in
+                await self?.updateSecurityMetrics(with: event)
+            }
+        }
         
-        // Update metrics
-        updateSecurityMetrics(with: event)
-        
-        // Perform threat analysis
-        if enableThreatAnalysis {
-            analyzeForThreats(event)
+        // Perform threat analysis (background operation)
+        let shouldAnalyze = await MainActor.run { enableThreatAnalysis }
+        if shouldAnalyze {
+            await analyzeForThreats(event)
         }
         
         // Send real-time alerts for critical events
-        if enableRealTimeAlerts && event.severity >= .error {
+        let shouldAlert = await MainActor.run { enableRealTimeAlerts }
+        if shouldAlert && event.severity >= .error {
             sendRealTimeAlert(for: event)
         }
         
-        // Update published properties on main thread
-        DispatchQueue.main.async { [weak self] in
+        // Update published properties on main actor
+        await MainActor.run { [weak self] in
             self?.totalSecurityEvents += 1
             
             if event.eventType == .threatDetected || event.eventType == .threatBlocked {
@@ -456,12 +467,15 @@ class SecurityMonitor: ObservableObject {
         }
     }
     
-    private func analyzeForThreats(_ event: SecurityEvent) {
-        for pattern in threatPatterns where pattern.isEnabled {
+    private func analyzeForThreats(_ event: SecurityEvent) async {
+        let patterns = await MainActor.run { threatPatterns }
+        
+        for pattern in patterns where pattern.isEnabled {
             if matchesPattern(event: event, pattern: pattern) {
                 // Check if we have enough matching events in the time window
                 let windowStart = Date().addingTimeInterval(-pattern.timeWindow)
-                let matchingEvents = eventBuffer.filter { bufferEvent in
+                let currentBuffer = await MainActor.run { eventBuffer }
+                let matchingEvents = currentBuffer.filter { bufferEvent in
                     bufferEvent.timestamp > windowStart && matchesPattern(event: bufferEvent, pattern: pattern)
                 }
                 
@@ -477,7 +491,9 @@ class SecurityMonitor: ObservableObject {
                         isAcknowledged: false
                     )
                     
-                    recentThreats.append(detection)
+                    await MainActor.run {
+                        recentThreats.append(detection)
+                    }
                     
                     // Log the threat detection
                     logSecurityEvent(
@@ -608,7 +624,9 @@ class SecurityMonitor: ObservableObject {
     private func setupLogRotation() {
         // Setup timer for daily log rotation and old log cleanup
         Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
-            self?.performLogMaintenance()
+            Task { @MainActor in
+                self?.performLogMaintenance()
+            }
         }
     }
     
@@ -616,13 +634,15 @@ class SecurityMonitor: ObservableObject {
         logQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Rotate current log
-            self.createNewLogFile()
-            
-            // Clean up old logs
-            self.cleanupOldLogs()
-            
-            self.logger.info("Performed log maintenance - rotation and cleanup")
+            Task { @MainActor in
+                // Rotate current log
+                self.createNewLogFile()
+                
+                // Clean up old logs
+                self.cleanupOldLogs()
+                
+                self.logger.info("Performed log maintenance - rotation and cleanup")
+            }
         }
     }
     

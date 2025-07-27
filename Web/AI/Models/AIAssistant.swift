@@ -205,7 +205,7 @@ class AIAssistant: ObservableObject {
                 NSLog("💬 AI Chat: No webpage context extracted")
             }
             
-            let context = includeContext ? contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory) : nil
+            let context = includeContext ? await contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory) : nil
             if let context = context {
                 NSLog("💬 AI Chat: Using formatted context: \(context.count) characters")
             } else {
@@ -271,7 +271,7 @@ class AIAssistant: ObservableObject {
                         NSLog("⚠️ AIAssistant streaming: No webpage context extracted")
                     }
                     
-                    let context = self.contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
+                    let context = await self.contextManager.getFormattedContext(from: webpageContext, includeHistory: includeHistory && includeContext)
                     if let context = context {
                         NSLog("🔍 AIAssistant streaming formatted context: \(context.count) characters")
                     } else {
@@ -819,17 +819,20 @@ class AIAssistant: ObservableObject {
     }
     
     /// Configure history context settings
+    @MainActor
     func configureHistoryContext(enabled: Bool, scope: HistoryContextScope) {
         contextManager.configureHistoryContext(enabled: enabled, scope: scope)
         NSLog("🔍 AI Assistant history context configured: enabled=\(enabled), scope=\(scope.displayName)")
     }
     
     /// Get current history context status
+    @MainActor
     func getHistoryContextStatus() -> (enabled: Bool, scope: HistoryContextScope) {
         return (contextManager.isHistoryContextEnabled, contextManager.historyContextScope)
     }
     
     /// Clear history context for privacy
+    @MainActor
     func clearHistoryContext() {
         contextManager.clearHistoryContextCache()
         NSLog("🗑️ AI Assistant history context cleared")

@@ -223,7 +223,7 @@ class MLXModelService: ObservableObject {
             // Monitor progress during loading
             let progressTask = Task {
                 while !Task.isCancelled {
-                    let progress = await SimplifiedMLXRunner.shared.loadProgress
+                    let progress = SimplifiedMLXRunner.shared.loadProgress
                     await MainActor.run {
                         self.downloadProgress = Double(progress)
                     }
@@ -273,7 +273,7 @@ class MLXModelService: ObservableObject {
             downloadTask = Task {
                 // Monitor SimplifiedMLXRunner's loadProgress
                 while !Task.isCancelled {
-                    let progress = await SimplifiedMLXRunner.shared.loadProgress
+                    let progress = SimplifiedMLXRunner.shared.loadProgress
                     await MainActor.run {
                         self.downloadProgress = Double(progress)
                     }

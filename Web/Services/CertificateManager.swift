@@ -278,49 +278,21 @@ class CertificateManager: ObservableObject {
     }
     
     private func evaluateSystemTrust(serverTrust: SecTrust) -> CertificateValidationResult {
-        var result: SecTrustResultType = .invalid
-        let status = SecTrustEvaluate(serverTrust, &result)
+        var error: CFError?
+        let result = SecTrustEvaluateWithError(serverTrust, &error)
         
-        guard status == errSecSuccess else {
-            return .invalid(.unknown("Trust evaluation failed with status: \(status)"))
-        }
-        
-        switch result {
-        case .unspecified, .proceed:
-            return .valid
-            
-        case .deny:
-            return .invalid(.untrustedRoot)
-            
-        case .recoverableTrustFailure:
-            // Analyze specific failure reasons
-            if let properties = SecTrustCopyProperties(serverTrust) as? [[String: Any]] {
-                for property in properties {
-                    if let error = property[kSecPropertyTypeError as String] as? String {
-                        if error.contains("expired") {
-                            return .requiresUserConsent(.expired)
-                        } else if error.contains("hostname") {
-                            return .requiresUserConsent(.hostnameMismatch)  
-                        } else if error.contains("self signed") {
-                            return .requiresUserConsent(.selfSigned)
-                        }
-                    }
-                }
+        if !result {
+            if let error = error {
+                let errorDescription = CFErrorCopyDescription(error)
+                let errorString = errorDescription as String? ?? "Unknown error"
+                return .invalid(.unknown("Trust evaluation failed: \(errorString)"))
+            } else {
+                return .invalid(.unknown("Trust evaluation failed with unknown error"))
             }
-            return .requiresUserConsent(.unknown("Certificate trust failure"))
-            
-        case .fatalTrustFailure:
-            return .invalid(.invalidChain)
-            
-        case .otherError:
-            return .invalid(.unknown("Other certificate error"))
-            
-        case .invalid:
-            return .invalid(.invalidChain)
-            
-        @unknown default:
-            return .invalid(.unknown("Unknown trust result"))
         }
+        
+        // If we reach here, the trust evaluation succeeded
+        return .valid
     }
     
     private func validateCertificatePinning(serverTrust: SecTrust, pin: CertificatePin) -> CertificateValidationResult {

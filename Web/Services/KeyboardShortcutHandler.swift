@@ -51,7 +51,9 @@ class KeyboardShortcutHandler: ObservableObject {
         // Downloads shortcut (Cmd+Shift+J)
         NotificationCenter.default.publisher(for: .showDownloadsRequested)
             .sink { [weak self] _ in
-                self?.handleShowDownloads()
+                Task { @MainActor in
+                    self?.handleShowDownloads()
+                }
             }
             .store(in: &cancellables)
         
@@ -100,6 +102,7 @@ class KeyboardShortcutHandler: ObservableObject {
     }
     
     /// Handle Cmd+Shift+J - Show Downloads
+    @MainActor
     private func handleShowDownloads() {
         showDownloadsPanel.toggle()
         self.downloadManager.isVisible = showDownloadsPanel
@@ -146,6 +149,7 @@ class KeyboardShortcutHandler: ObservableObject {
     }
     
     /// Get recent downloads
+    @MainActor
     func getRecentDownloads() -> [DownloadHistoryItem] {
         return Array(downloadManager.downloadHistory.prefix(20))
     }

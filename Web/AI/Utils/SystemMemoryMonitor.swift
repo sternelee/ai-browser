@@ -122,7 +122,6 @@ class SystemMemoryMonitor {
         // Available memory includes free + inactive pages (which can be reclaimed)
         // This gives a more accurate picture of what's actually available for new processes
         let availableMemory = Double(stats.free_count + stats.inactive_count) * Double(pageSize) / (1024 * 1024 * 1024)
-        let usedMemory = totalMemory - availableMemory
         
         // Safety bounds check - ensure reasonable values
         let boundedTotal = max(totalMemory, 1.0)  // At least 1GB

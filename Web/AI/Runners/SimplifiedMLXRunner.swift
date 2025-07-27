@@ -223,7 +223,7 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                         var previousTokenCount = 0
                         var stagnantCount = 0
                         var lastTokenSequence: [Int] = []
-                        var repetitionDetectionWindow = 10
+                        let repetitionDetectionWindow = 10
                         
                         NSLog("🔍 MLX STREAMING DEBUG: Starting generation...")
                         let _ = try MLXLMCommon.generate(
@@ -233,7 +233,7 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                         ) { tokens in
                             // Enhanced debug logging for TLDR streaming issues
                             if previousTokenCount < 5 {
-                                NSLog("🔍 MLX Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens, last token: \(tokens.last ?? -1)")
+                                NSLog("🔍 MLX Streaming iteration \(previousTokenCount + 1): \(tokens.count) tokens, last token: \(tokens.last?.description ?? "none")")
                                 if tokens.count > 0 {
                                     let decodedSample = modelContext.tokenizer.decode(tokens: Array(tokens.prefix(min(10, tokens.count))))
                                     NSLog("🔍 MLX Streaming sample decode: '\(decodedSample)'")

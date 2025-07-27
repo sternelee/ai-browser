@@ -479,12 +479,10 @@ struct TLDRCard: View {
                 let stream = aiAssistant.generatePageTLDRStreaming()
                 
                 var accumulatedResponse = ""
-                var hasReceivedContent = false
                 
                 // Process streaming response
                 for try await chunk in stream {
                     accumulatedResponse += chunk
-                    hasReceivedContent = true
                     
                     await MainActor.run {
                         streamingText = accumulatedResponse

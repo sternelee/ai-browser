@@ -2,6 +2,7 @@ import WebKit
 import Network
 import Foundation
 
+@MainActor
 class AdBlockService: NSObject, ObservableObject {
     static let shared = AdBlockService()
     
@@ -267,8 +268,8 @@ class AdBlockService: NSObject, ObservableObject {
         
         await withTaskGroup(of: Void.self) { group in
             for filterList in enabledLists {
-                group.addTask {
-                    await self.downloadAndProcessFilterList(filterList)
+                group.addTask { [weak self] in
+                    await self?.downloadAndProcessFilterList(filterList)
                 }
             }
         }
@@ -280,7 +281,7 @@ class AdBlockService: NSObject, ObservableObject {
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                await updateFilterListStatus(filterList.name, error: "HTTP Error")
+                updateFilterListStatus(filterList.name, error: "HTTP Error")
                 return
             }
             
@@ -288,22 +289,23 @@ class AdBlockService: NSObject, ObservableObject {
             let contentRules = await convertToContentBlockingRules(rules, for: filterList)
             
             await compileRuleList(name: filterList.name, rules: contentRules)
-            await updateFilterListStatus(filterList.name, ruleCount: contentRules.components(separatedBy: "\n").count)
+            updateFilterListStatus(filterList.name, ruleCount: contentRules.components(separatedBy: "\n").count)
             
         } catch {
-            await updateFilterListStatus(filterList.name, error: error.localizedDescription)
+            updateFilterListStatus(filterList.name, error: error.localizedDescription)
         }
     }
     
     private func convertToContentBlockingRules(_ adBlockRules: String, for filterList: FilterList) async -> String {
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            let maxRules = maxRulesPerList
+            Task.detached {
                 let lines = adBlockRules.components(separatedBy: .newlines)
                 var contentRules: [[String: Any]] = []
                 var ruleCount = 0
                 
                 for line in lines {
-                    guard ruleCount < self.maxRulesPerList else { break }
+                    guard ruleCount < maxRules else { break }
                     
                     let trimmed = line.trimmingCharacters(in: .whitespaces)
                     
@@ -312,13 +314,13 @@ class AdBlockService: NSObject, ObservableObject {
                           !trimmed.hasPrefix("[") &&
                           !trimmed.hasPrefix("# ") else { continue }
                     
-                    if let rule = self.processBlockingRule(trimmed) {
+                    if let rule = await AdBlockService.processBlockingRuleStatic(trimmed) {
                         contentRules.append(rule)
                         ruleCount += 1
-                    } else if let rule = self.processHidingRule(trimmed) {
+                    } else if let rule = await AdBlockService.processHidingRuleStatic(trimmed) {
                         contentRules.append(rule)
                         ruleCount += 1
-                    } else if let rule = self.processWhitelistRule(trimmed) {
+                    } else if let rule = await AdBlockService.processWhitelistRuleStatic(trimmed) {
                         contentRules.append(rule)
                         ruleCount += 1
                     }
@@ -340,7 +342,8 @@ class AdBlockService: NSObject, ObservableObject {
         }
     }
     
-    private func processBlockingRule(_ rule: String) -> [String: Any]? {
+    // Static versions for background processing
+    private static func processBlockingRuleStatic(_ rule: String) -> [String: Any]? {
         if rule.hasPrefix("||") && rule.hasSuffix("^") {
             let domain = String(rule.dropFirst(2).dropLast(1))
             return [
@@ -370,7 +373,15 @@ class AdBlockService: NSObject, ObservableObject {
         return nil
     }
     
+    private func processBlockingRule(_ rule: String) -> [String: Any]? {
+        return AdBlockService.processBlockingRuleStatic(rule)
+    }
+    
     private func processHidingRule(_ rule: String) -> [String: Any]? {
+        return AdBlockService.processHidingRuleStatic(rule)
+    }
+    
+    private static func processHidingRuleStatic(_ rule: String) -> [String: Any]? {
         if rule.contains("##") {
             let parts = rule.components(separatedBy: "##")
             guard parts.count == 2 else { return nil }
@@ -394,6 +405,10 @@ class AdBlockService: NSObject, ObservableObject {
     }
     
     private func processWhitelistRule(_ rule: String) -> [String: Any]? {
+        return AdBlockService.processWhitelistRuleStatic(rule)
+    }
+    
+    private static func processWhitelistRuleStatic(_ rule: String) -> [String: Any]? {
         if rule.hasPrefix("@@") {
             let cleanRule = String(rule.dropFirst(2))
             if cleanRule.hasPrefix("||") && cleanRule.hasSuffix("^") {
@@ -419,7 +434,7 @@ class AdBlockService: NSObject, ObservableObject {
                 encodedContentRuleList: rules
             )
         } catch {
-            await updateFilterListStatus(name, error: error.localizedDescription)
+            updateFilterListStatus(name, error: error.localizedDescription)
         }
     }
     
