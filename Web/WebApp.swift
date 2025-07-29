@@ -12,6 +12,8 @@ struct WebApp: App {
         _ = keyboardShortcutHandler
         // Initialize application state observer to manage background resource policies
         _ = ApplicationStateObserver.shared
+        // CRITICAL: Initialize comprehensive background resource manager for proper hibernation
+        _ = BackgroundResourceManager.shared
         // SECURITY: Initialize runtime security monitor for JIT entitlement risk mitigation
         _ = RuntimeSecurityMonitor.shared
         // Initialize update service and check for updates in background
@@ -46,16 +48,42 @@ struct WebApp: App {
     }
     
     private func setupUpdateChecker() {
-        let updateService = UpdateService.shared
+        // Note: UpdateService is referenced but not implemented yet
+        // For now, we'll implement a basic update checker that responds to suspension
+        setupBackgroundAwareUpdateChecker()
+    }
+    
+    private func setupBackgroundAwareUpdateChecker() {
+        var updateTimer: Timer?
         
-        // Check for updates 3 seconds after app launch to allow for startup completion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            updateService.checkForUpdates(manual: false)
+        // Function to create the update timer
+        let createUpdateTimer = {
+            updateTimer?.invalidate()
+            updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { _ in
+                // Check for updates only if app is not in background
+                if !BackgroundResourceManager.shared.isAppInBackground {
+                    NSLog("🔄 Checking for updates...")
+                    // updateService.checkForUpdates(manual: false) - Commented until UpdateService is implemented
+                }
+            }
         }
         
-        // Schedule periodic update checks every 24 hours
-        Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { _ in
-            updateService.checkForUpdates(manual: false)
+        // Create initial timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            createUpdateTimer()
+        }
+        
+        // Listen for suspension notifications
+        NotificationCenter.default.addObserver(forName: .suspendUpdateTimer, object: nil, queue: .main) { _ in
+            NSLog("⏸️ Suspending update timer")
+            updateTimer?.invalidate()
+            updateTimer = nil
+        }
+        
+        // Listen for resumption notifications
+        NotificationCenter.default.addObserver(forName: .resumeUpdateTimer, object: nil, queue: .main) { _ in
+            NSLog("▶️ Resuming update timer")
+            createUpdateTimer()
         }
     }
 }

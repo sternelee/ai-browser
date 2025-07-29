@@ -47,6 +47,7 @@ class TabHibernationManager: ObservableObject {
     private init() {
         setupMemoryMonitoring()
         startPeriodicHibernationCheck()
+        setupSuspensionNotifications()
     }
     
     deinit {
@@ -183,6 +184,21 @@ class TabHibernationManager: ObservableObject {
     private func startPeriodicHibernationCheck() {
         hibernationTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
             self?.evaluateHibernationOpportunities()
+        }
+    }
+    
+    private func setupSuspensionNotifications() {
+        // Listen for hibernation suspension
+        NotificationCenter.default.addObserver(forName: .suspendHibernationEvaluation, object: nil, queue: .main) { [weak self] _ in
+            NSLog("⏸️ Suspending hibernation evaluation timer")
+            self?.hibernationTimer?.invalidate()
+            self?.hibernationTimer = nil
+        }
+        
+        // Listen for hibernation resumption
+        NotificationCenter.default.addObserver(forName: .resumeHibernationEvaluation, object: nil, queue: .main) { [weak self] _ in
+            NSLog("▶️ Resuming hibernation evaluation timer")
+            self?.startPeriodicHibernationCheck()
         }
     }
     

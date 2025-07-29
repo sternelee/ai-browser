@@ -4,6 +4,7 @@ import os.log
 
 /// Service for handling keyboard shortcuts for history, bookmarks, and downloads
 /// Provides a centralized way to manage keyboard shortcuts without overloading views
+@MainActor
 class KeyboardShortcutHandler: ObservableObject {
     static let shared = KeyboardShortcutHandler()
     

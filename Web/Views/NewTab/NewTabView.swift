@@ -271,6 +271,8 @@ struct NewTabView: View {
 
 struct FloatingParticlesView: View {
     @State private var particles: [Particle] = []
+    @State private var animationTimer: Timer?
+    @State private var isAnimationSuspended: Bool = false
     
     struct Particle: Identifiable {
         let id = UUID()
@@ -296,6 +298,12 @@ struct FloatingParticlesView: View {
                 generateParticles(in: geometry.size)
                 startAnimation()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .suspendParticleAnimations)) { _ in
+                suspendAnimations()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .resumeParticleAnimations)) { _ in
+                resumeAnimations()
+            }
         }
     }
     
@@ -318,24 +326,47 @@ struct FloatingParticlesView: View {
     }
     
     private func startAnimation() {
+        // CRITICAL FIX: Background-aware animation timer to prevent resource usage when app is not focused
+        guard !isAnimationSuspended else { return }
+        createAnimationTimer()
+    }
+    
+    private func createAnimationTimer() {
         // CRITICAL FIX: Reduce animation frequency to prevent main thread saturation
         // Changed from 80ms (12.5 FPS) to 200ms (5 FPS) to reduce main thread load
-        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
-            // Remove withAnimation to reduce SwiftUI overhead during input handling
-            for i in particles.indices {
-                particles[i].position.x += particles[i].velocity.dx
-                particles[i].position.y += particles[i].velocity.dy
-                
-                // Wrap around edges
-                if particles[i].position.x < 0 { particles[i].position.x = 800 }
-                if particles[i].position.x > 800 { particles[i].position.x = 0 }
-                if particles[i].position.y < 0 { particles[i].position.y = 600 }
-                if particles[i].position.y > 600 { particles[i].position.y = 0 }
-            }
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [self] _ in
+            updateParticles()
         }
     }
+    
+    private func updateParticles() {
+        // Remove withAnimation to reduce SwiftUI overhead during input handling
+        for i in particles.indices {
+            particles[i].position.x += particles[i].velocity.dx
+            particles[i].position.y += particles[i].velocity.dy
+                
+            // Wrap around edges
+            if particles[i].position.x < 0 { particles[i].position.x = 800 }
+            if particles[i].position.x > 800 { particles[i].position.x = 0 }
+            if particles[i].position.y < 0 { particles[i].position.y = 600 }
+            if particles[i].position.y > 600 { particles[i].position.y = 0 }
+        }
+    }
+    
+    private func suspendAnimations() {
+        NSLog("⏸️ Suspending particle animations")
+        isAnimationSuspended = true
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+    
+    private func resumeAnimations() {
+        NSLog("▶️ Resuming particle animations")
+        guard isAnimationSuspended else { return }
+        isAnimationSuspended = false
+        createAnimationTimer()
+    }
 }
-
 
 struct MinimalActionCard: View {
     let icon: String

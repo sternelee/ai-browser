@@ -54,11 +54,16 @@ struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         // Use shared WebKitManager for optimized memory usage and shared process pool
         let isIncognito = tab?.isIncognito ?? false
-        let config = WebKitManager.shared.createConfiguration(isIncognito: isIncognito)
         
-        // Enhanced privacy settings specific to this app
+        // OAUTH FIX: Detect if this is for OAuth flows and configure accordingly
+        let isOAuthFlow = detectOAuthFlow()
+        let config = WebKitManager.shared.createConfiguration(isIncognito: isIncognito, isOAuthFlow: isOAuthFlow)
+        
+        // Enhanced privacy settings specific to this app (unless OAuth flow)
         config.preferences.isFraudulentWebsiteWarningEnabled = true
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        if !isOAuthFlow {
+            config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        }
         
         // Safely set developer extras
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -101,6 +106,10 @@ struct WebView: NSViewRepresentable {
         let webView = CustomWebView(frame: safeFrame, configuration: config, coordinator: context.coordinator)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
+        
+        // CRITICAL FIX: Enable automatic resizing for window resize support
+        webView.autoresizingMask = [.width, .height]
+        webView.translatesAutoresizingMaskIntoConstraints = true
         
         // Apply standard Safari user agent to prevent Google's embedded browser detection
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
@@ -153,6 +162,28 @@ struct WebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // CRITICAL FIX: Ensure WebView frame matches container during updates
+        // This handles window resize events for newly created WebViews
+        DispatchQueue.main.async {
+            if let containerView = webView.superview {
+                let containerBounds = containerView.bounds
+                if !webView.frame.equalTo(containerBounds) {
+                    webView.frame = containerBounds
+                    
+                    // Dispatch resize event to web content
+                    webView.evaluateJavaScript("""
+                        if (window.dispatchEvent) {
+                            window.dispatchEvent(new Event('resize'));
+                        }
+                        """) { _, error in
+                        if let error = error {
+                            NSLog("⚠️ Failed to dispatch resize event: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+        }
+        
         // Smart navigation logic - only prevent rapid duplicate requests to same URL
         if let url = url {
             // Validate URL before proceeding
@@ -204,27 +235,37 @@ struct WebView: NSViewRepresentable {
         (function() {
             'use strict';
             
-            // Global timer registry to track all timers for cleanup
+            // Global timer registry to track all timers for cleanup and suspension
             window.webBrowserTimerRegistry = window.webBrowserTimerRegistry || {
                 intervals: new Set(),
                 timeouts: new Set(),
                 originalSetInterval: window.setInterval,
                 originalSetTimeout: window.setTimeout,
                 originalClearInterval: window.clearInterval,
-                originalClearTimeout: window.clearTimeout
+                originalClearTimeout: window.clearTimeout,
+                suspended: false,
+                suspendedTimers: { intervals: [], timeouts: [] }
             };
             
             const registry = window.webBrowserTimerRegistry;
             
-            // Override setInterval to track all intervals
+            // Override setInterval to track all intervals and respect suspension
             window.setInterval = function(callback, delay, ...args) {
+                if (registry.suspended) {
+                    // In suspended mode, delay timers significantly (60 seconds minimum)
+                    delay = Math.max(delay, 60000);
+                }
                 const id = registry.originalSetInterval.call(this, callback, delay, ...args);
                 registry.intervals.add(id);
                 return id;
             };
             
-            // Override setTimeout to track all timeouts
+            // Override setTimeout to track all timeouts and respect suspension
             window.setTimeout = function(callback, delay, ...args) {
+                if (registry.suspended) {
+                    // In suspended mode, delay timeouts significantly
+                    delay = Math.max(delay, 10000);
+                }
                 const id = registry.originalSetTimeout.call(this, callback, delay, ...args);
                 registry.timeouts.add(id);
                 return id;
@@ -400,6 +441,95 @@ struct WebView: NSViewRepresentable {
         """
     }
     
+    // MARK: - OAuth Detection
+    
+    /// Detects if the current URL or intended navigation is for OAuth flows
+    /// - Returns: true if this WebView is being used for OAuth authentication
+    private func detectOAuthFlow() -> Bool {
+        // Check current URL first
+        if let currentURL = url {
+            if isOAuthURL(currentURL) {
+                NSLog("🔐 OAuth flow detected from current URL: \(currentURL.host ?? "unknown")")
+                return true
+            }
+        }
+        
+        // Check tab's URL if available
+        if let tabURL = tab?.url {
+            if isOAuthURL(tabURL) {
+                NSLog("🔐 OAuth flow detected from tab URL: \(tabURL.host ?? "unknown")")
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /// Checks if a URL is from a known OAuth provider or contains OAuth-related paths
+    /// - Parameter url: URL to check
+    /// - Returns: true if the URL is OAuth-related
+    private func isOAuthURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        let path = url.path.lowercased()
+        
+        // Known OAuth provider domains
+        let oauthDomains = [
+            "accounts.google.com",
+            "oauth2.googleapis.com", 
+            "github.com",
+            "login.microsoftonline.com",
+            "login.live.com",
+            "www.facebook.com",
+            "api.twitter.com",
+            "discord.com",
+            "slack.com",
+            "appleid.apple.com"
+        ]
+        
+        // Check exact domain matches
+        if oauthDomains.contains(host) {
+            return true
+        }
+        
+        // Check subdomain matches (e.g., subdomain.accounts.google.com)
+        for domain in oauthDomains {
+            if host.hasSuffix(".\(domain)") {
+                return true
+            }
+        }
+        
+        // Check OAuth-related paths on any domain
+        let oauthPaths = [
+            "/oauth",
+            "/auth",
+            "/login/oauth",
+            "/oauth2",
+            "/connect/oauth",
+            "/api/oauth",
+            "/_oauth",
+            "/sso",
+            "/saml"
+        ]
+        
+        for oauthPath in oauthPaths {
+            if path.contains(oauthPath) {
+                return true
+            }
+        }
+        
+        // Check query parameters for OAuth indicators
+        if let query = url.query?.lowercased() {
+            let oauthParams = ["client_id", "redirect_uri", "response_type", "oauth_token", "code_challenge"]
+            for param in oauthParams {
+                if query.contains(param) {
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
+    
     // MARK: - Custom WKWebView for Context Menu Support
     class CustomWebView: WKWebView {
         weak var coordinator: Coordinator?
@@ -494,6 +624,8 @@ struct WebView: NSViewRepresentable {
             self.parent = parent
             super.init()
             setupCertificateNotificationObservers()
+            // AI RESPONSIVENESS FIX: Initialize responsiveness protection
+            protectWebViewResponsiveness()
         }
         
         private func setupCertificateNotificationObservers() {
@@ -818,6 +950,17 @@ struct WebView: NSViewRepresentable {
             let nsError = error as NSError
             let networkMonitor = NetworkConnectivityMonitor.shared
             
+            // OAUTH DEBUGGING: Enhanced error logging for OAuth flows
+            if let url = webView.url, parent.isOAuthURL(url) {
+                NSLog("🔐❌ OAuth navigation failed: \(url.absoluteString)")
+                NSLog("🔐❌ OAuth error details: \(error.localizedDescription)")
+                NSLog("🔐❌ OAuth error code: \(nsError.code)")
+                NSLog("🔐❌ OAuth error domain: \(nsError.domain)")
+                if let userInfo = nsError.userInfo as? [String: Any] {
+                    NSLog("🔐❌ OAuth error userInfo: \(userInfo)")
+                }
+            }
+            
             // Classify the error type for appropriate handling
             let errorType = networkMonitor.classifyError(error)
             let isNetworkError = networkMonitor.isNetworkError(error)
@@ -866,6 +1009,24 @@ struct WebView: NSViewRepresentable {
                 parent.isLoading = false
                 parent.tab?.notifyLoadingStateChanged()
                 return
+            }
+            
+            // OAUTH DEBUGGING: Enhanced error logging for OAuth provisional navigation failures
+            if let url = webView.url, parent.isOAuthURL(url) {
+                NSLog("🔐❌ OAuth provisional navigation failed: \(url.absoluteString)")
+                NSLog("🔐❌ OAuth provisional error details: \(error.localizedDescription)")
+                NSLog("🔐❌ OAuth provisional error code: \(nsError.code)")
+                
+                // Check for specific OAuth-related errors
+                if errorCode == NSURLErrorNotConnectedToInternet {
+                    NSLog("🔐❌ OAuth failed: No internet connection")
+                } else if errorCode == NSURLErrorTimedOut {
+                    NSLog("🔐❌ OAuth failed: Request timed out")
+                } else if errorCode == NSURLErrorCannotFindHost {
+                    NSLog("🔐❌ OAuth failed: Cannot find OAuth provider host")
+                } else if errorCode == NSURLErrorCancelled {
+                    NSLog("🔐❌ OAuth failed: Request was cancelled")
+                }
             }
             
             // Classify the error type for appropriate handling
@@ -1185,6 +1346,16 @@ struct WebView: NSViewRepresentable {
         
         // MARK: - Navigation policy handling
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            
+            // OAUTH DEBUGGING: Log navigation attempts for OAuth flows
+            if let url = navigationAction.request.url {
+                if parent.isOAuthURL(url) {
+                    NSLog("🔐 OAuth navigation detected: \(url.absoluteString)")
+                    NSLog("🔐 OAuth navigation type: \(navigationAction.navigationType.rawValue)")
+                    NSLog("🔐 OAuth source frame: \(navigationAction.sourceFrame.isMainFrame ? "main" : "iframe")")
+                    NSLog("🔐 OAuth target frame: \(navigationAction.targetFrame?.isMainFrame == true ? "main" : "iframe/nil")")
+                }
+            }
             // Check for CMD + click to open links in new background tabs
             if navigationAction.navigationType == .linkActivated,
                navigationAction.modifierFlags.contains(.command),
@@ -1452,10 +1623,62 @@ struct WebView: NSViewRepresentable {
             }
         }
         
+        // MARK: - WebView Responsiveness Protection
+        
+        /// Ensures WebView remains responsive during AI operations
+        /// AI RESPONSIVENESS FIX: Prevents AI processing from blocking WebView JavaScript
+        private func protectWebViewResponsiveness() {
+            guard let webView = webView else { return }
+            
+            // Periodically check if WebView is responsive during AI operations
+            Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+                guard let self = self else {
+                    timer.invalidate()
+                    return
+                }
+                
+                // Only run checks if we have an active WebView
+                guard let webView = self.webView else {
+                    timer.invalidate()
+                    return
+                }
+                
+                // Simple JavaScript responsiveness test
+                webView.evaluateJavaScript("Date.now()") { result, error in
+                    if let error = error {
+                        NSLog("⚠️ WebView JavaScript responsiveness check failed: \(error.localizedDescription)")
+                    } else if let timestamp = result as? NSNumber {
+                        let responseTime = Date().timeIntervalSince1970 * 1000 - timestamp.doubleValue
+                        if responseTime > 1000 { // > 1 second delay
+                            NSLog("⚠️ WebView JavaScript response delay detected: \(responseTime)ms")
+                        }
+                    }
+                }
+            }
+        }
+        
         // MARK: - Adaptive Content Extraction
         
         /// Performs intelligent content extraction with adaptive timing based on page readiness
+        /// AI RESPONSIVENESS FIX: Runs on background thread to prevent WebView blocking
         private func performAdaptiveContentExtraction(webView: WKWebView, tab: Tab) async {
+            // AI RESPONSIVENESS FIX: Start monitoring WebView responsiveness
+            protectWebViewResponsiveness()
+            
+            // AI RESPONSIVENESS FIX: Run context extraction on background queue
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Task {
+                        await self.performBackgroundContextExtraction(webView: webView, tab: tab)
+                        continuation.resume()
+                    }
+                }
+            }
+        }
+        
+        /// Background context extraction to prevent UI blocking
+        /// AI RESPONSIVENESS FIX: Separated background processing logic
+        private func performBackgroundContextExtraction(webView: WKWebView, tab: Tab) async {
             var attemptCount = 0
             let maxAttempts = 5
             var bestContext: WebpageContext?

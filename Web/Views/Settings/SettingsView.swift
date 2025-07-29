@@ -10,6 +10,7 @@ struct SettingsView: View {
     
     enum SettingsCategory: String, CaseIterable {
         case general = "General"
+        case aiProvider = "AI Provider"
         case privacy = "Privacy"
         case security = "Security"
         case appearance = "Appearance"
@@ -18,6 +19,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: return "gear"
+            case .aiProvider: return "brain.head.profile"
             case .privacy: return "hand.raised"
             case .security: return "lock.shield"
             case .appearance: return "paintbrush"
@@ -154,6 +156,8 @@ struct SettingsView: View {
                 switch selectedCategory {
                 case .general:
                     GeneralSettingsView()
+                case .aiProvider:
+                    AIProviderSettingsView()
                 case .privacy:
                     PrivacySettingsView()
                 case .security:

@@ -17,6 +17,7 @@ struct AISidebar: View {
     
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
+    @State private var isSpinnerAnimating: Bool = false // FIXED: Track animation state to prevent conflicts
     
     // REMOVED: Old typing indicator state - now using unified AIAnimationState from AIAssistant
     
@@ -57,15 +58,19 @@ struct AISidebar: View {
                     AIPrivacySettings()
                 }
                 .onAppear {
-                    // Show AI sidebar on first app launch
+                    // Show AI sidebar on first app launch - FIXED: Use animation to prevent bouncing
                     if !hasLaunchedBefore {
-                        isExpanded = true
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                            isExpanded = true
+                        }
                         hasLaunchedBefore = true
                         NSLog("🎉 First app launch - showing AI sidebar by default")
                     }
                     
-                    // Initialize AI system on first appearance
+                    // Initialize AI system on first appearance - delayed to prevent race conditions
                     Task {
+                        // FIXED: Small delay to let UI settle before starting AI initialization
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
                         await aiAssistant.initialize()
                     }
                 }
@@ -222,13 +227,13 @@ struct AISidebar: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     if !aiAssistant.isInitialized {
-                        // Initialization status
+                        // Initialization status - FIXED: Removed conflicting transition animation
                         aiInitializationView()
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .transition(.opacity)
                     } else if aiAssistant.messages.isEmpty {
-                        // Show placeholder when no messages
+                        // Show placeholder when no messages - FIXED: Removed conflicting transition animation
                         chatMessagesPlaceholder()
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .transition(.opacity)
                     } else {
                         // Display actual chat messages with unified streaming support
                         ForEach(aiAssistant.messages) { message in
@@ -294,18 +299,24 @@ struct AISidebar: View {
                                     )
                                     .rotationEffect(.degrees(initSpinnerRotation))
                                     .onAppear {
-                                        if !aiAssistant.isInitialized {
+                                        // FIXED: Start animation only once to prevent conflicts
+                                        if !aiAssistant.isInitialized && !isSpinnerAnimating {
+                                            isSpinnerAnimating = true
                                             withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                                                 initSpinnerRotation = 360
                                             }
                                         }
                                     }
                                     .onChange(of: aiAssistant.isInitialized) { _, isInitialized in
-                                        if !isInitialized {
+                                        if !isInitialized && !isSpinnerAnimating {
+                                            // FIXED: Only start if not already animating to prevent loop conflicts
+                                            isSpinnerAnimating = true
                                             withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
                                                 initSpinnerRotation = 360
                                             }
-                                        } else {
+                                        } else if isInitialized && isSpinnerAnimating {
+                                            // FIXED: Stop animation cleanly and reset state
+                                            isSpinnerAnimating = false
                                             withAnimation(.easeOut(duration: 0.3)) {
                                                 initSpinnerRotation = 0
                                             }
@@ -339,6 +350,8 @@ struct AISidebar: View {
                             RoundedRectangle(cornerRadius: 1)
                                 .fill(.blue.opacity(progressDotOpacity(for: index)))
                                 .frame(width: 24, height: 2)
+                                // FIXED: Stable opacity animation without continuous time-based updates
+                                .opacity(aiAssistant.isInitialized ? 0.3 : 1.0)
                                 .animation(
                                     .easeInOut(duration: 0.8)
                                         .repeatForever(autoreverses: true)
@@ -369,7 +382,7 @@ struct AISidebar: View {
             }
         }
         .padding(16)
-        .frame(minHeight: 120) // Fixed minimum height to prevent jumping
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading) // FIXED: Consistent frame configuration
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
@@ -380,10 +393,11 @@ struct AISidebar: View {
         )
     }
     
+    // FIXED: Removed time-based calculation that caused continuous UI updates
     private func progressDotOpacity(for index: Int) -> Double {
-        let time = Date().timeIntervalSince1970
-        let offset = Double(index) * 0.5
-        return 0.3 + 0.7 * abs(sin(time * 2 + offset))
+        // Use a stable opacity pattern instead of time-based animation
+        let baseOpacities = [0.8, 0.6, 0.4, 0.3]
+        return baseOpacities[index % baseOpacities.count]
     }
     
     @ViewBuilder
@@ -460,27 +474,8 @@ struct AISidebar: View {
     
     @ViewBuilder
     private func unifiedTypingIndicatorView() -> some View {
-        HStack(alignment: .bottom, spacing: 6) {
-            // AI avatar
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.green.opacity(0.2),
-                            Color.green.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 24, height: 24)
-                .overlay(
-                    Image(systemName: "brain")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.green)
-                )
-            
-            // Unified typing indicator bubble with LoadingDotsView
+        HStack(alignment: .bottom, spacing: 0) {
+            // Unified typing indicator bubble with LoadingDotsView - no avatar for consistency
             LoadingDotsView(dotColor: .secondary.opacity(0.6), dotSize: 6, spacing: 4)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -490,9 +485,9 @@ struct AISidebar: View {
                         .opacity(0.9)
                 )
             
-            Spacer(minLength: 32)
+            Spacer(minLength: 24) // Reduced from 32 to match message bubbles
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 4) // Reduced from 8 for consistency with message bubbles
         .padding(.vertical, 2)
     }
     

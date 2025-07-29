@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import Foundation
+import WebKit
 
 class TabManager: ObservableObject {
     @Published var tabs: [Tab] = []
@@ -17,6 +18,9 @@ class TabManager: ObservableObject {
         
         // Setup hibernation integration
         setupHibernationIntegration()
+        
+        // Setup WebView collection for BackgroundResourceManager
+        setupWebViewCollection()
     }
     
     // MARK: - Tab Operations
@@ -151,7 +155,46 @@ class TabManager: ObservableObject {
     }
     
     func moveTab(from source: IndexSet, to destination: Int) {
-        tabs.move(fromOffsets: source, toOffset: destination)
+        // Enhanced tab reordering with animation support
+        guard let sourceIndex = source.first, 
+              sourceIndex != destination,
+              sourceIndex >= 0 && sourceIndex < tabs.count,
+              destination >= 0 && destination <= tabs.count else {
+            return
+        }
+        
+        // Perform the move with smooth animation
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            tabs.move(fromOffsets: source, toOffset: destination)
+        }
+        
+        // Maintain active tab reference after reordering
+        if let activeTab = activeTab, let newIndex = tabs.firstIndex(where: { $0.id == activeTab.id }) {
+            // Update any tab order-dependent logic here if needed
+        }
+    }
+    
+    // Enhanced reordering with better validation
+    func moveTabSafely(fromIndex: Int, toIndex: Int) -> Bool {
+        guard fromIndex != toIndex,
+              fromIndex >= 0 && fromIndex < tabs.count,
+              toIndex >= 0 && toIndex <= tabs.count else {
+            return false
+        }
+        
+        let adjustedToIndex = toIndex > fromIndex ? toIndex - 1 : toIndex
+        guard adjustedToIndex >= 0 && adjustedToIndex < tabs.count else {
+            return false
+        }
+        
+        // Use haptic feedback for successful reorders
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex)
+        }
+        
+        return true
     }
     
     // MARK: - Memory Management & Hibernation Integration
@@ -173,6 +216,22 @@ class TabManager: ObservableObject {
     private func evaluateTabsForHibernation() {
         // Delegate hibernation decisions to the TabHibernationManager
         TabHibernationManager.shared.evaluateTabs(tabs, activeTab: activeTab)
+    }
+    
+    private func setupWebViewCollection() {
+        // Listen for WebView collection requests from BackgroundResourceManager
+        NotificationCenter.default.addObserver(forName: .collectActiveWebViews, object: nil, queue: .main) { [weak self] notification in
+            guard let self = self,
+                  let userInfo = notification.userInfo,
+                  let collector = userInfo["collector"] as? (WKWebView) -> Void else { return }
+            
+            // Collect all active WebViews from tabs
+            for tab in self.tabs {
+                if let webView = tab.webView {
+                    collector(webView)
+                }
+            }
+        }
     }
     
     deinit {
@@ -231,5 +290,51 @@ class TabManager: ObservableObject {
     func selectTabByNumber(_ number: Int) {
         let index = number - 1 // Convert 1-based to 0-based index
         selectTab(at: index)
+    }
+    
+    // MARK: - Keyboard-based Tab Reordering
+    
+    /// Move the active tab one position to the left/up
+    func moveActiveTabBackward() -> Bool {
+        guard let activeTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == activeTab.id }),
+              currentIndex > 0 else {
+            return false
+        }
+        
+        return moveTabSafely(fromIndex: currentIndex, toIndex: currentIndex - 1)
+    }
+    
+    /// Move the active tab one position to the right/down
+    func moveActiveTabForward() -> Bool {
+        guard let activeTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == activeTab.id }),
+              currentIndex < tabs.count - 1 else {
+            return false
+        }
+        
+        return moveTabSafely(fromIndex: currentIndex, toIndex: currentIndex + 1)
+    }
+    
+    /// Move the active tab to the beginning of the tab list
+    func moveActiveTabToStart() -> Bool {
+        guard let activeTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == activeTab.id }),
+              currentIndex > 0 else {
+            return false
+        }
+        
+        return moveTabSafely(fromIndex: currentIndex, toIndex: 0)
+    }
+    
+    /// Move the active tab to the end of the tab list
+    func moveActiveTabToEnd() -> Bool {
+        guard let activeTab = activeTab,
+              let currentIndex = tabs.firstIndex(where: { $0.id == activeTab.id }),
+              currentIndex < tabs.count - 1 else {
+            return false
+        }
+        
+        return moveTabSafely(fromIndex: currentIndex, toIndex: tabs.count - 1)
     }
 }

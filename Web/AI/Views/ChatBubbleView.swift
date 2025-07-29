@@ -49,10 +49,10 @@ struct ChatBubbleView: View {
         }
     }
     
-    // Configuration
-    private let maxBubbleWidth: CGFloat = 260
-    private let bubblePadding: EdgeInsets = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
-    private let bubbleSpacing: CGFloat = 12
+    // Configuration - optimized for narrow columns without avatars
+    private let maxBubbleWidth: CGFloat = 280 // Increased from 260 to utilize freed space
+    private let bubblePadding: EdgeInsets = EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14) // Reduced horizontal padding
+    private let bubbleSpacing: CGFloat = 8 // Reduced from 12 since no avatars
     
     init(message: ConversationMessage, isStreaming: Bool = false, streamingText: String = "") {
         self.message = message
@@ -61,16 +61,16 @@ struct ChatBubbleView: View {
     }
     
     var body: some View {
-        HStack(alignment: .top, spacing: bubbleSpacing) {
+        HStack(alignment: .top, spacing: 0) {
             if isUserMessage {
-                Spacer(minLength: 32) // Right-align user messages
+                Spacer(minLength: 24) // Reduced from 32 to 24 for better space utilization
                 userMessageBubble()
             } else {
                 assistantMessageBubble()
-                Spacer(minLength: 32) // Left-align assistant messages
+                Spacer(minLength: 24) // Reduced from 32 to 24 for better space utilization
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 4) // Reduced from 8 to 4 for more horizontal space
         .padding(.vertical, 2)
         // REMOVED: .animation(.easeInOut(duration: 0.2), value: displayText) - caused flickering on every character change
         // REMOVED: Streaming animation management - now handled by unified LoadingDotsView
@@ -81,22 +81,17 @@ struct ChatBubbleView: View {
     @ViewBuilder
     private func userMessageBubble() -> some View {
         VStack(alignment: .trailing, spacing: 4) {
-            HStack(alignment: .bottom, spacing: 6) {
-                // Message content
-                formattedText()
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(bubblePadding)
-                    .background(userBubbleBackground())
-                    .clipShape(ChatBubbleShape(isUserMessage: true))
-                
-                // User avatar
-                userAvatar()
-            }
+            // Message content - now using full width without avatar
+            formattedText()
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.leading)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(bubblePadding)
+                .background(userBubbleBackground())
+                .clipShape(ChatBubbleShape(isUserMessage: true))
             
             // Timestamp
             messageTimestamp()
@@ -129,44 +124,19 @@ struct ChatBubbleView: View {
         }
     }
     
-    @ViewBuilder
-    private func userAvatar() -> some View {
-        Circle()
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.accentColor.opacity(0.3),
-                        Color.accentColor.opacity(0.1)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: 24, height: 24)
-            .overlay(
-                Image(systemName: "person.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.accentColor)
-            )
-    }
     
     // MARK: - Assistant Message Bubble
     
     @ViewBuilder
     private func assistantMessageBubble() -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .bottom, spacing: 6) {
-                // AI avatar
-                aiAvatar()
+            // Message content - now using full width without avatar
+            VStack(alignment: .leading, spacing: 0) {
+                messageContentView()
                 
-                // Message content
-                VStack(alignment: .leading, spacing: 0) {
-                    messageContentView()
-                    
-                    // Context references (if any)
-                    if let contextData = message.contextData, !contextData.isEmpty {
-                        contextReferences()
-                    }
+                // Context references (if any)
+                if let contextData = message.contextData, !contextData.isEmpty {
+                    contextReferences()
                 }
             }
             
@@ -239,26 +209,6 @@ struct ChatBubbleView: View {
         }
     }
     
-    @ViewBuilder
-    private func aiAvatar() -> some View {
-        Circle()
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.green.opacity(0.2),
-                        Color.green.opacity(0.08)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: 24, height: 24)
-            .overlay(
-                Image(systemName: "brain")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.green)
-            )
-    }
     
     // MARK: - Unified Streaming Indicator
     

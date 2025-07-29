@@ -5,10 +5,11 @@ import MLXLMCommon
 
 /// Simplified MLX-based LLM runner following WWDC 2025 patterns
 /// Uses basic string-based model loading without complex configurations
-@MainActor
+/// AI THREADING FIX: Removed @MainActor to allow background processing
 final class SimplifiedMLXRunner: ObservableObject {
     static let shared = SimplifiedMLXRunner()
     
+    // AI THREADING FIX: Thread-safe published properties with main actor updates
     @Published var isLoading = false
     @Published var loadProgress: Float = 0.0
     
@@ -18,11 +19,16 @@ final class SimplifiedMLXRunner: ObservableObject {
     // Use ModelRegistry for predefined configurations
     private let defaultModelId = "gemma3_2B_4bit"
     
+    // Background processing queue for AI inference
+    private let aiProcessingQueue = DispatchQueue(label: "ai.processing", qos: .userInitiated)
+    private let modelLoadingQueue = DispatchQueue(label: "ai.model.loading", qos: .userInitiated)
+    
     private init() {
         // SimplifiedMLXRunner initialized
     }
     
     /// Ensure model is loaded using ModelRegistry ID
+    /// AI THREADING FIX: Runs on background thread to prevent UI blocking
     func ensureLoaded(modelId: String = "gemma3_2B_4bit") async throws {
         // If already loaded with same model, return immediately
         if modelContainer != nil && currentModelId == modelId {
@@ -30,10 +36,16 @@ final class SimplifiedMLXRunner: ObservableObject {
             return
         }
         
-        isLoading = true
-        loadProgress = 0.0
-        defer { 
-            isLoading = false
+        // AI THREADING FIX: Update UI state on main thread
+        await MainActor.run {
+            isLoading = true
+            loadProgress = 0.0
+        }
+        
+        defer {
+            Task { @MainActor in
+                isLoading = false
+            }
         }
         
 NSLog("🚀 Loading MLX model: \(modelId)")
@@ -56,20 +68,26 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                 modelConfig = ModelConfiguration(id: modelId)
             }
             
+            // AI THREADING FIX: Model loading with proper thread management
             let model = try await LLMModelFactory.shared.loadContainer(
                 configuration: modelConfig
             ) { progress in
+                // AI THREADING FIX: Progress updates on main thread
                 Task { @MainActor in
                     self.loadProgress = Float(progress.fractionCompleted)
-        if Int(progress.fractionCompleted * 100) % 10 == 0 { // Only log every 10%
-                    NSLog("📈 MLX model download progress: \(Int(progress.fractionCompleted * 100))%")
-                }
+                    if Int(progress.fractionCompleted * 100) % 10 == 0 { // Only log every 10%
+                        NSLog("📈 MLX model download progress: \(Int(progress.fractionCompleted * 100))%")
+                    }
                 }
             }
             
             self.modelContainer = model
             self.currentModelId = modelId
-            self.loadProgress = 1.0
+            
+            // AI THREADING FIX: Final progress update on main thread
+            await MainActor.run {
+                self.loadProgress = 1.0
+            }
             
             NSLog("✅ MLX model loaded successfully: \(modelId)")
         } catch {
@@ -79,6 +97,7 @@ NSLog("🚀 Loading MLX model: \(modelId)")
     }
     
     /// Generate text with simple prompt
+    /// AI THREADING FIX: Runs inference on background thread to prevent UI blocking
     func generateWithPrompt(prompt: String, modelId: String = "gemma3_2B_4bit") async throws -> String {
         try await ensureLoaded(modelId: modelId)
         
@@ -86,6 +105,24 @@ NSLog("🚀 Loading MLX model: \(modelId)")
             throw SimplifiedMLXError.modelNotLoaded
         }
         
+        // AI THREADING FIX: Run MLX inference on background thread
+        return try await withCheckedThrowingContinuation { continuation in
+            aiProcessingQueue.async {
+                Task {
+                    do {
+                        let result = try await self.performMLXInference(context: context, prompt: prompt)
+                        continuation.resume(returning: result)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Performs the actual MLX inference on background thread
+    /// AI THREADING FIX: Separated inference logic for background processing
+    private func performMLXInference(context: ModelContainer, prompt: String) async throws -> String {
         // Generating with MLX
         
         do {
@@ -192,18 +229,19 @@ NSLog("🚀 Loading MLX model: \(modelId)")
     }
     
     /// Generate streaming response
-    nonisolated func generateStreamWithPrompt(prompt: String, modelId: String = "gemma3_2B_4bit") -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    try await ensureLoaded(modelId: modelId)
-                    
-                    guard await modelContainer != nil else {
-                        continuation.finish(throwing: SimplifiedMLXError.modelNotLoaded)
-                        return
-                    }
-                    
-                    let container = await modelContainer!
+    /// AI THREADING FIX: Runs streaming inference on background thread
+    func generateStreamWithPrompt(prompt: String, modelId: String = "gemma3_2B_4bit") -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream<String, Error> { continuation in
+            // AI THREADING FIX: Run streaming on background thread
+            aiProcessingQueue.async {
+                Task {
+                    do {
+                        try await self.ensureLoaded(modelId: modelId)
+                        
+                        guard let container = self.modelContainer else {
+                            continuation.finish(throwing: SimplifiedMLXError.modelNotLoaded)
+                            return
+                        }
                     
                     // Starting MLX streaming
                     
@@ -324,18 +362,20 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                         }
                     }
                     
-                    continuation.finish()
-                    // Reduced logging for cleaner output
-                    
-                } catch {
-                    NSLog("❌ MLX streaming failed: \(error)")
-                    continuation.finish(throwing: error)
+                        continuation.finish()
+                        // Reduced logging for cleaner output
+                        
+                    } catch {
+                        NSLog("❌ MLX streaming failed: \(error)")
+                        continuation.finish(throwing: error)
+                    }
                 }
             }
         }
     }
     
     /// Reset conversation state
+    /// AI THREADING FIX: Runs on background thread to prevent UI blocking
     func resetConversation() async {
         // FIXED: Implement proper conversation state reset
         // For MLX, we need to clear the model's internal state by recreating the model container
@@ -344,17 +384,27 @@ NSLog("🚀 Loading MLX model: \(modelId)")
             return
         }
         
-        // MLX conversation reset: clearing model state
-        
-        // Clear current model state
-        modelContainer = nil
-        
-        // Reload the model to reset its internal conversation state
-        do {
-            try await ensureLoaded(modelId: currentModelId)
-            // MLX conversation reset completed successfully
-        } catch {
-            NSLog("❌ MLX conversation reset failed: \(error)")
+        // AI THREADING FIX: Run reset on background thread
+        await withCheckedContinuation { continuation in
+            aiProcessingQueue.async {
+                Task {
+                    // MLX conversation reset: clearing model state
+                    
+                    // Clear current model state
+                    self.modelContainer = nil
+                    
+                    // Reload the model to reset its internal conversation state
+                    do {
+                        try await self.ensureLoaded(modelId: currentModelId)
+                        // MLX conversation reset completed successfully
+                        NSLog("🔄 MLX conversation reset completed successfully")
+                    } catch {
+                        NSLog("❌ MLX conversation reset failed: \(error)")
+                    }
+                    
+                    continuation.resume()
+                }
+            }
         }
     }
     

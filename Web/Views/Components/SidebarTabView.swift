@@ -4,6 +4,9 @@ struct SidebarTabView: View {
     @ObservedObject var tabManager: TabManager
     @State private var draggedTab: Web.Tab?
     @State private var hoveredTab: Web.Tab?
+    @State private var dropTargetIndex: Int?
+    @State private var isDragging: Bool = false
+    @State private var isValidDropTarget: Bool = true
     
     var body: some View {
         VStack(spacing: 0) {
@@ -19,15 +22,39 @@ struct SidebarTabView: View {
             // Tab list with custom scrolling
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 8) {
-                    ForEach(tabManager.tabs) { tab in
+                    ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
                         SidebarTabItem(
                             tab: tab,
                             isActive: tab.id == tabManager.activeTab?.id,
                             isHovered: hoveredTab?.id == tab.id,
+                            isDragging: isDragging && draggedTab?.id == tab.id,
                             tabManager: tabManager
                         ) {
                             tabManager.setActiveTab(tab)
                         }
+                        .scaleEffect(isDragging && draggedTab?.id == tab.id ? 1.05 : 1.0)
+                        .opacity(isDragging && draggedTab?.id == tab.id ? 0.9 : 1.0)
+                        .zIndex(isDragging && draggedTab?.id == tab.id ? 1000 : 0)
+                        .overlay(
+                            // Drop zone indicator - top edge
+                            Rectangle()
+                                .fill(isValidDropTarget ? Color.accentColor : Color.red)
+                                .frame(width: 44, height: 2)
+                                .opacity(dropTargetIndex == index && isDragging ? 0.8 : 0.0)
+                                .offset(y: -23)
+                                .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
+                                .animation(.easeInOut(duration: 0.2), value: isValidDropTarget)
+                        )
+                        .overlay(
+                            // Drop zone indicator - bottom edge (for last position)
+                            Rectangle()
+                                .fill(isValidDropTarget ? Color.accentColor : Color.red)
+                                .frame(width: 44, height: 2)
+                                .opacity(dropTargetIndex == index + 1 && isDragging ? 0.8 : 0.0)
+                                .offset(y: 23)
+                                .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
+                                .animation(.easeInOut(duration: 0.2), value: isValidDropTarget)
+                        )
                         .onHover { hovering in
                             withAnimation(.easeInOut(duration: 0.15)) {
                                 hoveredTab = hovering ? tab : nil
@@ -37,8 +64,12 @@ struct SidebarTabView: View {
                             TabContextMenu(tab: tab, tabManager: tabManager)
                         }
                         .draggable(tab) {
-                            FaviconView(tab: tab, size: 24)
-                                .opacity(0.8)
+                            SidebarTabPreview(tab: tab, isDragging: true)
+                        }
+                        .onDrag {
+                            isDragging = true
+                            draggedTab = tab
+                            return NSItemProvider()
                         }
                     }
                     
@@ -66,6 +97,13 @@ struct SidebarTabView: View {
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
+        } isTargeted: { isTargeted in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if !isTargeted {
+                    dropTargetIndex = nil
+                    isDragging = false
+                }
+            }
         }
     }
     
@@ -123,13 +161,54 @@ struct SidebarTabView: View {
         guard let droppedTab = tabs.first,
               let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == droppedTab.id }) else { return }
         
-        // Calculate drop position with refined spacing
+        // Enhanced drop calculation with edge detection for vertical layout
         let tabHeight: CGFloat = 44
-        let dropIndex = min(max(0, Int(location.y / tabHeight)), tabManager.tabs.count - 1)
+        let spacing: CGFloat = 8
+        let adjustedY = max(0, location.y - 56) // Account for window controls and divider
         
-        if fromIndex != dropIndex {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+        // Calculate which tab position this corresponds to
+        let tabIndex = Int(adjustedY / (tabHeight + spacing))
+        let positionInTab = adjustedY.truncatingRemainder(dividingBy: tabHeight + spacing)
+        
+        // Determine if we're closer to the top or bottom edge of the tab
+        let dropIndex: Int
+        if positionInTab < (tabHeight + spacing) / 2 {
+            // Closer to top edge - insert before this tab
+            dropIndex = min(tabIndex, tabManager.tabs.count)
+        } else {
+            // Closer to bottom edge - insert after this tab
+            dropIndex = min(tabIndex + 1, tabManager.tabs.count)
+        }
+        
+        // Validate drop target
+        let isValidDrop = dropIndex != fromIndex && 
+                         dropIndex >= 0 && dropIndex <= tabManager.tabs.count
+        
+        // Update visual feedback
+        withAnimation(.easeInOut(duration: 0.15)) {
+            dropTargetIndex = dropIndex
+            isValidDropTarget = isValidDrop
+        }
+        
+        // Perform the move using enhanced TabManager method (only if valid)
+        var success = false
+        if isValidDrop {
+            success = tabManager.moveTabSafely(fromIndex: fromIndex, toIndex: dropIndex)
+        }
+        
+        // Provide visual feedback for invalid drops
+        if !success && !isValidDrop {
+            // Haptic feedback for invalid drop
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        }
+        
+        // Clean up drag state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                dropTargetIndex = nil
+                isDragging = false
+                draggedTab = nil
+                isValidDropTarget = true
             }
         }
     }
@@ -139,6 +218,7 @@ struct SidebarTabItem: View {
     let tab: Web.Tab
     let isActive: Bool
     let isHovered: Bool
+    let isDragging: Bool
     let tabManager: TabManager
     let onTap: () -> Void
     
@@ -231,10 +311,10 @@ struct SidebarTabItem: View {
             }
         }
             .shadow(
-                color: isActive ? extractedColor.opacity(0.3) : .clear,
-                radius: isActive ? 12 : 0,
+                color: isActive ? extractedColor.opacity(0.3) : (isDragging ? .black.opacity(0.2) : .clear),
+                radius: isActive ? 12 : (isDragging ? 16 : 0),
                 x: 0,
-                y: isActive ? 3 : 0
+                y: isActive ? 3 : (isDragging ? 6 : 0)
             )
             .overlay(
                 // Subtle color accent from favicon with better blending - only for active tabs
@@ -424,6 +504,53 @@ struct SidebarTabItem: View {
                 }
             }
         }
+    }
+}
+
+// Enhanced tab preview for sidebar drag operations
+struct SidebarTabPreview: View {
+    let tab: Web.Tab
+    let isDragging: Bool
+    
+    init(tab: Web.Tab, isDragging: Bool = false) {
+        self.tab = tab
+        self.isDragging = isDragging
+    }
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            // Favicon with enhanced presentation
+            FaviconView(tab: tab, size: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            
+            // Tab title (visible in drag preview)
+            Text(tab.title.isEmpty ? "New Tab" : tab.title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.textPrimary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.thickMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(0.4), Color.blue.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                )
+        )
+        .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+        .shadow(color: .blue.opacity(0.15), radius: 6, x: 0, y: 3)
+        .scaleEffect(isDragging ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDragging)
     }
 }
 

@@ -4,6 +4,10 @@ struct TopBarTabView: View {
     @ObservedObject var tabManager: TabManager
     @State private var draggedTab: Web.Tab?
     @State private var hoveredTabId: UUID?
+    @State private var dropTargetIndex: Int?
+    @State private var isDragging: Bool = false
+    @State private var isValidDropTarget: Bool = true
+    @State private var dragStartPosition: CGPoint = .zero
     
     var body: some View {
         HStack(spacing: 0) {
@@ -34,28 +38,64 @@ struct TopBarTabView: View {
         .dropDestination(for: Web.Tab.self) { tabs, location in
             handleTabDrop(tabs: tabs, location: location)
             return true
+        } isTargeted: { isTargeted in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if !isTargeted {
+                    dropTargetIndex = nil
+                    isDragging = false
+                }
+            }
         }
     }
     
     private var tabScrollView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                ForEach(tabManager.tabs) { tab in
+                ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
                     TopBarTabItem(
                         tab: tab,
                         isActive: tab.id == tabManager.activeTab?.id,
                         isHovered: hoveredTabId == tab.id,
+                        isDragging: isDragging && draggedTab?.id == tab.id,
                         onTap: { tabManager.setActiveTab(tab) },
                         tabManager: tabManager
                     )
                     .frame(minWidth: 140, idealWidth: 180, maxWidth: 220)
+                    .scaleEffect(isDragging && draggedTab?.id == tab.id ? 1.02 : 1.0)
+                    .opacity(isDragging && draggedTab?.id == tab.id ? 0.95 : 1.0)
+                    .zIndex(isDragging && draggedTab?.id == tab.id ? 1000 : 0)
+                    .overlay(
+                        // Drop zone indicator - left edge
+                        Rectangle()
+                            .fill(isValidDropTarget ? Color.accentColor : Color.red)
+                            .frame(width: 2, height: 28)
+                            .opacity(dropTargetIndex == index && isDragging ? 0.8 : 0.0)
+                            .offset(x: -71)
+                            .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
+                            .animation(.easeInOut(duration: 0.2), value: isValidDropTarget)
+                    )
+                    .overlay(
+                        // Drop zone indicator - right edge (for last position)
+                        Rectangle()
+                            .fill(isValidDropTarget ? Color.accentColor : Color.red)
+                            .frame(width: 2, height: 28)
+                            .opacity(dropTargetIndex == index + 1 && isDragging ? 0.8 : 0.0)
+                            .offset(x: 71)
+                            .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
+                            .animation(.easeInOut(duration: 0.2), value: isValidDropTarget)
+                    )
                     .onHover { hovering in
                         withAnimation(.easeInOut(duration: 0.15)) {
                             hoveredTabId = hovering ? tab.id : nil
                         }
                     }
                     .draggable(tab) {
-                        TopBarTabPreview(tab: tab)
+                        TopBarTabPreview(tab: tab, isDragging: true)
+                    }
+                    .onDrag {
+                        isDragging = true
+                        draggedTab = tab
+                        return NSItemProvider()
                     }
                 }
                 
@@ -123,13 +163,59 @@ struct TopBarTabView: View {
         guard let droppedTab = tabs.first,
               let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == droppedTab.id }) else { return }
         
-        // Calculate drop position based on horizontal layout
+        // Enhanced drop calculation with edge detection
         let tabWidth: CGFloat = 180
-        let dropIndex = min(max(0, Int(location.x / tabWidth)), tabManager.tabs.count - 1)
+        let padding: CGFloat = 12
+        let adjustedX = max(0, location.x - padding)
         
-        if fromIndex != dropIndex {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: dropIndex)
+        // Calculate which tab position this corresponds to
+        let tabIndex = Int(adjustedX / tabWidth)
+        let positionInTab = adjustedX.truncatingRemainder(dividingBy: tabWidth)
+        
+        // Determine if we're closer to the left or right edge of the tab
+        let dropIndex: Int
+        if positionInTab < tabWidth / 2 {
+            // Closer to left edge - insert before this tab
+            dropIndex = min(tabIndex, tabManager.tabs.count)
+        } else {
+            // Closer to right edge - insert after this tab
+            dropIndex = min(tabIndex + 1, tabManager.tabs.count)
+        }
+        
+        // Validate drop target
+        let isValidDrop = dropIndex != fromIndex && 
+                         dropIndex >= 0 && dropIndex <= tabManager.tabs.count
+        
+        // Update visual feedback
+        withAnimation(.easeInOut(duration: 0.15)) {
+            dropTargetIndex = dropIndex
+            isValidDropTarget = isValidDrop
+        }
+        
+        // Perform the move using enhanced TabManager method (only if valid)
+        var success = false
+        if isValidDrop {
+            success = tabManager.moveTabSafely(fromIndex: fromIndex, toIndex: dropIndex)
+        }
+        
+        // Provide visual feedback for invalid drops
+        if !success && !isValidDrop {
+            // Shake animation for invalid drop
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                // Invalid drop feedback could be added here
+            }
+            
+            // Haptic feedback for invalid drop
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        }
+        
+        // Clean up drag state
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                dropTargetIndex = nil
+                isDragging = false
+                draggedTab = nil
+                isValidDropTarget = true
             }
         }
     }
@@ -139,6 +225,7 @@ struct TopBarTabItem: View {
     let tab: Web.Tab
     let isActive: Bool
     let isHovered: Bool
+    let isDragging: Bool
     let onTap: () -> Void
     let tabManager: TabManager
     
@@ -202,10 +289,10 @@ struct TopBarTabItem: View {
                             )
                     )
                     .shadow(
-                        color: isActive ? .black.opacity(0.1) : .clear,
-                        radius: isActive ? 4 : 0,
+                        color: isActive ? .black.opacity(0.1) : (isDragging ? .black.opacity(0.15) : .clear),
+                        radius: isActive ? 4 : (isDragging ? 8 : 0),
                         x: 0,
-                        y: 1
+                        y: isDragging ? 4 : (isActive ? 1 : 0)
                     )
             )
         }
@@ -216,9 +303,15 @@ struct TopBarTabItem: View {
     }
 }
 
-// Tab preview for drag operations
+// Enhanced tab preview for drag operations
 struct TopBarTabPreview: View {
     let tab: Web.Tab
+    let isDragging: Bool
+    
+    init(tab: Web.Tab, isDragging: Bool = false) {
+        self.tab = tab
+        self.isDragging = isDragging
+    }
     
     var body: some View {
         HStack(spacing: 8) {
@@ -226,21 +319,30 @@ struct TopBarTabPreview: View {
             FaviconView(tab: tab, size: 16)
             
             Text(tab.title.isEmpty ? "New Tab" : tab.title)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
                 .foregroundColor(.textPrimary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(.thickMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(0.3), Color.blue.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
                 )
         )
-        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-        .scaleEffect(0.95)
+        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 6)
+        .shadow(color: .blue.opacity(0.1), radius: 4, x: 0, y: 2)
+        .scaleEffect(isDragging ? 1.02 : 0.98)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDragging)
     }
 }

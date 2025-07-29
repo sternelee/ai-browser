@@ -9,7 +9,9 @@ struct WebContentView: View {
     @State private var hasInitializedWebView: Bool = false
     
     var body: some View {
-        ZStack {
+        // CRITICAL FIX: Use GeometryReader to ensure WebView responds to window size changes
+        GeometryReader { geometry in
+            ZStack {
             if tab.isHibernated, let snapshot = tab.snapshot {
                 // Show snapshot for hibernated tabs
                 Image(nsImage: snapshot)
@@ -30,18 +32,28 @@ struct WebContentView: View {
                         tab.wakeUp()
                     }
             } else {
-                // Active web view - only create WebView once per tab to maintain state
-                if tab.url != nil {
+                // Active web view - create WebView for all tabs to ensure immediate responsiveness
+                // This ensures new tabs are ready for interaction even without an initial URL
+                ZStack {
+                    // Always create WebView for responsiveness, even for new tabs
                     PersistentWebView(tab: tab, hoveredLink: $hoveredLink)
                         .id(tab.id)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
                             hasInitializedWebView = true
                         }
-                } else {
-                    NewTabView(tab: tab)
-                        .onAppear {
-                            hasInitializedWebView = false
-                        }
+                        .opacity(tab.url != nil ? 1.0 : 0.0) // Hide WebView for new tabs without URL
+                        .animation(.easeInOut(duration: 0.3), value: tab.url != nil) // Smooth transition
+                    
+                    // Show NewTabView overlay for tabs without URL
+                    if tab.url == nil {
+                        NewTabView(tab: tab)
+                            .onAppear {
+                                // WebView is actually initialized, just hidden behind NewTabView
+                                hasInitializedWebView = true
+                            }
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    }
                 }
             }
             
@@ -124,6 +136,9 @@ struct WebContentView: View {
                 .padding(.leading, 16)
             }
             .allowsHitTesting(false) // Don't interfere with web content interaction
+            }
+            // Force explicit frame to ensure WebView gets proper dimensions
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .onReceive(tab.$isLoading) { isLoading in
             if isLoading {
@@ -259,6 +274,30 @@ struct ExistingWebView: NSViewRepresentable {
         guard webView === tab.webView else {
             print("⚠️ WebView instance mismatch detected for tab \(tab.id)")
             return // Prevent state updates from wrong WebView instance
+        }
+        
+        // CRITICAL FIX: Update WKWebView frame when SwiftUI container size changes
+        // This ensures the WebView expands properly during window resize
+        DispatchQueue.main.async {
+            if let containerView = webView.superview {
+                let newFrame = containerView.bounds
+                if !webView.frame.equalTo(newFrame) {
+                    webView.frame = newFrame
+                    
+                    // Force WebKit to update its viewport for the new frame
+                    webView.evaluateJavaScript("""
+                        if (window.dispatchEvent) {
+                            window.dispatchEvent(new Event('resize'));
+                        }
+                        """) { _, error in
+                        if let error = error {
+                            NSLog("⚠️ Failed to dispatch resize event: \(error.localizedDescription)")
+                        }
+                    }
+                    
+                    NSLog("🔄 WebView frame updated for tab \(self.tab.id): \(newFrame)")
+                }
+            }
         }
         
         // SIMPLIFIED: Only navigate if WebView has no URL to avoid interference with WebKit's navigation flow

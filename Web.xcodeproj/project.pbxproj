@@ -37,9 +37,22 @@
 		C87E1AAD2E2D796A00CB6104 /* WebUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WebUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C835B5192E380E8200398120 /* Exceptions for "Web" folder in "Web" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C87E1A942E2D796900CB6104 /* Web */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C87E1A972E2D796900CB6104 /* Web */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C835B5192E380E8200398120 /* Exceptions for "Web" folder in "Web" target */,
+			);
 			path = Web;
 			sourceTree = "<group>";
 		};
