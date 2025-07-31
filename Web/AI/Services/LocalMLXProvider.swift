@@ -3,7 +3,7 @@ import Foundation
 /// Local MLX provider implementing the AIProvider protocol
 /// Wraps existing GemmaService to provide unified interface
 @MainActor
-class LocalMLXProvider: AIProvider {
+class LocalMLXProvider: AIProvider, ObservableObject {
     
     // MARK: - AIProvider Implementation
     
@@ -13,11 +13,14 @@ class LocalMLXProvider: AIProvider {
     
     @Published var isInitialized: Bool = false
     
-    var availableModels: [AIModel] = [
+    @Published var availableModels: [AIModel] = []
+    
+    // Fallback models if no local models are discovered
+    private let fallbackModels: [AIModel] = [
         AIModel(
-            id: "gemma3_2B_4bit",
+            id: "gemma-3-2b",
             name: "Gemma 3 2B (4-bit)",
-            description: "Local privacy-focused model optimized for Apple Silicon with 4-bit quantization",
+            description: "Default model - will be downloaded from Hugging Face",
             contextWindow: 8192,
             costPerToken: nil,
             capabilities: [.textGeneration, .conversation, .summarization],
@@ -41,6 +44,7 @@ class LocalMLXProvider: AIProvider {
     private let mlxWrapper: MLXWrapper
     private let mlxModelService: MLXModelService
     private let privacyManager: PrivacyManager
+    private let modelDiscovery = ModelDiscoveryService.shared
     
     private var usageStats = AIUsageStatistics(
         requestCount: 0,
@@ -70,12 +74,9 @@ class LocalMLXProvider: AIProvider {
             mlxModelService: mlxModelService
         )
         
-        // Set default selected model
-        if let savedModelId = UserDefaults.standard.string(forKey: "localMLXSelectedModel"),
-           let model = availableModels.first(where: { $0.id == savedModelId }) {
-            selectedModel = model
-        } else {
-            selectedModel = availableModels.first
+        // Initialize available models from discovery service
+        Task {
+            await loadAvailableModels()
         }
         
         NSLog("🤖 Local MLX Provider initialized with \(aiConfiguration.framework) framework")
@@ -292,6 +293,101 @@ class LocalMLXProvider: AIProvider {
             lastUsed: Date(),
             estimatedCost: nil // Local models have no cost
         )
+    }
+    
+    // MARK: - Dynamic Model Discovery
+    
+    /// Load available models from discovery service
+    @MainActor
+    private func loadAvailableModels() async {
+        // Get discovered models from the discovery service
+        let discoveredModels = modelDiscovery.discoveredModels
+        
+        // Convert discovered models to AIModel format
+        var models: [AIModel] = []
+        
+        for discoveredModel in discoveredModels {
+            let aiModel = AIModel(
+                id: discoveredModel.id,
+                name: discoveredModel.name,
+                description: createModelDescription(from: discoveredModel),
+                contextWindow: discoveredModel.metadata?.contextWindow ?? 8192,
+                costPerToken: nil,
+                capabilities: getModelCapabilities(for: discoveredModel.modelType),
+                provider: "local_mlx",
+                isAvailable: discoveredModel.isValid
+            )
+            models.append(aiModel)
+        }
+        
+        // If no models discovered, use fallback models
+        if models.isEmpty {
+            models = fallbackModels
+            NSLog("⚠️ No local models discovered, using fallback models")
+        }
+        
+        availableModels = models
+        
+        // Set default selected model
+        if let savedModelId = UserDefaults.standard.string(forKey: "localMLXSelectedModel"),
+           let model = availableModels.first(where: { $0.id == savedModelId }) {
+            selectedModel = model
+        } else {
+            selectedModel = availableModels.first
+        }
+        
+        NSLog("📚 Loaded \(availableModels.count) available models")
+    }
+    
+    /// Refresh model list by rescanning
+    func refreshModels() async {
+        await modelDiscovery.scanForModels()
+        await loadAvailableModels()
+    }
+    
+    /// Add a user model directory
+    func addUserModelDirectory(_ path: String) async {
+        await modelDiscovery.addUserModelPath(path)
+        await loadAvailableModels()
+    }
+    
+    /// Remove a user model directory
+    func removeUserModelDirectory(_ path: String) async {
+        await modelDiscovery.removeUserModelPath(path)
+        await loadAvailableModels()
+    }
+    
+    /// Get user-added model directories
+    func getUserModelDirectories() -> [String] {
+        return modelDiscovery.getUserModelPaths()
+    }
+    
+    private func createModelDescription(from discoveredModel: ModelDiscoveryService.DiscoveredModel) -> String {
+        var description = "\(discoveredModel.modelType.displayName) model"
+        
+        if let quantization = discoveredModel.metadata?.quantization {
+            description += " (\(quantization))"
+        }
+        
+        description += " - \(String(format: "%.1f", discoveredModel.sizeGB)) GB"
+        description += " - \(discoveredModel.source.displayName)"
+        
+        return description
+    }
+    
+    private func getModelCapabilities(for modelType: ModelDiscoveryService.DiscoveredModel.ModelType) -> [AICapability] {
+        switch modelType {
+        case .gemma:
+            return [.textGeneration, .conversation, .summarization]
+        case .llama:
+            return [.textGeneration, .conversation, .summarization, .codeGeneration]
+        case .mistral:
+            return [.textGeneration, .conversation, .codeGeneration]
+        case .phi:
+            return [.textGeneration, .conversation]
+        case .unknown:
+            return [.textGeneration, .conversation]
+        }
     }
 }
 
