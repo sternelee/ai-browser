@@ -50,8 +50,8 @@ final class MLXRunner: ObservableObject {
         set { queue.sync { _conversationTokenCount = newValue } }
     }
 
-    // MLX-specific model configurations using 2025 API
-    private static let defaultModelConfigurations: [String: ModelConfiguration] = [
+    // Fallback model configurations for Hugging Face downloads
+    private static let fallbackModelConfigurations: [String: ModelConfiguration] = [
         "gemma-3-2b": ModelConfiguration(
             id: "mlx-community/gemma-3-2b-it-4bit"
         ),
@@ -77,7 +77,16 @@ final class MLXRunner: ObservableObject {
 
     /// Ensures MLX model is loaded with persistent caching between app launches
     func ensureLoaded(modelKey: String = "gemma-3-2b") async throws {
-        guard let modelConfig = Self.defaultModelConfigurations[modelKey] else {
+        // Try to create model configuration from path or fallback to Hugging Face
+        let modelConfig: ModelConfiguration
+        
+        if modelKey.hasPrefix("/") {
+            // Direct path to local model
+            modelConfig = ModelConfiguration(id: modelKey)
+        } else if let fallbackConfig = Self.fallbackModelConfigurations[modelKey] {
+            // Use fallback Hugging Face model
+            modelConfig = fallbackConfig
+        } else {
             throw MLXError.invalidModel("Model configuration not found: \(modelKey)")
         }
         
