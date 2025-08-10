@@ -29,15 +29,33 @@ class OpenAIProvider: ExternalAPIProvider {
     override func loadAvailableModels() async {
         availableModels = [
             AIModel(
-                id: "gpt-4o",
-                name: "GPT-4o",
-                description: "Most capable GPT-4 model, optimized for chat and creative tasks",
-                contextWindow: 128000,
+                id: "gpt-5",
+                name: "GPT-5",
+                description: "Latest flagship model for reasoning and complex tasks",
+                contextWindow: 200_000,
                 costPerToken: nil,
                 pricing: ModelPricing(
-                    inputPerMTokensUSD: 5.0,  // placeholder; update from OpenAI pricing
-                    outputPerMTokensUSD: 15.0,  // placeholder; update from OpenAI pricing
-                    cachedInputPerMTokensUSD: 2.5
+                    inputPerMTokensUSD: 5.00,  // placeholder; update with current pricing
+                    outputPerMTokensUSD: 15.00,  // placeholder
+                    cachedInputPerMTokensUSD: 2.50
+                ),
+                capabilities: [
+                    .textGeneration, .conversation, .summarization, .codeGeneration,
+                    .functionCalling, .imageAnalysis,
+                ],
+                provider: providerId,
+                isAvailable: true
+            ),
+            AIModel(
+                id: "gpt-5-mini",
+                name: "GPT-5 Mini",
+                description: "Fast and affordable general-purpose model",
+                contextWindow: 200_000,
+                costPerToken: nil,
+                pricing: ModelPricing(
+                    inputPerMTokensUSD: 0.60,  // placeholder
+                    outputPerMTokensUSD: 2.40,  // placeholder
+                    cachedInputPerMTokensUSD: 0.30
                 ),
                 capabilities: [
                     .textGeneration, .conversation, .summarization, .codeGeneration,
@@ -47,33 +65,15 @@ class OpenAIProvider: ExternalAPIProvider {
                 isAvailable: true
             ),
             AIModel(
-                id: "gpt-4o-mini",
-                name: "GPT-4o Mini",
-                description: "Faster and more affordable GPT-4 model",
-                contextWindow: 128000,
+                id: "gpt-5-nano",
+                name: "GPT-5 Nano",
+                description: "Lowest-latency and most economical GPT-5 variant",
+                contextWindow: 200_000,
                 costPerToken: nil,
                 pricing: ModelPricing(
-                    inputPerMTokensUSD: 0.5,  // placeholder
-                    outputPerMTokensUSD: 1.5,  // placeholder
-                    cachedInputPerMTokensUSD: 0.25
-                ),
-                capabilities: [
-                    .textGeneration, .conversation, .summarization, .codeGeneration,
-                    .functionCalling,
-                ],
-                provider: providerId,
-                isAvailable: true
-            ),
-            AIModel(
-                id: "gpt-3.5-turbo",
-                name: "GPT-3.5 Turbo",
-                description: "Fast and cost-effective model for simpler tasks",
-                contextWindow: 16385,
-                costPerToken: nil,
-                pricing: ModelPricing(
-                    inputPerMTokensUSD: 0.5,  // placeholder
-                    outputPerMTokensUSD: 1.5,  // placeholder
-                    cachedInputPerMTokensUSD: nil
+                    inputPerMTokensUSD: 0.20,  // placeholder
+                    outputPerMTokensUSD: 0.80,  // placeholder
+                    cachedInputPerMTokensUSD: 0.10
                 ),
                 capabilities: [.textGeneration, .conversation, .summarization, .codeGeneration],
                 provider: providerId,
@@ -83,8 +83,7 @@ class OpenAIProvider: ExternalAPIProvider {
 
         // Set default model
         if selectedModel == nil {
-            selectedModel =
-                availableModels.first { $0.id == "gpt-4o-mini" } ?? availableModels.first
+            selectedModel = availableModels.first { $0.id == "gpt-5-mini" } ?? availableModels.first
         }
 
         NSLog("📋 Loaded \(availableModels.count) OpenAI models")
@@ -126,7 +125,7 @@ class OpenAIProvider: ExternalAPIProvider {
         model: AIModel?
     ) async throws -> AIResponse {
         let startTime = Date()
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-4o-mini"
+        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -223,7 +222,7 @@ class OpenAIProvider: ExternalAPIProvider {
         conversationHistory: [ConversationMessage],
         model: AIModel?
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-4o-mini"
+        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -286,7 +285,7 @@ class OpenAIProvider: ExternalAPIProvider {
         prompt: String,
         model: AIModel?
     ) async throws -> String {
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-4o-mini"
+        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         await applyRateLimit()
 
@@ -547,8 +546,8 @@ class OpenAIProvider: ExternalAPIProvider {
                 name: "Model",
                 description: "Select the GPT model to use",
                 type: .selection(availableModels.map { $0.name }),
-                defaultValue: "GPT-4o Mini",
-                currentValue: selectedModel?.name ?? "GPT-4o Mini",
+                defaultValue: "GPT-5 Mini",
+                currentValue: selectedModel?.name ?? "GPT-5 Mini",
                 isRequired: true
             ),
             AIProviderSetting(

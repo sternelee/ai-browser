@@ -29,27 +29,9 @@ class GeminiProvider: ExternalAPIProvider {
     override func loadAvailableModels() async {
         availableModels = [
             AIModel(
-                id: "gemini-2.0-flash-exp",
-                name: "Gemini 2.0 Flash",
+                id: "gemini-1.5-pro-latest",
+                name: "Gemini 1.5 Pro (latest)",
                 description: "Latest Gemini model with advanced multimodal capabilities",
-                contextWindow: 1_048_576,  // 1M tokens
-                costPerToken: nil,
-                pricing: ModelPricing(
-                    inputPerMTokensUSD: 0.1,  // placeholder
-                    outputPerMTokensUSD: 0.4,  // placeholder
-                    cachedInputPerMTokensUSD: nil
-                ),
-                capabilities: [
-                    .textGeneration, .conversation, .summarization, .codeGeneration, .imageAnalysis,
-                    .functionCalling,
-                ],
-                provider: providerId,
-                isAvailable: true
-            ),
-            AIModel(
-                id: "gemini-1.5-pro",
-                name: "Gemini 1.5 Pro",
-                description: "Most capable Gemini 1.5 model with large context window",
                 contextWindow: 2_097_152,  // 2M tokens
                 costPerToken: nil,
                 pricing: ModelPricing(
@@ -65,9 +47,9 @@ class GeminiProvider: ExternalAPIProvider {
                 isAvailable: true
             ),
             AIModel(
-                id: "gemini-1.5-flash",
-                name: "Gemini 1.5 Flash",
-                description: "Fast and efficient Gemini model for quick responses",
+                id: "gemini-1.5-flash-latest",
+                name: "Gemini 1.5 Flash (latest)",
+                description: "Fast, efficient Gemini model for quick responses",
                 contextWindow: 1_048_576,  // 1M tokens
                 costPerToken: nil,
                 pricing: ModelPricing(
@@ -81,12 +63,30 @@ class GeminiProvider: ExternalAPIProvider {
                 provider: providerId,
                 isAvailable: true
             ),
+            AIModel(
+                id: "gemini-2.0-flash-exp",
+                name: "Gemini 2.0 Flash (exp)",
+                description: "Experimental Gemini 2.0 Flash with advanced multimodal capabilities",
+                contextWindow: 1_048_576,  // 1M tokens
+                costPerToken: nil,
+                pricing: ModelPricing(
+                    inputPerMTokensUSD: 0.1,  // placeholder
+                    outputPerMTokensUSD: 0.4,  // placeholder
+                    cachedInputPerMTokensUSD: nil
+                ),
+                capabilities: [
+                    .textGeneration, .conversation, .summarization, .codeGeneration, .imageAnalysis,
+                    .functionCalling,
+                ],
+                provider: providerId,
+                isAvailable: true
+            ),
         ]
 
         // Set default model
         if selectedModel == nil {
             selectedModel =
-                availableModels.first { $0.id == "gemini-2.0-flash-exp" } ?? availableModels.first
+                availableModels.first { $0.id == "gemini-1.5-pro-latest" } ?? availableModels.first
         }
 
         NSLog("📋 Loaded \(availableModels.count) Gemini models")

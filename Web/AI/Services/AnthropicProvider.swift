@@ -30,8 +30,8 @@ class AnthropicProvider: ExternalAPIProvider {
     override func loadAvailableModels() async {
         availableModels = [
             AIModel(
-                id: "claude-3-5-sonnet-20241022",
-                name: "Claude 3.5 Sonnet",
+                id: "claude-4-sonnet-latest",
+                name: "Claude 4 Sonnet (latest)",
                 description: "Most capable Claude model, excellent for complex tasks and reasoning",
                 contextWindow: 200000,
                 costPerToken: nil,
@@ -48,8 +48,8 @@ class AnthropicProvider: ExternalAPIProvider {
                 isAvailable: true
             ),
             AIModel(
-                id: "claude-3-5-haiku-20241022",
-                name: "Claude 3.5 Haiku",
+                id: "claude-4-haiku-latest",
+                name: "Claude 4 Haiku (latest)",
                 description: "Fastest Claude model, optimized for quick responses",
                 contextWindow: 200000,
                 costPerToken: nil,
@@ -63,8 +63,8 @@ class AnthropicProvider: ExternalAPIProvider {
                 isAvailable: true
             ),
             AIModel(
-                id: "claude-3-opus-20240229",
-                name: "Claude 3 Opus",
+                id: "claude-4-opus-latest",
+                name: "Claude 4 Opus (latest)",
                 description: "Most powerful Claude model for the most complex tasks",
                 contextWindow: 200000,
                 costPerToken: nil,
@@ -85,7 +85,7 @@ class AnthropicProvider: ExternalAPIProvider {
         // Set default model
         if selectedModel == nil {
             selectedModel =
-                availableModels.first { $0.id == "claude-3-5-sonnet-20241022" }
+                availableModels.first { $0.id == "claude-4-sonnet-latest" }
                 ?? availableModels.first
         }
 
@@ -101,7 +101,7 @@ class AnthropicProvider: ExternalAPIProvider {
 
         // Test API key with a simple request
         let testPayload: [String: Any] = [
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-4-haiku-latest",
             "max_tokens": 5,
             "messages": [
                 ["role": "user", "content": "Hi"]
@@ -128,7 +128,7 @@ class AnthropicProvider: ExternalAPIProvider {
         model: AIModel?
     ) async throws -> AIResponse {
         let startTime = Date()
-        let modelId = model?.id ?? selectedModel?.id ?? "claude-3-5-sonnet-20241022"
+        let modelId = model?.id ?? selectedModel?.id ?? "claude-4-sonnet-latest"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -228,7 +228,7 @@ class AnthropicProvider: ExternalAPIProvider {
         conversationHistory: [ConversationMessage],
         model: AIModel?
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let modelId = model?.id ?? selectedModel?.id ?? "claude-3-5-sonnet-20241022"
+        let modelId = model?.id ?? selectedModel?.id ?? "claude-4-sonnet-latest"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -297,7 +297,7 @@ class AnthropicProvider: ExternalAPIProvider {
         prompt: String,
         model: AIModel?
     ) async throws -> String {
-        let modelId = model?.id ?? selectedModel?.id ?? "claude-3-5-sonnet-20241022"
+        let modelId = model?.id ?? selectedModel?.id ?? "claude-4-sonnet-latest"
 
         await applyRateLimit()
 
