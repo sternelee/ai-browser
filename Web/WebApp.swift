@@ -5,7 +5,7 @@ import os.log
 struct WebApp: App {
     let coreDataStack = CoreDataStack.shared
     let keyboardShortcutHandler = KeyboardShortcutHandler.shared
-    
+
     init() {
         configureLogging()
         // Initialize keyboard shortcut handler
@@ -19,12 +19,12 @@ struct WebApp: App {
         // Initialize update service and check for updates in background
         setupUpdateChecker()
     }
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .background(WindowConfigurator())
-                .background(WindowClipGuard()) // Guardrail: forces clipsToBounds=true to avoid TUINS crash
+                .background(WindowClipGuard())  // Guardrail: forces clipsToBounds=true to avoid TUINS crash
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
         }
         // Use hiddenTitleBar style to remove the system title bar entirely
@@ -34,28 +34,28 @@ struct WebApp: App {
             BrowserCommands()
         }
     }
-    
+
     private func configureLogging() {
         // Set environment variables to reduce WebKit verbosity
         // These help suppress the RBSService and ViewBridge logs
         setenv("WEBKIT_DISABLE_VERBOSE_LOGGING", "1", 1)
         setenv("WEBKIT_SUPPRESS_PROCESS_LOGS", "1", 1)
         setenv("OS_ACTIVITY_MODE", "disable", 1)
-        
+
         // Reduce logging for specific subsystems
         let logger = Logger(subsystem: "com.example.Web", category: "App")
         logger.info("Web browser started with reduced WebKit logging")
     }
-    
+
     private func setupUpdateChecker() {
         // Note: UpdateService is referenced but not implemented yet
         // For now, we'll implement a basic update checker that responds to suspension
         setupBackgroundAwareUpdateChecker()
     }
-    
+
     private func setupBackgroundAwareUpdateChecker() {
         var updateTimer: Timer?
-        
+
         // Function to create the update timer
         let createUpdateTimer = {
             updateTimer?.invalidate()
@@ -67,21 +67,25 @@ struct WebApp: App {
                 }
             }
         }
-        
+
         // Create initial timer
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             createUpdateTimer()
         }
-        
+
         // Listen for suspension notifications
-        NotificationCenter.default.addObserver(forName: .suspendUpdateTimer, object: nil, queue: .main) { _ in
+        NotificationCenter.default.addObserver(
+            forName: .suspendUpdateTimer, object: nil, queue: .main
+        ) { _ in
             NSLog("⏸️ Suspending update timer")
             updateTimer?.invalidate()
             updateTimer = nil
         }
-        
+
         // Listen for resumption notifications
-        NotificationCenter.default.addObserver(forName: .resumeUpdateTimer, object: nil, queue: .main) { _ in
+        NotificationCenter.default.addObserver(
+            forName: .resumeUpdateTimer, object: nil, queue: .main
+        ) { _ in
             NSLog("▶️ Resuming update timer")
             createUpdateTimer()
         }
@@ -96,47 +100,47 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .newTabRequested, object: nil)
             }
             .keyboardShortcut("t", modifiers: .command)
-            
+
             Button("Close Tab") {
                 // TODO: Implement close tab shortcut
                 NotificationCenter.default.post(name: .closeTabRequested, object: nil)
             }
             .keyboardShortcut("w", modifiers: .command)
-            
+
             Button("Reopen Closed Tab") {
                 // TODO: Implement reopen closed tab shortcut
                 NotificationCenter.default.post(name: .reopenTabRequested, object: nil)
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            
+
             Button("New Incognito Tab") {
                 NotificationCenter.default.post(name: .newIncognitoTabRequested, object: nil)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
         }
-        
+
         CommandGroup(after: .toolbar) {
             Button("Reload") {
                 NotificationCenter.default.post(name: .reloadRequested, object: nil)
             }
             .keyboardShortcut("r", modifiers: .command)
-            
+
             Button("Focus Address Bar") {
                 NotificationCenter.default.post(name: .focusAddressBarRequested, object: nil)
             }
             .keyboardShortcut("l", modifiers: .command)
         }
-        
+
         CommandGroup(after: .textEditing) {
             Button("Find in Page") {
                 NotificationCenter.default.post(name: .findInPageRequested, object: nil)
             }
             .keyboardShortcut("f", modifiers: .command)
-            
+
             // Removed emergency focus reset - no longer needed with simplified focus
-            
+
         }
-        
+
         CommandMenu("Bookmarks") {
             Button("Bookmark This Page") {
                 NotificationCenter.default.post(
@@ -145,116 +149,116 @@ struct BrowserCommands: Commands {
                 )
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
-            
+
             Button("Show All Bookmarks") {
                 NotificationCenter.default.post(name: .bookmarkPageRequested, object: nil)
             }
             .keyboardShortcut("d", modifiers: .command)
-            
+
             Divider()
-            
+
             BookmarksMenuContent()
         }
-        
+
         CommandMenu("History") {
             Button("Show All History") {
                 NotificationCenter.default.post(name: .showHistoryRequested, object: nil)
             }
             .keyboardShortcut("y", modifiers: .command)
-            
+
             Button("Clear History...") {
                 // TODO: Implement clear history
             }
-            
+
             Divider()
-            
+
             HistoryMenuContent()
         }
-        
+
         CommandMenu("Downloads") {
             Button("Show Downloads") {
                 NotificationCenter.default.post(name: .showDownloadsRequested, object: nil)
             }
             .keyboardShortcut("j", modifiers: [.command, .shift])
-            
+
             Button("Clear Downloads...") {
                 // TODO: Implement clear downloads
             }
-            
+
             Divider()
-            
+
             DownloadsMenuContent()
         }
-        
+
         CommandMenu("Settings") {
             Button("Preferences...") {
                 NotificationCenter.default.post(name: .showSettingsRequested, object: nil)
             }
             .keyboardShortcut(",", modifiers: .command)
         }
-        
+
         CommandGroup(replacing: .appInfo) {
             Button("About Web") {
                 NotificationCenter.default.post(name: .showAboutRequested, object: nil)
             }
         }
-        
+
         CommandMenu("AI Assistant") {
             Button("Toggle AI Sidebar") {
                 NotificationCenter.default.post(name: .toggleAISidebar, object: nil)
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
-            
+
             Button("Focus AI Input") {
                 NotificationCenter.default.post(name: .focusAIInput, object: nil)
             }
             .keyboardShortcut("a", modifiers: [.command, .option])
         }
-        
+
         CommandGroup(after: .windowArrangement) {
-            
+
             Button("Developer Tools") {
                 NotificationCenter.default.post(name: .showDeveloperToolsRequested, object: nil)
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
-            
+
             Button("Toggle Tab Display") {
                 NotificationCenter.default.post(name: .toggleTabDisplay, object: nil)
             }
             .keyboardShortcut("s", modifiers: .command)
-            
+
             Button("Toggle Edge-to-Edge Mode") {
                 NotificationCenter.default.post(name: .toggleEdgeToEdge, object: nil)
             }
             .keyboardShortcut("b", modifiers: [.command, .shift])
-            
+
             Button("Toggle Top Bar") {
                 NotificationCenter.default.post(name: .toggleTopBar, object: nil)
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
-            
+
             Button("Next Tab") {
                 NotificationCenter.default.post(name: .nextTabRequested, object: nil)
             }
             .keyboardShortcut("]", modifiers: [.command, .shift])
-            
+
             Button("Previous Tab") {
                 NotificationCenter.default.post(name: .previousTabRequested, object: nil)
             }
             .keyboardShortcut("[", modifiers: [.command, .shift])
-            
+
             Button("Next Tab (Arrow)") {
                 NotificationCenter.default.post(name: .nextTabRequested, object: nil)
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
-            
+
             Button("Previous Tab (Arrow)") {
                 NotificationCenter.default.post(name: .previousTabRequested, object: nil)
             }
             .keyboardShortcut(.leftArrow, modifiers: .command)
-            
+
             Divider()
-            
+
             // Tab selection shortcuts (Cmd+1 through Cmd+9)
             ForEach(1...9, id: \.self) { number in
                 Button("Go to Tab \(number)") {
@@ -285,13 +289,13 @@ extension Notification.Name {
     static let dismissHoverableURLBar = Notification.Name("dismissHoverableURLBar")
     static let hoverableURLBarDismissed = Notification.Name("hoverableURLBarDismissed")
     // Removed clearFocusForID - no longer needed with simplified focus
-    
+
     // Phase 2: Next-Gen UI shortcuts
     static let toggleTabDisplay = Notification.Name("toggleTabDisplay")
     static let toggleEdgeToEdge = Notification.Name("toggleEdgeToEdge")
     static let navigateBack = Notification.Name("navigateBack")
     static let navigateForward = Notification.Name("navigateForward")
-    
+
     // Tab navigation shortcuts
     static let nextTabRequested = Notification.Name("nextTabRequested")
     static let previousTabRequested = Notification.Name("previousTabRequested")
@@ -300,16 +304,12 @@ extension Notification.Name {
     static let toggleTopBar = Notification.Name("toggleTopBar")
     static let createNewTabWithURL = Notification.Name("createNewTabWithURL")
     static let focusURLBarRequested = Notification.Name("focusURLBarRequested")
-    
-    // AI Assistant shortcuts
-    static let toggleAISidebar = Notification.Name("toggleAISidebar")
-    static let focusAIInput = Notification.Name("focusAIInput")
-    static let aISidebarStateChanged = Notification.Name("aISidebarStateChanged")
-    static let pageNavigationCompleted = Notification.Name("pageNavigationCompleted")
-    
+
+    // AI Assistant shortcuts are declared in `Utils/Extensions/Notifications+Names.swift`
+
     // Network error handling shortcuts
     static let showNoInternetConnection = Notification.Name("showNoInternetConnection")
-    
+
     // Security and Privacy shortcuts
     // Note: newIncognitoTabRequested is defined in IncognitoSession.swift
 }
@@ -319,10 +319,10 @@ extension Notification.Name {
 /// Displays actual bookmarks in the Bookmarks menu
 struct BookmarksMenuContent: View {
     @ObservedObject private var bookmarkService = BookmarkService.shared
-    
+
     var body: some View {
         let bookmarks = bookmarkService.getAllBookmarks()
-        
+
         if bookmarks.isEmpty {
             Text("No bookmarks")
                 .foregroundColor(.secondary)
@@ -335,7 +335,7 @@ struct BookmarksMenuContent: View {
                 }
                 .truncationMode(.tail)
             }
-            
+
             if bookmarks.count > 15 {
                 Divider()
                 Text("... and \(bookmarks.count - 15) more")
@@ -348,10 +348,10 @@ struct BookmarksMenuContent: View {
 /// Displays recent history in the History menu
 struct HistoryMenuContent: View {
     @ObservedObject private var historyService = HistoryService.shared
-    
+
     var body: some View {
         let recentHistory = historyService.recentHistory
-        
+
         if recentHistory.isEmpty {
             Text("No history")
                 .foregroundColor(.secondary)
@@ -365,11 +365,11 @@ struct HistoryMenuContent: View {
                 }
                 .truncationMode(.tail)
             }
-            
+
             // If there are more than 10 items, show them in submenus
             if recentHistory.count > 10 {
                 Divider()
-                
+
                 // Show next 25 items in "Earlier Today" submenu
                 if recentHistory.count > 10 {
                     let earlierItems = Array(recentHistory.dropFirst(10).prefix(25))
@@ -378,7 +378,8 @@ struct HistoryMenuContent: View {
                             ForEach(earlierItems, id: \.id) { item in
                                 Button(item.displayTitle) {
                                     if let url = URL(string: item.url) {
-                                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                                        NotificationCenter.default.post(
+                                            name: .createNewTabWithURL, object: url)
                                     }
                                 }
                                 .truncationMode(.tail)
@@ -386,7 +387,7 @@ struct HistoryMenuContent: View {
                         }
                     }
                 }
-                
+
                 // Show next 50 items in "Yesterday & Earlier" submenu
                 if recentHistory.count > 35 {
                     let olderItems = Array(recentHistory.dropFirst(35).prefix(50))
@@ -395,7 +396,8 @@ struct HistoryMenuContent: View {
                             ForEach(olderItems, id: \.id) { item in
                                 Button(item.displayTitle) {
                                     if let url = URL(string: item.url) {
-                                        NotificationCenter.default.post(name: .createNewTabWithURL, object: url)
+                                        NotificationCenter.default.post(
+                                            name: .createNewTabWithURL, object: url)
                                     }
                                 }
                                 .truncationMode(.tail)
@@ -411,11 +413,11 @@ struct HistoryMenuContent: View {
 /// Displays recent downloads in the Downloads menu
 struct DownloadsMenuContent: View {
     @ObservedObject private var downloadManager = DownloadManager.shared
-    
+
     var body: some View {
         let activeDownloads = downloadManager.downloads
         let recentHistory = downloadManager.downloadHistory
-        
+
         if activeDownloads.isEmpty && recentHistory.isEmpty {
             Text("No downloads")
                 .foregroundColor(.secondary)
@@ -430,12 +432,12 @@ struct DownloadsMenuContent: View {
                     }
                     .disabled(download.status != .completed)
                 }
-                
+
                 if !recentHistory.isEmpty {
                     Divider()
                 }
             }
-            
+
             // Show recent download history
             ForEach(recentHistory.prefix(10), id: \.id) { item in
                 Button(item.filename) {

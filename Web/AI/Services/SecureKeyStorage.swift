@@ -50,21 +50,24 @@ class SecureKeyStorage {
         let account = provider.keychainAccount
         let data = apiKey.data(using: .utf8)!
 
-        // Create query with biometric protection
-        let query: [String: Any] = [
+        // Create query. Prefer biometric if available; otherwise fall back to standard protection.
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            // Require biometric authentication for access
-            kSecAttrAccessControl as String: SecAccessControlCreateWithFlags(
-                nil,
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                [.biometryCurrentSet],
-                nil
-            ) as Any,
         ]
+
+        // Attempt to add biometric access control if device supports it
+        if let access = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            [.biometryCurrentSet],
+            nil
+        ) {
+            query[kSecAttrAccessControl as String] = access
+        }
 
         // Delete existing key if present
         let deleteQuery: [String: Any] = [
@@ -75,8 +78,13 @@ class SecureKeyStorage {
 
         SecItemDelete(deleteQuery as CFDictionary)
 
-        // Add new key
-        let status = SecItemAdd(query as CFDictionary, nil)
+        // Add new key (first try with biometric access, then fall back without if needed)
+        var status = SecItemAdd(query as CFDictionary, nil)
+        if status != errSecSuccess {
+            // Fallback: remove access control and try again with standard accessibility only
+            query.removeValue(forKey: kSecAttrAccessControl as String)
+            status = SecItemAdd(query as CFDictionary, nil)
+        }
 
         guard status == errSecSuccess else {
             throw KeyStorageError.keychainError(status)
@@ -89,13 +97,16 @@ class SecureKeyStorage {
     func retrieveAPIKey(for provider: AIProvider) throws -> String? {
         let account = provider.keychainAccount
 
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+
+        // Allow user prompt if biometric-protected
+        query[kSecUseOperationPrompt as String] = "Authenticate to access API key"
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

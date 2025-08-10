@@ -4,40 +4,40 @@ import Foundation
 /// Provides unified interface for different AI backends with streaming support
 @MainActor
 protocol AIProvider {
-    
+
     // MARK: - Provider Information
-    
+
     /// Unique identifier for this provider
     var providerId: String { get }
-    
+
     /// Human-readable name for UI display
     var displayName: String { get }
-    
+
     /// Type of provider (local or external API)
     var providerType: AIProviderType { get }
-    
+
     /// Current initialization status
     var isInitialized: Bool { get }
-    
+
     /// Available models for this provider
     var availableModels: [AIModel] { get }
-    
+
     /// Currently selected model
     var selectedModel: AIModel? { get set }
-    
+
     // MARK: - Lifecycle Methods
-    
+
     /// Initialize the provider (download models, validate keys, etc.)
     func initialize() async throws
-    
+
     /// Check if provider is ready for use
     func isReady() async -> Bool
-    
+
     /// Cleanup resources when switching providers
     func cleanup() async
-    
+
     // MARK: - Core AI Methods
-    
+
     /// Generate a complete response for the given query
     func generateResponse(
         query: String,
@@ -45,7 +45,7 @@ protocol AIProvider {
         conversationHistory: [ConversationMessage],
         model: AIModel?
     ) async throws -> AIResponse
-    
+
     /// Generate a streaming response with real-time token updates
     func generateStreamingResponse(
         query: String,
@@ -53,35 +53,35 @@ protocol AIProvider {
         conversationHistory: [ConversationMessage],
         model: AIModel?
     ) async throws -> AsyncThrowingStream<String, Error>
-    
+
     /// Generate a response from raw prompt (for TLDR, etc.)
     func generateRawResponse(
         prompt: String,
         model: AIModel?
     ) async throws -> String
-    
+
     /// Summarize a conversation
     func summarizeConversation(
         _ messages: [ConversationMessage],
         model: AIModel?
     ) async throws -> String
-    
+
     // MARK: - Provider-Specific Configuration
-    
+
     /// Validate configuration (API keys, model availability, etc.)
     func validateConfiguration() async throws
-    
+
     /// Get provider-specific settings that can be configured
     func getConfigurableSettings() -> [AIProviderSetting]
-    
+
     /// Update a provider setting
     func updateSetting(_ setting: AIProviderSetting, value: Any) throws
-    
+
     // MARK: - Conversation Management
-    
+
     /// Reset conversation state to prevent context bleeding
     func resetConversation() async
-    
+
     /// Get provider-specific usage statistics
     func getUsageStatistics() -> AIUsageStatistics
 }
@@ -92,7 +92,7 @@ protocol AIProvider {
 enum AIProviderType: String, CaseIterable {
     case local = "local"
     case external = "external"
-    
+
     var displayName: String {
         switch self {
         case .local:
@@ -109,21 +109,30 @@ struct AIModel: Identifiable, Codable, Hashable {
     let name: String
     let description: String
     let contextWindow: Int
-    let costPerToken: Double?
+    let costPerToken: Double?  // Deprecated: prefer `pricing`
+    let pricing: ModelPricing?  // New pricing model (per 1M tokens), optional for backward-compat
     let capabilities: [AICapability]
     let provider: String
     let isAvailable: Bool
-    
+
     static let defaultLocal = AIModel(
         id: "gemma3_2B_4bit",
         name: "Gemma 3 2B",
         description: "Local privacy-focused model optimized for Apple Silicon",
         contextWindow: 8192,
         costPerToken: nil,
+        pricing: nil,
         capabilities: [.textGeneration, .conversation, .summarization],
         provider: "local_mlx",
         isAvailable: true
     )
+}
+
+/// Pricing details expressed per 1M tokens
+struct ModelPricing: Codable, Hashable {
+    let inputPerMTokensUSD: Double?
+    let outputPerMTokensUSD: Double?
+    let cachedInputPerMTokensUSD: Double?
 }
 
 /// AI capabilities that models can support
@@ -134,7 +143,7 @@ enum AICapability: String, CaseIterable, Codable {
     case codeGeneration = "code_generation"
     case imageAnalysis = "image_analysis"
     case functionCalling = "function_calling"
-    
+
     var displayName: String {
         switch self {
         case .textGeneration:
@@ -162,7 +171,7 @@ struct AIProviderSetting: Identifiable {
     let defaultValue: Any
     let currentValue: Any
     let isRequired: Bool
-    
+
     enum SettingType {
         case string
         case number
@@ -189,7 +198,7 @@ struct EnhancedAIResponse {
     let usage: TokenUsage
     let processingTime: TimeInterval
     let metadata: [String: Any]
-    
+
     struct TokenUsage {
         let promptTokens: Int
         let completionTokens: Int
@@ -203,25 +212,25 @@ struct EnhancedAIResponse {
 /// Manager for AI providers supporting multiple backends
 @MainActor
 class AIProviderManager: ObservableObject {
-    
+
     static let shared = AIProviderManager()
-    
+
     @Published var availableProviders: [AIProvider] = []
     @Published var currentProvider: AIProvider?
     @Published var isInitializing: Bool = false
-    
+
     private let secureStorage = SecureKeyStorage.shared
     private let userDefaults = UserDefaults.standard
-    
+
     private init() {
         loadAvailableProviders()
     }
-    
+
     /// Register all available providers
     private func loadAvailableProviders() {
         // Local MLX provider is always available
         availableProviders.append(LocalMLXProvider())
-        
+
         // External providers available if API keys exist
         for providerType in SecureKeyStorage.AIProvider.allCases {
             if secureStorage.hasAPIKey(for: providerType) {
@@ -235,35 +244,36 @@ class AIProviderManager: ObservableObject {
                 }
             }
         }
-        
+
         // Set default provider
         if let savedProviderId = userDefaults.string(forKey: "selectedAIProvider"),
-           let provider = availableProviders.first(where: { $0.providerId == savedProviderId }) {
+            let provider = availableProviders.first(where: { $0.providerId == savedProviderId })
+        {
             currentProvider = provider
         } else {
             // Default to local MLX provider
             currentProvider = availableProviders.first { $0.providerType == .local }
         }
     }
-    
+
     /// Switch to a different provider
     func switchProvider(to provider: AIProvider) async throws {
         isInitializing = true
         defer { isInitializing = false }
-        
+
         // Cleanup current provider
         await currentProvider?.cleanup()
-        
+
         // Initialize new provider
         try await provider.initialize()
-        
+
         // Update current provider
         currentProvider = provider
         userDefaults.set(provider.providerId, forKey: "selectedAIProvider")
-        
+
         NSLog("🔄 Switched AI provider to \(provider.displayName)")
     }
-    
+
     /// Add a new external provider when API key is configured
     func addExternalProvider(_ providerType: SecureKeyStorage.AIProvider) {
         // Remove existing provider of this type
@@ -273,7 +283,7 @@ class AIProviderManager: ObservableObject {
             }
             return false
         }
-        
+
         // Add new provider
         switch providerType {
         case .openai:
@@ -284,7 +294,7 @@ class AIProviderManager: ObservableObject {
             availableProviders.append(GeminiProvider())
         }
     }
-    
+
     /// Remove external provider when API key is deleted
     func removeExternalProvider(_ providerType: SecureKeyStorage.AIProvider) {
         availableProviders.removeAll { provider in
@@ -293,24 +303,31 @@ class AIProviderManager: ObservableObject {
             }
             return false
         }
-        
+
         // Switch to local provider if current provider was removed
         if let currentProvider = currentProvider,
-           let externalProvider = currentProvider as? ExternalAPIProvider,
-           externalProvider.apiProviderType == providerType {
+            let externalProvider = currentProvider as? ExternalAPIProvider,
+            externalProvider.apiProviderType == providerType
+        {
             Task {
-                if let localProvider = availableProviders.first(where: { $0.providerType == .local }) {
+                if let localProvider = availableProviders.first(where: { $0.providerType == .local }
+                ) {
                     try? await switchProvider(to: localProvider)
                 }
             }
         }
     }
-    
+
     /// Update the selected model for the current provider
     func updateSelectedModel(_ model: AIModel) {
-        guard currentProvider != nil else { return }
-        currentProvider?.selectedModel = model
-        NSLog("🔄 Updated selected model to \(model.name) for \(currentProvider?.displayName ?? "unknown")")
+        guard let currentProvider else { return }
+        // Reassign through a local variable to satisfy 'let' semantics of protocol existential
+        var updatedProvider = currentProvider
+        updatedProvider.selectedModel = model
+        self.currentProvider = updatedProvider
+        // Notify observers that provider has changed (to refresh UI that reads nested properties)
+        objectWillChange.send()
+        NSLog("🔄 Updated selected model to \(model.name) for \(updatedProvider.displayName)")
     }
 }
 
@@ -318,18 +335,18 @@ class AIProviderManager: ObservableObject {
 
 /// Base class for external API providers with common functionality
 class ExternalAPIProvider: AIProvider {
-    
+
     // MARK: - AIProvider Implementation
-    
+
     var providerId: String { fatalError("Must be implemented by subclass") }
     var displayName: String { fatalError("Must be implemented by subclass") }
     var providerType: AIProviderType { .external }
     var isInitialized: Bool = false
     var availableModels: [AIModel] = []
     var selectedModel: AIModel?
-    
+
     // MARK: - External Provider Properties
-    
+
     let apiProviderType: SecureKeyStorage.AIProvider
     internal var apiKey: String?
     private let secureStorage = SecureKeyStorage.shared
@@ -341,40 +358,53 @@ class ExternalAPIProvider: AIProvider {
         lastUsed: nil,
         estimatedCost: 0
     )
-    
+
+    // MARK: - Resilience (Backoff & Circuit Breaker)
+
+    // Consecutive failures across recent attempts
+    private var consecutiveFailures: Int = 0
+    // If not nil, the circuit is open until this time and requests should fail fast
+    private var circuitOpenUntil: Date?
+    // Tuning parameters
+    let maxAttempts = 5
+    private let baseBackoff: TimeInterval = 0.5
+    private let maxBackoff: TimeInterval = 8.0
+    private let failureThresholdToOpenCircuit = 3
+    private let circuitOpenSeconds: TimeInterval = 30
+
     init(apiProviderType: SecureKeyStorage.AIProvider) {
         self.apiProviderType = apiProviderType
     }
-    
+
     func initialize() async throws {
         // Retrieve API key from secure storage
         apiKey = try secureStorage.retrieveAPIKey(for: apiProviderType)
-        
+
         guard apiKey != nil else {
             throw AIProviderError.missingAPIKey(displayName)
         }
-        
+
         // Validate API key and load models
         try await validateConfiguration()
         await loadAvailableModels()
-        
+
         isInitialized = true
         NSLog("✅ \(displayName) provider initialized")
     }
-    
+
     func isReady() async -> Bool {
         return isInitialized && apiKey != nil && !availableModels.isEmpty
     }
-    
+
     func cleanup() async {
         isInitialized = false
         apiKey = nil
         availableModels = []
         selectedModel = nil
     }
-    
+
     // MARK: - Methods to be implemented by subclasses
-    
+
     func generateResponse(
         query: String,
         context: String?,
@@ -383,7 +413,7 @@ class ExternalAPIProvider: AIProvider {
     ) async throws -> AIResponse {
         fatalError("Must be implemented by subclass")
     }
-    
+
     func generateStreamingResponse(
         query: String,
         context: String?,
@@ -392,43 +422,43 @@ class ExternalAPIProvider: AIProvider {
     ) async throws -> AsyncThrowingStream<String, Error> {
         fatalError("Must be implemented by subclass")
     }
-    
+
     func generateRawResponse(
         prompt: String,
         model: AIModel?
     ) async throws -> String {
         fatalError("Must be implemented by subclass")
     }
-    
+
     func summarizeConversation(
         _ messages: [ConversationMessage],
         model: AIModel?
     ) async throws -> String {
         fatalError("Must be implemented by subclass")
     }
-    
+
     func validateConfiguration() async throws {
         fatalError("Must be implemented by subclass")
     }
-    
+
     func getConfigurableSettings() -> [AIProviderSetting] {
-        return [] // Default: no configurable settings
+        return []  // Default: no configurable settings
     }
-    
+
     func updateSetting(_ setting: AIProviderSetting, value: Any) throws {
         throw AIProviderError.unsupportedOperation("Setting updates not supported")
     }
-    
+
     func resetConversation() async {
         // Default: no-op for stateless API providers
     }
-    
+
     func getUsageStatistics() -> AIUsageStatistics {
         return usageStats
     }
-    
+
     // MARK: - Internal Helper Methods
-    
+
     internal func updateUsageStats(
         tokenCount: Int,
         responseTime: TimeInterval,
@@ -444,9 +474,98 @@ class ExternalAPIProvider: AIProvider {
             estimatedCost: (usageStats.estimatedCost ?? 0) + (cost ?? 0)
         )
     }
-    
+
     internal func loadAvailableModels() async {
         fatalError("Must be implemented by subclass")
+    }
+
+    // MARK: - Resilience Helpers
+
+    /// Throws if the circuit breaker is currently open.
+    internal func preflightCircuitBreaker() throws {
+        if let until = circuitOpenUntil, Date() < until {
+            throw AIProviderError.providerSpecificError("Circuit breaker open. Please retry later.")
+        }
+    }
+
+    /// Records a successful request and closes the circuit if needed.
+    internal func recordRequestSuccess() {
+        consecutiveFailures = 0
+        circuitOpenUntil = nil
+    }
+
+    /// Records a failed request and opens the circuit when threshold is reached.
+    internal func recordRequestFailure(httpStatus: Int?) {
+        // Do not count auth errors towards breaker; they require user action
+        if httpStatus == 401 { return }
+
+        consecutiveFailures += 1
+        if consecutiveFailures >= failureThresholdToOpenCircuit {
+            circuitOpenUntil = Date().addingTimeInterval(circuitOpenSeconds)
+            NSLog(
+                "⛔️ Circuit opened for provider \(providerId) until \(circuitOpenUntil!) after \(consecutiveFailures) failures"
+            )
+        }
+    }
+
+    /// Computes an exponential backoff with jitter. Honors Retry-After when present.
+    internal func backoffDelayForAttempt(_ attempt: Int, response: HTTPURLResponse?) -> TimeInterval
+    {
+        // Honor Retry-After header if provided
+        if let resp = response, let retryAfter = retryAfterSeconds(from: resp) {
+            return min(maxBackoff, max(baseBackoff, retryAfter))
+        }
+        let exp = min(maxBackoff, baseBackoff * pow(2, Double(attempt - 1)))
+        let jitter = Double.random(in: 0...(exp * 0.2))
+        return min(maxBackoff, exp + jitter)
+    }
+
+    /// Parses Retry-After header seconds or HTTP-date
+    private func retryAfterSeconds(from response: HTTPURLResponse) -> TimeInterval? {
+        guard let value = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+        if let secs = TimeInterval(value) { return secs }
+        // Try HTTP-date format
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+        if let date = df.date(from: value) {
+            return max(0, date.timeIntervalSinceNow)
+        }
+        return nil
+    }
+
+    // MARK: - Pricing Helpers
+
+    /// Compute estimated cost in USD given token usage and model id using `AIModel.pricing`.
+    /// Falls back to deprecated `costPerToken` if pricing is unavailable.
+    internal func estimateCostUSD(
+        forModelId modelId: String, promptTokens: Int, completionTokens: Int
+    ) -> Double? {
+        guard let model = availableModels.first(where: { $0.id == modelId }) else {
+            return nil
+        }
+        if let pricing = model.pricing {
+            let inUSD = (pricing.inputPerMTokensUSD ?? 0) * (Double(promptTokens) / 1_000_000.0)
+            let outUSD =
+                (pricing.outputPerMTokensUSD ?? 0) * (Double(completionTokens) / 1_000_000.0)
+            return inUSD + outUSD
+        }
+        if let cpt = model.costPerToken {
+            let total = promptTokens + completionTokens
+            return Double(total) * cpt
+        }
+        return nil
+    }
+
+    // MARK: - Privacy Helpers
+
+    /// Global per-provider preference: whether to include webpage context for cloud providers
+    internal func isContextSharingEnabled() -> Bool {
+        let key = "cloudContextSharingEnabled_\(providerId)"
+        if UserDefaults.standard.object(forKey: key) == nil {
+            return true  // default on
+        }
+        return UserDefaults.standard.bool(forKey: key)
     }
 }
 
@@ -461,7 +580,7 @@ enum AIProviderError: LocalizedError {
     case authenticationFailed
     case networkError(Error)
     case providerSpecificError(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .missingAPIKey(let provider):

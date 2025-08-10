@@ -1,90 +1,93 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 /// Privacy manager for AI conversation data
 /// Handles AES-256 encryption, data retention, and privacy controls
 class PrivacyManager: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     @Published var encryptionEnabled: Bool = true
     @Published var dataRetentionDays: Int = 7
     @Published var isInitialized: Bool = false
-    
+
     // MARK: - Private Properties
-    
+
     private var encryptionKey: SymmetricKey?
     private let keychain = Keychain(service: "com.web.ai.privacy")
     private let fileManager = FileManager.default
     private var secureDataDirectory: URL
-    
+
     // MARK: - Configuration
-    
+
     private let encryptionKeyIdentifier = "ai_conversation_encryption_key"
     private let maxDataRetentionDays = 30
     private let minDataRetentionDays = 1
-    
+
     // MARK: - Initialization
-    
+
     init() {
         // Set up secure data directory
-        let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let applicationSupport = fileManager.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
         secureDataDirectory = applicationSupport.appendingPathComponent("Web/AI/SecureData")
-        
+
         // Ensure secure directory exists
         do {
-            try fileManager.createDirectory(at: secureDataDirectory, withIntermediateDirectories: true)
-            
+            try fileManager.createDirectory(
+                at: secureDataDirectory, withIntermediateDirectories: true)
+
             // Set directory to not be backed up
             var resourceValues = URLResourceValues()
             resourceValues.isExcludedFromBackup = true
             try secureDataDirectory.setResourceValues(resourceValues)
-            
+
         } catch {
             NSLog("❌ Failed to create secure data directory: \(error)")
         }
-        
+
         NSLog("🔒 Privacy Manager initialized")
     }
-    
+
     // MARK: - Public Interface
-    
+
     /// Initialize privacy system without accessing keychain (delayed until first use)
     func initialize() async throws {
         do {
             // Skip encryption key setup on initialization to avoid keychain access
             // Key will be generated lazily when first needed
-            
+
             // Clean up expired data (doesn't require keychain)
             try await cleanupExpiredData()
-            
+
             isInitialized = true
             NSLog("✅ Privacy Manager initialization completed (keychain access deferred)")
-            
+
         } catch {
             NSLog("❌ Privacy Manager initialization failed: \(error)")
             throw PrivacyError.initializationFailed(error.localizedDescription)
         }
     }
-    
+
     /// Encrypt conversation data
     func encryptConversationData(_ data: Data) async throws -> EncryptedData {
         // Lazy initialization of encryption key when first needed
         if encryptionKey == nil {
             try await setupEncryptionKey()
         }
-        
+
         guard let key = encryptionKey else {
             throw PrivacyError.encryptionKeyNotAvailable
         }
-        
+
         do {
             // Generate nonce for this encryption operation
             let nonce = AES.GCM.Nonce()
-            
+
             // Encrypt the data
             let sealedBox = try AES.GCM.seal(data, using: key, nonce: nonce)
-            
+
             // Create encrypted data wrapper
             let encryptedData = EncryptedData(
                 ciphertext: sealedBox.ciphertext,
@@ -92,25 +95,25 @@ class PrivacyManager: ObservableObject {
                 tag: sealedBox.tag,
                 timestamp: Date()
             )
-            
+
             return encryptedData
-            
+
         } catch {
             throw PrivacyError.encryptionFailed(error.localizedDescription)
         }
     }
-    
+
     /// Decrypt conversation data
     func decryptConversationData(_ encryptedData: EncryptedData) async throws -> Data {
         // Lazy initialization of encryption key when first needed
         if encryptionKey == nil {
             try await setupEncryptionKey()
         }
-        
+
         guard let key = encryptionKey else {
             throw PrivacyError.encryptionKeyNotAvailable
         }
-        
+
         do {
             // Reconstruct sealed box
             let sealedBox = try AES.GCM.SealedBox(
@@ -118,87 +121,80 @@ class PrivacyManager: ObservableObject {
                 ciphertext: encryptedData.ciphertext,
                 tag: encryptedData.tag
             )
-            
+
             // Decrypt the data
             let decryptedData = try AES.GCM.open(sealedBox, using: key)
-            
+
             return decryptedData
-            
+
         } catch {
             throw PrivacyError.decryptionFailed(error.localizedDescription)
         }
     }
-    
+
     /// Store encrypted conversation
     func storeConversation(_ conversation: ConversationExport) async throws {
         do {
-            // TODO: Serialize conversation when Codable conformance is fixed
-            let data = Data() // Placeholder
-            // let data = try JSONEncoder().encode(conversation)
-            
+            // Serialize conversation securely (no raw content unless already present)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(ConversationExportCodable(from: conversation))
+
             // Encrypt data
             let encryptedData = try await encryptConversationData(data)
-            
-            // Store encrypted data
+
+            // Store encrypted data (as JSON containing ciphertext, nonce, tag, ts)
             let filename = "conversation_\(conversation.sessionId).encrypted"
             let fileURL = secureDataDirectory.appendingPathComponent(filename)
-            
-            // TODO: Implement proper serialization for EncryptedData
-            let _ = Data() // Placeholder - serialization not implemented yet
-            // try encryptedBytes.write(to: fileURL)
-            
+            let encodedEnvelope = try JSONEncoder().encode(
+                EncryptedDataCodable(from: encryptedData))
+            try encodedEnvelope.write(to: fileURL, options: .atomic)
+
             NSLog("🔒 Encrypted conversation stored: \(filename)")
-            
+
         } catch {
             throw PrivacyError.storageError(error.localizedDescription)
         }
     }
-    
+
     /// Retrieve and decrypt conversation
     func retrieveConversation(_ sessionId: String) async throws -> ConversationExport? {
         do {
             let filename = "conversation_\(sessionId).encrypted"
             let fileURL = secureDataDirectory.appendingPathComponent(filename)
-            
+
             guard fileManager.fileExists(atPath: fileURL.path) else {
                 return nil
             }
-            
-            // TODO: Implement proper deserialization for EncryptedData
-            let _ = try Data(contentsOf: fileURL)  // Placeholder - deserialization not implemented yet
-            // let encryptedData = try JSONDecoder().decode(EncryptedData.self, from: encryptedBytes)
-            return nil // Placeholder
-            
-            /*
-            // Check if data has expired
-            let age = Date().timeIntervalSince(encryptedData.timestamp)
+
+            let envelopeData = try Data(contentsOf: fileURL)
+            let envelope = try JSONDecoder().decode(EncryptedDataCodable.self, from: envelopeData)
+
+            // Check retention
+            let age = Date().timeIntervalSince(envelope.timestamp)
             if age > TimeInterval(dataRetentionDays * 24 * 3600) {
-                // Data has expired, delete it
                 try fileManager.removeItem(at: fileURL)
                 NSLog("🗑️ Expired conversation data deleted: \(filename)")
                 return nil
             }
-            
-            // Decrypt data
-            let decryptedData = try decryptConversationData(encryptedData)
-            
-            // Deserialize conversation
-            let conversation = try JSONDecoder().decode(ConversationExport.self, from: decryptedData)
-            
-            return conversation
-            */
-            
+
+            // Decrypt
+            let decrypted = try await decryptConversationData(envelope.toEncryptedData())
+            let conv = try JSONDecoder().decode(ConversationExportCodable.self, from: decrypted)
+            return conv.toConversationExport()
         } catch {
             throw PrivacyError.retrievalError(error.localizedDescription)
         }
     }
-    
+
     /// Get list of stored conversation sessions
     func getStoredSessions() async throws -> [String] {
         do {
-            let contents = try fileManager.contentsOfDirectory(at: secureDataDirectory, includingPropertiesForKeys: nil)
-            
-            let sessions = contents
+            let contents = try fileManager.contentsOfDirectory(
+                at: secureDataDirectory, includingPropertiesForKeys: nil)
+
+            let sessions =
+                contents
                 .filter { $0.pathExtension == "encrypted" }
                 .compactMap { url -> String? in
                     let filename = url.deletingPathExtension().lastPathComponent
@@ -207,19 +203,19 @@ class PrivacyManager: ObservableObject {
                     }
                     return nil
                 }
-            
+
             return sessions
-            
+
         } catch {
             throw PrivacyError.retrievalError(error.localizedDescription)
         }
     }
-    
+
     /// Delete specific conversation
     func deleteConversation(_ sessionId: String) async throws {
         let filename = "conversation_\(sessionId).encrypted"
         let fileURL = secureDataDirectory.appendingPathComponent(filename)
-        
+
         do {
             if fileManager.fileExists(atPath: fileURL.path) {
                 try fileManager.removeItem(at: fileURL)
@@ -229,34 +225,35 @@ class PrivacyManager: ObservableObject {
             throw PrivacyError.deletionError(error.localizedDescription)
         }
     }
-    
+
     /// Delete all AI conversation data
     func purgeAllData() async throws {
         do {
-            let contents = try fileManager.contentsOfDirectory(at: secureDataDirectory, includingPropertiesForKeys: nil)
-            
+            let contents = try fileManager.contentsOfDirectory(
+                at: secureDataDirectory, includingPropertiesForKeys: nil)
+
             for fileURL in contents {
                 try fileManager.removeItem(at: fileURL)
             }
-            
+
             NSLog("🗑️ All AI conversation data purged")
-            
+
         } catch {
             throw PrivacyError.purgeError(error.localizedDescription)
         }
     }
-    
+
     /// Update data retention policy
     func updateDataRetentionPolicy(days: Int) async throws {
         let clampedDays = max(minDataRetentionDays, min(maxDataRetentionDays, days))
         dataRetentionDays = clampedDays
-        
+
         // Clean up data that now exceeds the new retention period
         try await cleanupExpiredData()
-        
+
         NSLog("🔒 Data retention policy updated: \(clampedDays) days")
     }
-    
+
     /// Get privacy status
     func getPrivacyStatus() -> PrivacyStatus {
         return PrivacyStatus(
@@ -264,12 +261,14 @@ class PrivacyManager: ObservableObject {
             dataRetentionDays: dataRetentionDays,
             hasEncryptionKey: encryptionKey != nil,
             secureDataDirectory: secureDataDirectory,
-            storedConversations: (try? fileManager.contentsOfDirectory(at: secureDataDirectory, includingPropertiesForKeys: nil).count) ?? 0
+            storedConversations: (try? fileManager.contentsOfDirectory(
+                at: secureDataDirectory, includingPropertiesForKeys: nil
+            ).count) ?? 0
         )
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func setupEncryptionKey() async throws {
         // We want to be resilient: if keychain read fails (e.g. after OS upgrade,
         // permissions reset, or corrupted entry) we generate a fresh key rather
@@ -304,28 +303,32 @@ class PrivacyManager: ObservableObject {
             }
         }
     }
-    
+
     private func cleanupExpiredData() async throws {
         do {
-            let contents = try fileManager.contentsOfDirectory(at: secureDataDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
-            
+            let contents = try fileManager.contentsOfDirectory(
+                at: secureDataDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
+
             let cutoffDate = Date().addingTimeInterval(-TimeInterval(dataRetentionDays * 24 * 3600))
             var deletedCount = 0
-            
+
             for fileURL in contents {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.contentModificationDateKey])
-                
+                let resourceValues = try fileURL.resourceValues(forKeys: [
+                    .contentModificationDateKey
+                ])
+
                 if let modificationDate = resourceValues.contentModificationDate,
-                   modificationDate < cutoffDate {
+                    modificationDate < cutoffDate
+                {
                     try fileManager.removeItem(at: fileURL)
                     deletedCount += 1
                 }
             }
-            
+
             if deletedCount > 0 {
                 NSLog("🗑️ Cleaned up \(deletedCount) expired conversation files")
             }
-            
+
         } catch {
             NSLog("⚠️ Failed to cleanup expired data: \(error)")
         }
@@ -340,6 +343,114 @@ struct EncryptedData {
     let nonce: AES.GCM.Nonce
     let tag: Data
     let timestamp: Date
+}
+
+// Codable wrapper for EncryptedData to persist to disk
+private struct EncryptedDataCodable: Codable {
+    let ciphertext: Data
+    let nonce: Data
+    let tag: Data
+    let timestamp: Date
+
+    init(from data: EncryptedData) {
+        self.ciphertext = data.ciphertext
+        self.nonce = data.nonce.withUnsafeBytes { Data($0) }
+        self.tag = data.tag
+        self.timestamp = data.timestamp
+    }
+
+    func toEncryptedData() -> EncryptedData {
+        let nonce = try! AES.GCM.Nonce(data: nonce)
+        return EncryptedData(ciphertext: ciphertext, nonce: nonce, tag: tag, timestamp: timestamp)
+    }
+}
+
+// Codable wrapper for ConversationExport to allow persistence
+private struct ConversationExportCodable: Codable {
+    let sessionId: String
+    let exportedAt: Date
+    let messages: [ConversationMessageCodable]
+    let summary: ConversationSummaryCodable
+
+    init(from export: ConversationExport) {
+        self.sessionId = export.sessionId
+        self.exportedAt = export.exportedAt
+        self.messages = export.messages.map { ConversationMessageCodable(from: $0) }
+        self.summary = ConversationSummaryCodable(from: export.summary)
+    }
+
+    func toConversationExport() -> ConversationExport {
+        return ConversationExport(
+            sessionId: sessionId,
+            exportedAt: exportedAt,
+            messages: messages.map { $0.toMessage() },
+            summary: summary.toSummary()
+        )
+    }
+}
+
+private struct ConversationMessageCodable: Codable {
+    let id: String
+    let role: String
+    let content: String
+    let timestamp: Date
+    let contextData: String?
+    let metadata: String?
+
+    init(from msg: ConversationMessage) {
+        self.id = msg.id
+        self.role = msg.role.rawValue
+        self.content = msg.content
+        self.timestamp = msg.timestamp
+        self.contextData = msg.contextData
+        self.metadata = msg.metadata?.description
+    }
+
+    func toMessage() -> ConversationMessage {
+        return ConversationMessage(
+            id: id,
+            role: ConversationRole(rawValue: role) ?? .user,
+            content: content,
+            timestamp: timestamp,
+            contextData: contextData,
+            metadata: nil
+        )
+    }
+}
+
+private struct ConversationSummaryCodable: Codable {
+    let sessionId: String
+    let messageCount: Int
+    let userMessages: Int
+    let assistantMessages: Int
+    let startTime: Date
+    let endTime: Date
+    let totalTokens: Int
+    let topicsDiscussed: [String]
+
+    init(from summary: ConversationSummary) {
+        self.sessionId = summary.sessionId
+        self.messageCount = summary.messageCount
+        self.userMessages = summary.userMessages
+        self.assistantMessages = summary.assistantMessages
+        self.startTime = summary.startTime
+        self.endTime = summary.endTime
+        self.totalTokens = summary.totalTokens
+        self.topicsDiscussed = summary.topicsDiscussed
+    }
+
+    func toSummary() -> ConversationSummary {
+        return ConversationSummary(
+            sessionId: sessionId,
+            messageCount: messageCount,
+            userMessages: userMessages,
+            assistantMessages: assistantMessages,
+            startTime: startTime,
+            endTime: endTime,
+            totalTokens: totalTokens,
+            topicsDiscussed: topicsDiscussed
+        )
+    }
 }
 
 /// Privacy status information
@@ -362,7 +473,7 @@ enum PrivacyError: LocalizedError {
     case retrievalError(String)
     case deletionError(String)
     case purgeError(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .initializationFailed(let message):
@@ -392,34 +503,35 @@ enum PrivacyError: LocalizedError {
 /// Simple keychain wrapper for secure key storage
 private class Keychain {
     private let service: String
-    
+
     init(service: String) {
         self.service = service
     }
-    
+
     func set(_ data: Data, forKey key: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
-            kSecValueData as String: data
+            kSecValueData as String: data,
         ]
-        
+
         let status = SecItemAdd(query as CFDictionary, nil)
-        
+
         if status == errSecDuplicateItem {
             // Update existing item
             let updateQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
-                kSecAttrAccount as String: key
+                kSecAttrAccount as String: key,
             ]
-            
+
             let updateAttributes: [String: Any] = [
                 kSecValueData as String: data
             ]
-            
-            let updateStatus = SecItemUpdate(updateQuery as CFDictionary, updateAttributes as CFDictionary)
+
+            let updateStatus = SecItemUpdate(
+                updateQuery as CFDictionary, updateAttributes as CFDictionary)
             guard updateStatus == errSecSuccess else {
                 throw PrivacyError.keyGenerationFailed("Failed to update keychain item")
             }
@@ -429,28 +541,29 @@ private class Keychain {
             }
         }
     }
-    
+
     func getData(_ key: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        
+
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
+
         if status == errSecItemNotFound {
             return nil
         }
-        
+
         guard status == errSecSuccess,
-              let data = result as? Data else {
+            let data = result as? Data
+        else {
             throw PrivacyError.retrievalError("Failed to retrieve keychain item")
         }
-        
+
         return data
     }
 }
