@@ -10,9 +10,9 @@ Built natively with SwiftUI to delivers a minimal, progressive browsing experien
 
 *_Note: This is an experimental early access version, as AI models improve so will Web._*
 
-*_Note 2: The AI features require an Apple M chip._*
+*_Note 2: The AI features require an Apple M chip._* or BYOK to use AI providers like OpenAI, Anthropic and Gemini
 
-*_Note 3: The current version is meant to be used to play around and give feedback to gear development. It's missing key features as a browser._*
+*_Note 3: The current version is meant to experiment, play around and give feedback to gear development. It's missing key features as a browser._*
 
 ## What's working
 
