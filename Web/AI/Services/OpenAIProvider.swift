@@ -28,6 +28,7 @@ class OpenAIProvider: ExternalAPIProvider {
 
     override func loadAvailableModels() async {
         availableModels = [
+            // GPT-5 family
             AIModel(
                 id: "gpt-5",
                 name: "GPT-5",
@@ -35,8 +36,8 @@ class OpenAIProvider: ExternalAPIProvider {
                 contextWindow: 200_000,
                 costPerToken: nil,
                 pricing: ModelPricing(
-                    inputPerMTokensUSD: 5.00,  // placeholder; update with current pricing
-                    outputPerMTokensUSD: 15.00,  // placeholder
+                    inputPerMTokensUSD: 5.00,
+                    outputPerMTokensUSD: 15.00,
                     cachedInputPerMTokensUSD: 2.50
                 ),
                 capabilities: [
@@ -53,8 +54,8 @@ class OpenAIProvider: ExternalAPIProvider {
                 contextWindow: 200_000,
                 costPerToken: nil,
                 pricing: ModelPricing(
-                    inputPerMTokensUSD: 0.60,  // placeholder
-                    outputPerMTokensUSD: 2.40,  // placeholder
+                    inputPerMTokensUSD: 0.60,
+                    outputPerMTokensUSD: 2.40,
                     cachedInputPerMTokensUSD: 0.30
                 ),
                 capabilities: [
@@ -71,19 +72,60 @@ class OpenAIProvider: ExternalAPIProvider {
                 contextWindow: 200_000,
                 costPerToken: nil,
                 pricing: ModelPricing(
-                    inputPerMTokensUSD: 0.20,  // placeholder
-                    outputPerMTokensUSD: 0.80,  // placeholder
+                    inputPerMTokensUSD: 0.20,
+                    outputPerMTokensUSD: 0.80,
                     cachedInputPerMTokensUSD: 0.10
                 ),
                 capabilities: [.textGeneration, .conversation, .summarization, .codeGeneration],
                 provider: providerId,
                 isAvailable: true
             ),
+
+            // GPT-4o family (kept for stability)
+            AIModel(
+                id: "gpt-4o-mini",
+                name: "GPT-4o Mini",
+                description: "Fast, low-cost omni model ideal for most tasks",
+                contextWindow: 200_000,
+                costPerToken: nil,
+                pricing: ModelPricing(
+                    inputPerMTokensUSD: 0.60,
+                    outputPerMTokensUSD: 2.40,
+                    cachedInputPerMTokensUSD: 0.30
+                ),
+                capabilities: [
+                    .textGeneration, .conversation, .summarization, .codeGeneration,
+                    .functionCalling, .imageAnalysis,
+                ],
+                provider: providerId,
+                isAvailable: true
+            ),
+            AIModel(
+                id: "gpt-4o",
+                name: "GPT-4o",
+                description: "General‑purpose omni model with high quality",
+                contextWindow: 200_000,
+                costPerToken: nil,
+                pricing: ModelPricing(
+                    inputPerMTokensUSD: 5.00,
+                    outputPerMTokensUSD: 15.00,
+                    cachedInputPerMTokensUSD: 2.50
+                ),
+                capabilities: [
+                    .textGeneration, .conversation, .summarization, .codeGeneration,
+                    .functionCalling, .imageAnalysis,
+                ],
+                provider: providerId,
+                isAvailable: true
+            ),
         ]
 
-        // Set default model
+        // Set default model (prefer 5-mini if available)
         if selectedModel == nil {
-            selectedModel = availableModels.first { $0.id == "gpt-5-mini" } ?? availableModels.first
+            selectedModel =
+                availableModels.first { $0.id == "gpt-5-mini" }
+                ?? availableModels.first { $0.id == "gpt-4o-mini" }
+                ?? availableModels.first
         }
 
         NSLog("📋 Loaded \(availableModels.count) OpenAI models")
@@ -259,28 +301,33 @@ class OpenAIProvider: ExternalAPIProvider {
                             payload: buildPayload(with: attemptedModelId)
                         )
                     } catch {
-                        // Fallback only if initial is a gpt-5* model and we likely hit 400/404
-                        if attemptedModelId.hasPrefix("gpt-5") {
-                            let fallbackIds = ["gpt-4o-mini", "gpt-4o"]
-                            var succeeded = false
-                            for fid in fallbackIds {
-                                do {
-                                    attemptedModelId = fid
-                                    stream = try await makeStreamingAPIRequest(
-                                        endpoint: "/chat/completions",
-                                        payload: buildPayload(with: fid)
-                                    )
-                                    NSLog("↘️ OpenAI streaming fell back to \(fid)")
-                                    succeeded = true
-                                    break
-                                } catch {
-                                    continue
+                        // Fallback strategy: try close siblings if model likely unsupported
+                        let fallbackMatrix: [String: [String]] = [
+                            "gpt-5": ["gpt-4o-mini", "gpt-4o"],
+                            "gpt-4o-mini": ["gpt-4o"],
+                            "gpt-4o": ["gpt-4o-mini"],
+                        ]
+                        var attempted = false
+                        for (prefix, fallbacks) in fallbackMatrix {
+                            if attemptedModelId.hasPrefix(prefix) {
+                                for fid in fallbacks {
+                                    do {
+                                        attemptedModelId = fid
+                                        stream = try await makeStreamingAPIRequest(
+                                            endpoint: "/chat/completions",
+                                            payload: buildPayload(with: fid)
+                                        )
+                                        NSLog("↘️ OpenAI streaming fell back to \(fid)")
+                                        attempted = true
+                                        break
+                                    } catch {
+                                        continue
+                                    }
                                 }
+                                break
                             }
-                            if !succeeded { throw error }
-                        } else {
-                            throw error
                         }
+                        if !attempted { throw error }
                     }
 
                     for try await chunk in stream {
@@ -366,7 +413,8 @@ class OpenAIProvider: ExternalAPIProvider {
 
     private func makeAPIRequest(
         endpoint: String,
-        payload: [String: Any]
+        payload: [String: Any],
+        allowSamplingFallback: Bool = true
     ) async throws -> [String: Any] {
         // Circuit breaker
         try preflightCircuitBreaker()
@@ -439,8 +487,25 @@ class OpenAIProvider: ExternalAPIProvider {
                     let trimmed = snippet.prefix(500)
                     NSLog("❗️OpenAI HTTP \(httpResponse.statusCode): \(trimmed)")
                     recordRequestFailure(httpStatus: httpResponse.statusCode)
+
+                    // Smart fallback: some models only accept default sampling parameters.
+                    if httpResponse.statusCode == 400 && allowSamplingFallback,
+                        OpenAIProvider.isTemperatureUnsupportedErrorBody(data)
+                    {
+                        var sanitized = payload
+                        sanitized.removeValue(forKey: "temperature")
+                        sanitized.removeValue(forKey: "top_p")
+                        NSLog(
+                            "↘️ Retrying OpenAI request without sampling params due to temperature unsupported error"
+                        )
+                        return try await makeAPIRequest(
+                            endpoint: endpoint,
+                            payload: sanitized,
+                            allowSamplingFallback: false
+                        )
+                    }
+
                     if httpResponse.statusCode == 404 || httpResponse.statusCode == 400 {
-                        // Common when model id is invalid or not enabled
                         throw AIProviderError.providerSpecificError(
                             "Model not available or request invalid (HTTP \(httpResponse.statusCode)). Check selected model id and account access."
                         )
@@ -535,6 +600,42 @@ class OpenAIProvider: ExternalAPIProvider {
                                 continuation.finish()
                                 return
                             }
+
+                            // Smart fallback for sampling params in streaming mode
+                            if hr.statusCode == 400,
+                                OpenAIProvider.isTemperatureUnsupportedErrorData(d)
+                            {
+                                // Retry once without temperature/top_p in non-streaming mode for a clean message
+                                if var obj = try? JSONSerialization.jsonObject(
+                                    with: request.httpBody ?? Data()) as? [String: Any]
+                                {
+                                    obj.removeValue(forKey: "stream")
+                                    obj.removeValue(forKey: "temperature")
+                                    obj.removeValue(forKey: "top_p")
+                                    var retryReq = URLRequest(url: request.url!)
+                                    retryReq.httpMethod = "POST"
+                                    request.allHTTPHeaderFields?.forEach { k, v in
+                                        retryReq.setValue(v, forHTTPHeaderField: k)
+                                    }
+                                    retryReq.httpBody = try? JSONSerialization.data(
+                                        withJSONObject: obj)
+                                    if let (rd, rr) = try? await URLSession.shared.data(
+                                        for: retryReq),
+                                        let rhr = rr as? HTTPURLResponse,
+                                        200...299 ~= rhr.statusCode,
+                                        let rjson = (try? JSONSerialization.jsonObject(with: rd))
+                                            as? [String: Any],
+                                        let rchoices = rjson["choices"] as? [[String: Any]],
+                                        let rfirst = rchoices.first,
+                                        let rmessage = rfirst["message"] as? [String: Any],
+                                        let rcontent = rmessage["content"] as? String
+                                    {
+                                        continuation.yield(rcontent)
+                                        continuation.finish()
+                                        return
+                                    }
+                                }
+                            }
                         }
 
                         throw AIProviderError.providerSpecificError(
@@ -622,7 +723,17 @@ class OpenAIProvider: ExternalAPIProvider {
     // MARK: - Model helpers
 
     private func isNewModelAPI(_ modelId: String) -> Bool {
-        return modelId.hasPrefix("gpt-5") || modelId.hasPrefix("gpt-4o")
+        return modelId.hasPrefix("gpt-4o")
+    }
+
+    // MARK: - Error helpers
+    /// Detect OpenAI error when temperature/top_p are not supported by a model
+    private static func isTemperatureUnsupportedErrorBody(_ data: Data) -> Bool {
+        guard let snippet = String(data: data, encoding: .utf8)?.lowercased() else { return false }
+        return snippet.contains("unsupported value") && snippet.contains("temperature")
+    }
+    private static func isTemperatureUnsupportedErrorData(_ data: Data) -> Bool {
+        isTemperatureUnsupportedErrorBody(data)
     }
 
     // MARK: - Fallback handling

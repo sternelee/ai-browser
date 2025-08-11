@@ -48,13 +48,15 @@ struct AIProviderSettingsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: providerIcon(for: providerManager.currentProvider))
                             .font(.title2)
-                            .foregroundColor(providerColor(for: providerManager.currentProvider))
+                            .foregroundColor(
+                                providerColor(for: providerManager.currentProvider)
+                            )
                             .frame(width: 32, height: 32)
                             .background(
                                 Circle()
                                     .fill(
-                                        providerColor(for: providerManager.currentProvider).opacity(
-                                            0.1))
+                                        providerColor(for: providerManager.currentProvider)
+                                            .opacity(0.1))
                             )
 
                         VStack(alignment: .leading, spacing: 2) {
