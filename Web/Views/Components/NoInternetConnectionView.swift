@@ -361,8 +361,8 @@ struct NoInternetVisualEffectView: NSViewRepresentable {
 
 #Preview {
     NoInternetConnectionView(
-        onRetry: { print("Retry tapped") },
-        onGoBack: { print("Go back tapped") }
+        onRetry: { if AppLog.isVerboseEnabled { print("Retry tapped") } },
+        onGoBack: { if AppLog.isVerboseEnabled { print("Go back tapped") } }
     )
     .frame(width: 800, height: 600)
 }

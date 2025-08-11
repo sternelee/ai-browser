@@ -190,7 +190,7 @@ class AdBlockService: NSObject, ObservableObject {
             const observer = new MutationObserver(function(mutations) {
                 // Throttle processing if too many mutations to prevent CPU spikes
                 if (mutations.length > 50) {
-                    console.log('AdBlock: Too many mutations, throttling processing');
+            // console noise suppressed in production
                     return;
                 }
                 

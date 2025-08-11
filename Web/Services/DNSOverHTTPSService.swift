@@ -122,8 +122,7 @@ class DNSOverHTTPSService: ObservableObject {
         // WebKit DNS resolution is handled at the system level
         // This implementation sets environment variables that may be used by networking libraries
         
-        print("✅ DNS over HTTPS configured with provider: \(selectedProvider.displayName)")
-        print("🔒 Using DOH URL: \(url.absoluteString)")
+        if AppLog.isVerboseEnabled { print("✅ DOH configured: \(selectedProvider.displayName) @ \(url.absoluteString)") }
         
         // Set environment variables for DNS configuration
         setenv("DOH_URL", url.absoluteString, 1)
@@ -135,7 +134,7 @@ class DNSOverHTTPSService: ObservableObject {
     }
     
     private func resetToSystemDNS() {
-        print("🔄 Reset to system DNS")
+        if AppLog.isVerboseEnabled { print("Reset to system DNS") }
         unsetenv("DOH_URL")
         unsetenv("DOH_ENABLED")
     }
@@ -210,6 +209,6 @@ extension DNSOverHTTPSService {
         setenv("HTTPS_DNS_RESOLVER", dohURL, 1)
         setenv("DNS_OVER_HTTPS", "1", 1)
         
-        print("🔒 DNS over HTTPS environment configured for WebKit")
+        if AppLog.isVerboseEnabled { print("DOH environment configured for WebKit") }
     }
 }

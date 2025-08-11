@@ -602,7 +602,7 @@ class AuthStateManager: ObservableObject {
         
         if let logData = try? JSONSerialization.data(withJSONObject: logEntry, options: []),
            let logString = String(data: logData, encoding: .utf8) {
-            print("🔐 AuthStateManager: \(logString)")
+            if AppLog.isVerboseEnabled { print("🔐 AuthStateManager: \(logString)") }
         }
     }
     

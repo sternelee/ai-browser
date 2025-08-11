@@ -622,7 +622,7 @@ class MixedContentWarningManager: ObservableObject {
         url: URL(string: "https://example.com")!,
         tabID: UUID(),
         onUserDecision: { decision in
-            print("User decision: \(decision)")
+            if AppLog.isVerboseEnabled { print("User decision: \(decision)") }
         }
     )
     .frame(width: 600, height: 700)

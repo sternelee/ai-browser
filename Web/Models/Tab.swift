@@ -50,7 +50,7 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
                 let existingOwnerId = objc_getAssociatedObject(newWebView, &Self.webViewOwnershipKey) as? UUID
                 
                 if let existingId = existingOwnerId, existingId != id {
-                    print("🚨 CRITICAL: Attempting to assign WebView from another tab! Expected: \(id), Got: \(existingId)")
+                    if AppLog.isVerboseEnabled { print("🚨 Attempt to assign WebView from another tab. Expected: \(id), got: \(existingId)") }
                     return // Reject assignment to prevent content bleeding
                 }
                 
@@ -379,9 +379,9 @@ class Tab: ObservableObject, Identifiable, Transferable, Equatable {
         // Execute JavaScript timer cleanup to prevent CPU spikes
         webView.evaluateJavaScript("if (window.cleanupAllTimers) { window.cleanupAllTimers(); }") { result, error in
             if let error = error {
-                print("⚠️ Tab \(self.id) timer cleanup error: \(error.localizedDescription)")
+                if AppLog.isVerboseEnabled { print("⚠️ Tab \(self.id) timer cleanup error: \(error.localizedDescription)") }
             } else {
-                print("🧹 Tab \(self.id) timers cleaned up successfully")
+                if AppLog.isVerboseEnabled { print("🧹 Tab \(self.id) timers cleaned up successfully") }
             }
         }
     }

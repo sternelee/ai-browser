@@ -45,7 +45,7 @@ class URLSynchronizer: ObservableObject {
             
             // Validate input parameters
             guard self.isValidTabID(tabID) else {
-                print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for WebView navigation")
+                if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for WebView navigation") }
                 return
             }
             
@@ -70,12 +70,12 @@ class URLSynchronizer: ObservableObject {
             
             // Validate input parameters
             guard self.isValidTabID(tabID) else {
-                print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for user input")
+                if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for user input") }
                 return
             }
             
             guard !urlString.isEmpty else {
-                print("⚠️ URLSynchronizer: Empty URL string from user input")
+                if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: Empty URL string from user input") }
                 return
             }
             
@@ -134,7 +134,7 @@ class URLSynchronizer: ObservableObject {
             
             // Validate input parameters
             guard self.isValidTabID(tabID) else {
-                print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for programmatic update")
+                if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: Invalid tabID \(tabID) for programmatic update") }
                 return
             }
             
@@ -197,7 +197,7 @@ class URLSynchronizer: ObservableObject {
         
         // Validate URL string format
         if !urlString.isEmpty && url == nil {
-            print("⚠️ URLSynchronizer: URL string '\(urlString)' could not be converted to URL")
+            if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: URL string '\(urlString)' could not be converted to URL") }
         }
         
         // Update published properties
@@ -323,7 +323,7 @@ class URLSynchronizer: ObservableObject {
         }
         
         // Last resort: return nil for invalid URLs
-        print("⚠️ URLSynchronizer: Could not create valid URL from '\(trimmed)'")
+        if AppLog.isVerboseEnabled { print("⚠️ URLSynchronizer: Could not create valid URL from '\(trimmed)'") }
         return nil
     }
     

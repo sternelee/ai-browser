@@ -725,7 +725,7 @@ class OAuthManager: NSObject, ObservableObject {
         
         if let logData = try? JSONSerialization.data(withJSONObject: logEntry, options: []),
            let logString = String(data: logData, encoding: .utf8) {
-            print("🔐 OAuthManager: \(logString)")
+            if AppLog.isVerboseEnabled { print("🔐 OAuthManager: \(logString)") }
         }
     }
 }

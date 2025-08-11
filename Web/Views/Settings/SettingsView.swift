@@ -521,7 +521,7 @@ struct AdvancedSettingsView: View {
             UserDefaults.standard.removeObject(forKey: key)
         }
 
-        print("All browser settings have been reset to defaults")
+        if AppLog.isVerboseEnabled { print("All browser settings have been reset to defaults") }
 
         // Post notification to update UI
         NotificationCenter.default.post(name: NSNotification.Name("SettingsReset"), object: nil)
@@ -533,7 +533,7 @@ struct AdvancedSettingsView: View {
         let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
 
         dataStore.removeData(ofTypes: dataTypes, modifiedSince: .distantPast) {
-            print("All website data cleared successfully")
+            if AppLog.isVerboseEnabled { print("All website data cleared successfully") }
         }
 
         // Clear additional browser data from UserDefaults
@@ -547,7 +547,7 @@ struct AdvancedSettingsView: View {
             UserDefaults.standard.removeObject(forKey: key)
         }
 
-        print("All browser data has been cleared")
+        if AppLog.isVerboseEnabled { print("All browser data has been cleared") }
 
         // Post notification to update UI and other components
         NotificationCenter.default.post(name: NSNotification.Name("AllDataCleared"), object: nil)
