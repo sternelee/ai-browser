@@ -797,7 +797,12 @@ struct AISidebar: View {
         let todayTotals = usageStore.aggregate(in: startOfDay...now)
         let byProvider = Dictionary(grouping: todayTotals, by: { $0.providerId })
         let currentProviderId = AIProviderManager.shared.currentProvider?.providerId
-        let totalsForProvider = currentProviderId.flatMap { byProvider[$0]?.first }
+        let totalsForProvider: (tokens: Int, cost: Double)? = currentProviderId.flatMap { pid in
+            guard let rows = byProvider[pid], !rows.isEmpty else { return nil }
+            let sumTokens = rows.reduce(0) { $0 + $1.totalTokens }
+            let sumCost = rows.reduce(0.0) { $0 + $1.estimatedCostUSD }
+            return (sumTokens, sumCost)
+        }
 
         HStack(spacing: 8) {
             Image(systemName: "gauge")
@@ -805,11 +810,11 @@ struct AISidebar: View {
                 .foregroundColor(.secondary)
 
             if let t = totalsForProvider {
-                Text("Today: \(t.totalTokens) tok")
+                Text("Today: \(t.tokens) tok")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
-                if t.estimatedCostUSD > 0 {
-                    Text("$\(String(format: "%.3f", t.estimatedCostUSD))")
+                if t.cost > 0 {
+                    Text("$\(String(format: "%.3f", t.cost))")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                 }

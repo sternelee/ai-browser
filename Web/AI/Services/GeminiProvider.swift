@@ -316,6 +316,13 @@ class GeminiProvider: ExternalAPIProvider {
                     let responseTime = Date().timeIntervalSince(startTime)
                     let estCost = estimateCostUSD(
                         forModelId: modelId, promptTokens: 0, completionTokens: estTokens)
+                    // Update in-memory stats for settings view
+                    updateUsageStats(
+                        tokenCount: estTokens,
+                        responseTime: responseTime,
+                        cost: estCost,
+                        error: false
+                    )
                     AIUsageStore.shared.append(
                         providerId: providerId,
                         modelId: modelId,

@@ -312,6 +312,15 @@ public final class PageAgent: NSObject {
             return false
         }
 
+        // Case 4: generic network idle (no outstanding fetch/XHR for 600ms)
+        while Date().timeIntervalSince1970 < deadline {
+            let netIdle = await evalBool(
+                "(function(){ try { return window.__agentNetIsIdle && window.__agentNetIsIdle(600); } catch(e){ return false; } })();"
+            )
+            if netIdle { return true }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+
         // Default: small stabilization wait
         let fallback = min(max(300, to), 8000)
         try? await Task.sleep(nanoseconds: UInt64(fallback) * 1_000_000)

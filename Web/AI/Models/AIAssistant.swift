@@ -380,51 +380,55 @@ class AIAssistant: ObservableObject {
         }
     }
 
-    /// Insert domain-specific waits for dynamic content surfaces
+    /// Insert generic waits for dynamic content surfaces (agnostic)
     private static func postProcessPlanForSites(_ plan: [PageAction]) -> [PageAction] {
         var out: [PageAction] = []
-        func redditSelectorWait() -> PageAction {
-            // Wait for presence of post containers/anchors
-            return PageAction(
-                type: .waitFor,
-                text:
-                    "div[data-testid=\"post-container\"], article, [role=article], shreddit-post, .Post, .thing",
-                timeoutMs: 8000
-            )
+        func genericIdleWait(timeout: Int = 6000) -> PageAction {
+            // Encoded as waitFor; PageAgent.waitFor performs network-idle detection as a final phase
+            return PageAction(type: .waitFor, direction: nil, timeoutMs: timeout)
+        }
+        func preSelectorWait(from locator: LocatorInput?) -> PageAction? {
+            guard let loc = locator else { return nil }
+            if let css = loc.css, !css.isEmpty {
+                return PageAction(type: .waitFor, text: css, timeoutMs: 8000)
+            }
+            if let role = loc.role, !role.isEmpty {
+                let sel: String
+                switch role.lowercased() {
+                case "textbox", "input", "searchbox":
+                    sel = "input, textarea, [contenteditable=true], [role=textbox]"
+                case "button": sel = "button, [role=button]"
+                case "link": sel = "a, [role=link]"
+                case "select": sel = "select"
+                case "article", "post":
+                    // Broaden for modern content sites (Reddit, news, etc.)
+                    sel = "article, [role=article], [data-testid=post-container], shreddit-post, .Post, .thing"
+                default: sel = "[role]"
+                }
+                return PageAction(type: .waitFor, text: sel, timeoutMs: 8000)
+            }
+            return nil
         }
         for (idx, step) in plan.enumerated() {
             out.append(step)
-            // If navigating to Reddit, insert an additional selector wait after any ready wait (or immediately)
-            if step.type == .navigate, let url = step.url?.lowercased(), url.contains("reddit.com")
-            {
+            if step.type == .navigate {
                 let next = (idx + 1) < plan.count ? plan[idx + 1] : nil
-                if next?.type == .waitFor, next?.direction == "ready" {
-                    // Insert after the ready wait in the outer loop when we reach it
-                    // We detect at the ready step below.
-                } else {
-                    out.append(redditSelectorWait())
-                }
-            } else if step.type == .waitFor, step.direction == "ready" {
-                // If previous was a navigate to Reddit, follow with selector wait
-                if idx > 0 {
-                    let prev = plan[idx - 1]
-                    if prev.type == .navigate, let url = prev.url?.lowercased(),
-                        url.contains("reddit.com")
-                    {
-                        out.append(redditSelectorWait())
-                    }
-                }
-            } else if step.type == .findElements {
-                // If looking for Reddit posts, ensure a selector wait just before
-                if let css = step.locator?.css?.lowercased(),
-                    css.contains("post-container") || css.contains("shreddit")
+                if !(next?.type == .waitFor
+                    && (next?.direction == "ready" || (next?.text?.isEmpty == false)))
                 {
-                    out.insert(redditSelectorWait(), at: max(out.count - 1, 0))
+                    out.append(PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000))
                 }
-                if let role = step.locator?.role?.lowercased(), role == "article" || role == "post"
-                {
-                    out.insert(redditSelectorWait(), at: max(out.count - 1, 0))
+                out.append(genericIdleWait())
+            }
+            if step.type == .click || step.type == .findElements || step.type == .typeText
+                || step.type == .select
+            {
+                if let wait = preSelectorWait(from: step.locator) {
+                    out.removeLast()
+                    out.append(wait)
+                    out.append(step)
                 }
+                out.append(genericIdleWait(timeout: 4000))
             }
         }
         return out
@@ -480,20 +484,69 @@ class AIAssistant: ObservableObject {
 
     // MARK: - Heuristic plan (safety-first)
     private static func heuristicPlan(for query: String) -> [PageAction]? {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        func mkWait(_ ms: Int) -> PageAction {
-            PageAction(
-                type: .waitFor, direction: "ready", amountPx: nil, submit: nil, value: nil,
-                timeoutMs: ms)
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = raw.lowercased()
+
+        // Utility: extract a likely site token immediately following an imperative like "enter/open/go to"
+        func extractSiteToken(after prefix: String) -> String? {
+            guard q.hasPrefix(prefix) else { return nil }
+            let remainder = raw.dropFirst(prefix.count)
+            if remainder.isEmpty { return nil }
+            // Stop at punctuation or the word boundaries like ",", "then", "and"
+            let stopTokens: [String] = [",", ";", ".", " then", " and", " so", " to "]
+            var slice = String(remainder)
+            for tok in stopTokens {
+                if let r = slice.range(of: tok, options: [.caseInsensitive]) {
+                    slice = String(slice[..<r.lowerBound])
+                    break
+                }
+            }
+            // Trim and keep only domain-like characters
+            let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+            let filtered = slice.trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .prefix { allowed.contains($0) }
+            let candidate = String(filtered)
+            if candidate.isEmpty { return nil }
+            return candidate
         }
-        if q.hasPrefix("search ") || q.hasPrefix("search for ") || q.hasPrefix("enter ")
-            || q.hasPrefix("look up ") || q.hasPrefix("find ")
+
+        func normalizeUrl(from token: String) -> String {
+            var t = token
+            if !t.contains(".") { t += ".com" }
+            if !t.hasPrefix("http") { t = "https://" + t }
+            return t
+        }
+
+        // Heuristic A: Navigation intents including "enter <site>"
+        if let token = extractSiteToken(after: "enter ")
+            ?? extractSiteToken(after: "open ")
+            ?? extractSiteToken(after: "go to ")
+            ?? extractSiteToken(after: "navigate to ")
         {
-            var term =
-                q
+            let url = normalizeUrl(from: token)
+
+            // If the remainder suggests selecting an article/post, click the first article-like item generically
+            let mentionsFunny = q.contains("funniest") || q.contains("funny")
+            var actions: [PageAction] = [
+                PageAction(type: .navigate, url: url, newTab: false),
+                PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000),
+            ]
+            // Generic content selection (site-agnostic): click an article/post
+            var articleLocator = LocatorInput(role: "article")
+            if mentionsFunny { articleLocator.text = "funny" }
+            actions.append(PageAction(type: .click, locator: articleLocator))
+            actions.append(PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000))
+            return actions
+        }
+
+        // Heuristic B: On-page search queries
+        if q.hasPrefix("search ") || q.hasPrefix("search for ") || q.hasPrefix("look up ")
+            || q.hasPrefix("find ")
+        {
+            var term = q
                 .replacingOccurrences(of: "search for ", with: "")
                 .replacingOccurrences(of: "search ", with: "")
-                .replacingOccurrences(of: "enter ", with: "")
                 .replacingOccurrences(of: "look up ", with: "")
                 .replacingOccurrences(of: "find ", with: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -505,21 +558,7 @@ class AIAssistant: ObservableObject {
                 PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
             ]
         }
-        if q.hasPrefix("go to ") || q.hasPrefix("open ") || q.hasPrefix("navigate to ") {
-            var target =
-                q
-                .replacingOccurrences(of: "go to ", with: "")
-                .replacingOccurrences(of: "open ", with: "")
-                .replacingOccurrences(of: "navigate to ", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if target.isEmpty { return nil }
-            if !target.contains(".") { target += ".com" }
-            if !target.hasPrefix("http") { target = "https://" + target }
-            return [
-                PageAction(type: .navigate, url: target, newTab: false),
-                PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
-            ]
-        }
+
         return nil
     }
 

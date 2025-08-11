@@ -99,9 +99,19 @@ final class AIUsageStore: ObservableObject {
             )
         }
         return map.map { key, v in
-            let parts = key.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            let providerId = String(parts.first ?? Substring("unknown"))
-            let modelId = byProviderOnly ? "*" : (parts.count > 1 ? String(parts[1]) : "*")
+            // Robustly extract provider and model by splitting on the "::" delimiter we used above
+            let providerId: String
+            let modelId: String
+            if byProviderOnly {
+                providerId = key
+                modelId = "*"
+            } else if let range = key.range(of: "::") {
+                providerId = String(key[..<range.lowerBound])
+                modelId = String(key[range.upperBound...])
+            } else {
+                providerId = key
+                modelId = "*"
+            }
             return AIUsageTotals(
                 providerId: providerId,
                 modelId: modelId,

@@ -593,6 +593,44 @@ struct WebView: NSViewRepresentable {
               setTimeout(() => { dot.remove(); }, 400);
             } catch {}
           }
+          // Install generic network activity tracker for idle waits (agnostic)
+          (function installNetworkTracker(){
+            try {
+              if (window.__agentNetInstalled) return; window.__agentNetInstalled = true;
+              window.__agentNet = { active: 0, lastChangeTs: Date.now() };
+              const origFetch = window.fetch;
+              if (typeof origFetch === 'function') {
+                window.fetch = async function() {
+                  try { window.__agentNet.active++; window.__agentNet.lastChangeTs = Date.now(); } catch {}
+                  try { return await origFetch.apply(this, arguments); }
+                  finally { try { window.__agentNet.active = Math.max(0, window.__agentNet.active - 1); window.__agentNet.lastChangeTs = Date.now(); } catch {} }
+                };
+              }
+              const OrigXHR = window.XMLHttpRequest;
+              if (OrigXHR) {
+                const Wrapped = function() {
+                  const xhr = new OrigXHR();
+                  const dec = () => { try { window.__agentNet.active = Math.max(0, window.__agentNet.active - 1); window.__agentNet.lastChangeTs = Date.now(); } catch {};
+                    xhr.removeEventListener('loadend', dec); xhr.removeEventListener('error', dec); xhr.removeEventListener('abort', dec);
+                  };
+                  xhr.addEventListener('loadstart', () => { try { window.__agentNet.active++; window.__agentNet.lastChangeTs = Date.now(); } catch {} });
+                  xhr.addEventListener('loadend', dec);
+                  xhr.addEventListener('error', dec);
+                  xhr.addEventListener('abort', dec);
+                  return xhr;
+                };
+                window.XMLHttpRequest = Wrapped;
+              }
+              window.__agentNetIsIdle = function(idleMs){
+                try {
+                  const idle = typeof idleMs === 'number' ? idleMs : 500;
+                  const n = (window.__agentNet && window.__agentNet.active) || 0;
+                  const last = (window.__agentNet && window.__agentNet.lastChangeTs) || 0;
+                  return n === 0 && (Date.now() - last) >= idle;
+                } catch { return false; }
+              };
+            } catch {}
+          })();
           function findByLocator(locator) {
             if (!locator) return [];
             let nodes = [];
