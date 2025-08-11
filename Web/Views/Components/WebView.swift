@@ -99,6 +99,16 @@ struct WebView: NSViewRepresentable {
         }
         config.userContentController.add(context.coordinator, name: "timerCleanup")
 
+        // SECURITY: Inject Agent Bridge runtime (M0 scaffold)
+        if let agentBridgeScript = CSPManager.shared.secureScriptInjection(
+            script: agentBridgeJavaScript,
+            type: .agentBridge,
+            webView: createTemporaryWebView(with: config)
+        ) {
+            config.userContentController.addUserScript(agentBridgeScript)
+        }
+        config.userContentController.add(context.coordinator, name: "agentBridge")
+
         // Create WebView using WebKitManager for optimal memory usage
         let safeFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
         let webView = CustomWebView(
@@ -153,6 +163,7 @@ struct WebView: NSViewRepresentable {
 
         // Store webView reference for coordinator and tab with ownership validation
         context.coordinator.webView = webView
+        context.coordinator.pageAgent = PageAgent(webView: webView)
         if let tab = tab {
             // CRITICAL: Ensure exclusive WebView ownership per tab
             if let existingWebView = tab.webView, existingWebView !== webView {
@@ -450,6 +461,99 @@ struct WebView: NSViewRepresentable {
         """
     }
 
+    // JavaScript for Agent Bridge runtime (M0)
+    private var agentBridgeJavaScript: String {
+        """
+        (function() {
+          'use strict';
+          const CHANNEL = 'agentBridge';
+          if (!window.webkit || !window.webkit.messageHandlers || !window.webkit.messageHandlers[CHANNEL]) {
+            console.warn('[AgentScript] agentBridge handler not available');
+            return;
+          }
+          // Utilities
+          function isVisible(el) {
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+          }
+          function roleFor(el) {
+            const tag = (el.tagName || '').toLowerCase();
+            if (el.getAttribute && el.getAttribute('role')) return el.getAttribute('role');
+            if (tag === 'a') return 'link';
+            if (tag === 'button') return 'button';
+            if (tag === 'input') return 'input';
+            if (tag === 'select') return 'select';
+            if (tag === 'textarea') return 'textbox';
+            return tag;
+          }
+          function nameFor(el) {
+            return (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('name'))) || (el.innerText || el.textContent || '').trim();
+          }
+          function toSummary(el, idx, hint) {
+            const rect = el.getBoundingClientRect();
+            return {
+              id: String(idx),
+              role: roleFor(el),
+              name: nameFor(el),
+              text: (el.innerText || el.textContent || '').slice(0, 200),
+              isVisible: isVisible(el),
+              boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+              locatorHint: hint || null,
+            };
+          }
+          // Public API
+          window.__agent = window.__agent || {};
+          window.__agent.ping = function() {
+            try { window.webkit.messageHandlers[CHANNEL].postMessage({ type: 'ping', ts: Date.now() }); } catch (e) {}
+          };
+          // Find elements by simple locator
+          window.__agent.findElements = function(locator) {
+            try {
+              let nodes = [];
+              let hint = '';
+              if (locator && locator.css) {
+                nodes = Array.from(document.querySelectorAll(locator.css));
+                hint = locator.css;
+              } else if (locator && (locator.text || locator.name)) {
+                const needle = (locator.text || locator.name || '').toLowerCase();
+                const candidates = Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]'));
+                nodes = candidates.filter(el => (el.innerText || el.textContent || '').toLowerCase().includes(needle));
+                hint = locator.text || locator.name || '';
+              }
+              const out = nodes.slice(0, 50).map((el, i) => toSummary(el, i, hint));
+              return out;
+            } catch (e) {
+              return [];
+            }
+          };
+          // Click the first matching element
+          window.__agent.click = function(locator) {
+            try {
+              let el = null;
+              if (locator && locator.css) {
+                el = document.querySelector(locator.css);
+              }
+              if (!el && (locator && (locator.text || locator.name))) {
+                const needle = (locator.text || locator.name || '').toLowerCase();
+                const candidates = Array.from(document.querySelectorAll('a,button,input,[role="button"]'));
+                el = candidates.find(n => (n.innerText || n.textContent || '').toLowerCase().includes(needle)) || null;
+              }
+              if (el && isVisible(el)) {
+                el.click();
+                return { ok: true };
+              }
+              return { ok: false };
+            } catch (e) {
+              return { ok: false };
+            }
+          };
+          try { window.webkit.messageHandlers[CHANNEL].postMessage({ type: 'runtime_ready', version: 'm0' }); } catch (e) {}
+        })();
+        """
+    }
+
     // MARK: - OAuth Detection
 
     /// Detects if the current URL or intended navigation is for OAuth flows
@@ -612,6 +716,10 @@ struct WebView: NSViewRepresentable {
 
         // Context menu state
         var rightClickedLinkURL: String?
+
+        // Agent runtime state
+        var agentRuntimeReady: Bool = false
+        var pageAgent: PageAgent?
 
         // Mixed content monitoring state
         private var mixedContentNotificationObserver: AnyCancellable?
@@ -1687,6 +1795,26 @@ struct WebView: NSViewRepresentable {
                 case .invalid(let error):
                     NSLog("🔒 CSP: Timer cleanup message validation failed: \(error.description)")
                 }
+            case "agentBridge":
+                let validationResult = CSPManager.shared.validateMessageInput(
+                    message, expectedHandler: "agentBridge")
+
+                switch validationResult {
+                case .valid(let body):
+                    if let type = body["type"] as? String {
+                        switch type {
+                        case "runtime_ready":
+                            agentRuntimeReady = true
+                            NSLog("🛰️ Agent runtime ready (M0)")
+                        case "ping":
+                            NSLog("🛰️ Agent ping received")
+                        default:
+                            break
+                        }
+                    }
+                case .invalid(let error):
+                    NSLog("🔒 CSP: Agent bridge validation failed: \(error.description)")
+                }
 
             default:
                 NSLog("🔒 CSP: Unexpected message handler: \(message.name)")
@@ -1721,7 +1849,8 @@ struct WebView: NSViewRepresentable {
             guard let webView = webView else { return }
 
             // Periodically check if WebView is responsive during AI operations
-            Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) {
+                [weak self] timer in
                 guard let self = self else {
                     timer.invalidate()
                     return
@@ -1748,6 +1877,33 @@ struct WebView: NSViewRepresentable {
                     }
                 }
             }
+
+            // Suspend/resume this timer based on app backgrounding
+            let suspendObserver = NotificationCenter.default.addObserver(
+                forName: .suspendWebViewResponsivenessChecks, object: nil, queue: .main
+            ) { _ in
+                timer.invalidate()
+            }
+
+            let resumeObserver = NotificationCenter.default.addObserver(
+                forName: .resumeWebViewResponsivenessChecks, object: nil, queue: .main
+            ) { [weak self] _ in
+                // Restart protection if needed
+                self?.protectWebViewResponsiveness()
+            }
+
+            // Store observers to remove later
+            objc_setAssociatedObject(
+                webView, &CoordinatorObserverKeys.suspendKey, suspendObserver,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            objc_setAssociatedObject(
+                webView, &CoordinatorObserverKeys.resumeKey, resumeObserver,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+
+        private struct CoordinatorObserverKeys {
+            static var suspendKey: UInt8 = 0
+            static var resumeKey: UInt8 = 0
         }
 
         // MARK: - Adaptive Content Extraction
@@ -1904,6 +2060,8 @@ struct WebView: NSViewRepresentable {
                     forName: "linkContextMenu")
                 webView.configuration.userContentController.removeScriptMessageHandler(
                     forName: "timerCleanup")
+                webView.configuration.userContentController.removeScriptMessageHandler(
+                    forName: "agentBridge")
                 webView.configuration.userContentController.removeScriptMessageHandler(
                     forName: "adBlockHandler")
                 webView.configuration.userContentController.removeScriptMessageHandler(

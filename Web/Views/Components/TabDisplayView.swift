@@ -1,6 +1,6 @@
+import Foundation
 import SwiftUI
 import WebKit
-import Foundation
 
 enum TabDisplayMode: String, CaseIterable {
     case sidebar = "sidebar"
@@ -20,7 +20,7 @@ struct TabDisplayView: View {
     @State private var hideTimer: Timer?
     @State private var topTabAutoHideTimer: Timer?
     @State private var showTopTabTemporary: Bool = false
-    
+
     var body: some View {
         mainView
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displayMode)
@@ -36,9 +36,11 @@ struct TabDisplayView: View {
             .onReceive(NotificationCenter.default.publisher(for: .newTabRequested)) { _ in
                 tabManager.createNewTab()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .newTabInBackgroundRequested)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .newTabInBackgroundRequested)) {
+                notification in
                 if let userInfo = notification.userInfo,
-                   let url = userInfo["url"] as? URL {
+                    let url = userInfo["url"] as? URL
+                {
                     tabManager.createNewTabInBackground(url: url)
                 }
             }
@@ -56,12 +58,14 @@ struct TabDisplayView: View {
             .onReceive(NotificationCenter.default.publisher(for: .previousTabRequested)) { _ in
                 tabManager.selectPreviousTab()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .selectTabByNumber)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .selectTabByNumber)) {
+                notification in
                 if let number = notification.object as? Int {
                     tabManager.selectTabByNumber(number)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .createNewTabWithURL)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .createNewTabWithURL)) {
+                notification in
                 if let url = notification.object as? URL {
                     tabManager.createNewTab(url: url)
                 }
@@ -75,7 +79,8 @@ struct TabDisplayView: View {
                     showTopTabTemporary = false
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: .navigateCurrentTab)) {
+                notification in
                 if let url = notification.object as? URL {
                     if let activeTab = tabManager.activeTab {
                         activeTab.navigate(to: url)
@@ -92,7 +97,8 @@ struct TabDisplayView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusAddressBarRequested)) { _ in
                 NotificationCenter.default.post(name: .focusURLBarRequested, object: nil)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookmarkCurrentPageRequested)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .bookmarkCurrentPageRequested)) {
+                _ in
                 handleBookmarkCurrentPage()
             }
             .onAppear {
@@ -103,29 +109,29 @@ struct TabDisplayView: View {
                 topTabAutoHideTimer?.invalidate()
             }
     }
-    
+
     private var mainView: some View {
         GeometryReader { geometry in
             ZStack {
                 contentArea
                 urlBarOverlay
-                
+
                 // Security warning overlay for certificate validation issues
                 SecurityWarningSheet()
-                
+
                 // Safe Browsing threat warning overlay for malware/phishing protection
                 SafeBrowsingWarningSheet()
             }
         }
     }
-    
+
     private var contentArea: some View {
         VStack(spacing: 0) {
             topBarSection
             webContentSection
         }
     }
-    
+
     @ViewBuilder
     private var topBarSection: some View {
         if displayMode == .topBar && shouldShowTopTab {
@@ -134,7 +140,7 @@ struct TabDisplayView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
-    
+
     private var webContentSection: some View {
         HStack(spacing: 0) {
             sidebarSection
@@ -143,7 +149,7 @@ struct TabDisplayView: View {
             AISidebar(tabManager: tabManager)
         }
     }
-    
+
     @ViewBuilder
     private var sidebarSection: some View {
         if displayMode == .sidebar && (!isEdgeToEdgeMode || showSidebarOnHover) {
@@ -158,7 +164,7 @@ struct TabDisplayView: View {
                 }
         }
     }
-    
+
     @ViewBuilder
     private var urlBarOverlay: some View {
         if hideTopBar || isEdgeToEdgeMode {
@@ -168,7 +174,7 @@ struct TabDisplayView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var urlBarContent: some View {
         if let activeTab = tabManager.activeTab {
@@ -195,7 +201,7 @@ struct TabDisplayView: View {
             )
         }
     }
-    
+
     // Computed property to determine if top tab should be shown
     private var shouldShowTopTab: Bool {
         // In borderless mode with hidden top bar: show temporarily or on hover
@@ -211,17 +217,17 @@ struct TabDisplayView: View {
             return true
         }
     }
-    
+
     private func startTopTabAutoHideTimer() {
         // Only start timer in borderless mode with hidden top bar
         guard hideTopBar else { return }
-        
+
         // Cancel existing timer
         topTabAutoHideTimer?.invalidate()
-        
+
         // Show tab temporarily
         showTopTabTemporary = true
-        
+
         // Set timer to hide after 2 seconds
         topTabAutoHideTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
             withAnimation(.easeOut(duration: 0.3)) {
@@ -229,7 +235,7 @@ struct TabDisplayView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func edgeToEdgeHoverZones(geometry: GeometryProxy) -> some View {
         ZStack {
@@ -238,34 +244,34 @@ struct TabDisplayView: View {
                 HStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(width: 12) // Keep consistent small trigger zone
+                        .frame(width: 12)  // Keep consistent small trigger zone
                         .onHover { hovering in
                             handleSidebarHover(hovering)
                         }
                     Spacer()
                 }
             }
-            
+
             // Top edge hover zone for top bar (better usability)
             if displayMode == .topBar {
                 VStack {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 12) // Increased from 3px to 12px for better UX
+                        .frame(height: 12)  // Increased from 3px to 12px for better UX
                         .onHover { hovering in
                             handleTopBarHover(hovering)
                         }
                     Spacer()
                 }
             }
-            
+
             // Bottom edge hover zone for hoverable URL bar (when top bar hidden)
             if hideTopBar || displayMode == .hidden {
                 VStack {
                     Spacer()
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 12) // Increased from 3px to 12px for better UX
+                        .frame(height: 12)  // Increased from 3px to 12px for better UX
                         .onHover { hovering in
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 showHoverableURLBar = hovering
@@ -275,7 +281,7 @@ struct TabDisplayView: View {
             }
         }
     }
-    
+
     private func toggleTabDisplay() {
         switch displayMode {
         case .sidebar:
@@ -286,10 +292,10 @@ struct TabDisplayView: View {
             displayMode = .sidebar
         }
     }
-    
+
     private func toggleEdgeToEdgeMode() {
         isEdgeToEdgeMode.toggle()
-        
+
         // Reset hover states when exiting edge-to-edge
         if !isEdgeToEdgeMode {
             showSidebarOnHover = false
@@ -298,11 +304,11 @@ struct TabDisplayView: View {
             showHoverableURLBar = false
         }
     }
-    
+
     private func handleSidebarHover(_ hovering: Bool) {
         hideTimer?.invalidate()
         hideTimer = nil
-        
+
         if hovering {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 showSidebarOnHover = true
@@ -316,12 +322,12 @@ struct TabDisplayView: View {
             }
         }
     }
-    
+
     private func handleTopBarHover(_ hovering: Bool) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             showTopBarOnHover = hovering
         }
-        
+
         // In borderless mode, restart the auto-hide timer when hover ends
         if hideTopBar && !hovering {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -329,32 +335,34 @@ struct TabDisplayView: View {
             }
         }
     }
-    
+
     // MARK: - Helper Methods for Keyboard Shortcuts
-    
+
     private func handleHistoryRequest() {
         // TODO: Show history panel/view - placeholder for future UI implementation
         print("History panel requested")
     }
-    
+
     private func handleBookmarkRequest() {
         // Bookmark current page
         if let activeTab = tabManager.activeTab,
-           let url = activeTab.url {
+            let url = activeTab.url
+        {
             let title = activeTab.title.isEmpty ? url.absoluteString : activeTab.title
             BookmarkService.shared.quickBookmark(url: url.absoluteString, title: title)
         }
     }
-    
+
     private func handleBookmarkCurrentPage() {
         // Bookmark current page when requested via notification
         if let activeTab = tabManager.activeTab,
-           let url = activeTab.url {
+            let url = activeTab.url
+        {
             let title = activeTab.title.isEmpty ? url.absoluteString : activeTab.title
             BookmarkService.shared.quickBookmark(url: url.absoluteString, title: title)
         }
     }
-    
+
     private func handleDownloadsRequest() {
         // Show downloads panel
         DownloadManager.shared.isVisible.toggle()
@@ -367,64 +375,65 @@ struct WebContentArea: View {
     @AppStorage("tabDisplayMode") private var displayMode: TabDisplayMode = .sidebar
     @AppStorage("hideTopBar") private var hideTopBar: Bool = false
     @State private var isEdgeToEdgeMode: Bool = false
-    
+
     // Use centralized URL synchronizer
     @ObservedObject private var urlSynchronizer = URLSynchronizer.shared
-    
+
     // Network error handling state
     @State private var showNoInternetPage: Bool = false
     @State private var networkError: Error?
     @State private var failedURL: URL?
-    
+
     // Helper to determine if tab is in browsing mode (not new tab mode)
     private func isTabInBrowsingMode(_ tab: Web.Tab) -> Bool {
         return tab.url != nil || tab.isLoading || (tab.title != "New Tab" && !tab.title.isEmpty)
     }
-    
+
     // Computed property to determine if URL bar should be shown
     private var shouldShowURLBar: Bool {
         guard let activeTab = tabManager.activeTab else { return false }
         return isTabInBrowsingMode(activeTab)
     }
-    
+
     // MARK: - Network Error Handling Methods
-    
+
     private func handleNoInternetConnectionNotification(_ notification: Notification) {
         // Check if this notification is for the current active tab
         guard let activeTab = tabManager.activeTab,
-              let notificationTabID = notification.object as? UUID,
-              notificationTabID == activeTab.id else {
+            let notificationTabID = notification.object as? UUID,
+            notificationTabID == activeTab.id
+        else {
             return
         }
-        
+
         // Extract error and URL information from notification
         if let userInfo = notification.userInfo {
             networkError = userInfo["error"] as? Error
             failedURL = userInfo["url"] as? URL
         }
-        
+
         // Show the no internet page with animation
         withAnimation(.easeInOut(duration: 0.4)) {
             showNoInternetPage = true
         }
     }
-    
+
     private func retryConnection() {
         guard let activeTab = tabManager.activeTab else { return }
-        
+
         let networkMonitor = NetworkConnectivityMonitor.shared
-        
+
         // Check network connectivity before retrying
         if networkMonitor.hasInternetConnection {
             // Hide the no internet page
             withAnimation(.easeInOut(duration: 0.4)) {
                 showNoInternetPage = false
             }
-            
+
             // Clear error state
             networkError = nil
             failedURL = nil
-            
+
             // Retry loading the page
             if let url = failedURL ?? activeTab.url {
                 activeTab.navigate(to: url)
@@ -438,7 +447,7 @@ struct WebContentArea: View {
             NSLog("🔴 Retry attempted but still no internet connection")
         }
     }
-    
+
     var body: some View {
         // Add rounded wrapper with 1px margin
         VStack(spacing: 0) {
@@ -449,7 +458,7 @@ struct WebContentArea: View {
                     if let activeTab = tabManager.activeTab {
                         NavigationControls(tab: activeTab)
                     }
-                    
+
                     // URL bar with URLSynchronizer integration
                     Group {
                         if let activeTab = tabManager.activeTab {
@@ -461,7 +470,7 @@ struct WebContentArea: View {
                             )
                         } else {
                             URLBar(
-                                tabID: UUID(), // Temporary ID for new tab creation
+                                tabID: UUID(),  // Temporary ID for new tab creation
                                 themeColor: nil,
                                 mixedContentStatus: nil,
                                 onSubmit: navigateToURL
@@ -471,7 +480,7 @@ struct WebContentArea: View {
                     .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 6) // Further reduced for even more minimal height
+                .padding(.vertical, 6)  // Further reduced for even more minimal height
                 .background(
                     ZStack {
                         // Clean base with subtle material and window drag capability
@@ -479,7 +488,7 @@ struct WebContentArea: View {
                             .fill(.ultraThinMaterial)
                             .opacity(0.3)
                             .background(WindowDragArea())
-                        
+
                         // Next-gen ambient gradient system
                         if let themeColor = tabManager.activeTab?.themeColor {
                             // Primary ambient glow (top-left origin)
@@ -490,15 +499,16 @@ struct WebContentArea: View {
                                             Color(themeColor).opacity(0.08),
                                             Color(themeColor).opacity(0.05),
                                             Color(themeColor).opacity(0.02),
-                                            Color.clear
+                                            Color.clear,
                                         ],
                                         center: .init(x: 0.1, y: 0.0),
                                         startRadiusFraction: 0.1,
                                         endRadiusFraction: 1.2
                                     )
                                 )
-                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
-                            
+                                .animation(
+                                    .spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+
                             // Secondary ambient point (center-right)
                             Rectangle()
                                 .fill(
@@ -508,15 +518,16 @@ struct WebContentArea: View {
                                             Color(themeColor).opacity(0.04),
                                             Color(themeColor).opacity(0.07),
                                             Color(themeColor).opacity(0.03),
-                                            Color.clear
+                                            Color.clear,
                                         ],
                                         center: .init(x: 0.85, y: 0.5),
                                         startRadiusFraction: 0.15,
                                         endRadiusFraction: 0.9
                                     )
                                 )
-                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
-                            
+                                .animation(
+                                    .spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+
                             // Tertiary diffused glow (bottom spread)
                             Rectangle()
                                 .fill(
@@ -527,14 +538,15 @@ struct WebContentArea: View {
                                             Color(themeColor).opacity(0.03),
                                             Color(themeColor).opacity(0.06),
                                             Color(themeColor).opacity(0.02),
-                                            Color.clear
+                                            Color.clear,
                                         ],
                                         center: .init(x: 0.4, y: 1.0),
                                         startRadiusFraction: 0.2,
                                         endRadiusFraction: 0.8
                                     )
                                 )
-                                .animation(.spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
+                                .animation(
+                                    .spring(response: 0.8, dampingFraction: 0.8), value: themeColor)
                         } else {
                             // Subtle fallback ambient system
                             Rectangle()
@@ -543,14 +555,14 @@ struct WebContentArea: View {
                                         colors: [
                                             Color.accentBeam.opacity(0.04),
                                             Color.accentBeam.opacity(0.02),
-                                            Color.clear
+                                            Color.clear,
                                         ],
                                         center: .init(x: 0.2, y: 0.0),
                                         startRadiusFraction: 0.15,
                                         endRadiusFraction: 1.0
                                     )
                                 )
-                            
+
                             Rectangle()
                                 .fill(
                                     EllipticalGradient(
@@ -558,7 +570,7 @@ struct WebContentArea: View {
                                             Color.clear,
                                             Color.accentBeam.opacity(0.03),
                                             Color.accentBeam.opacity(0.01),
-                                            Color.clear
+                                            Color.clear,
                                         ],
                                         center: .init(x: 0.7, y: 1.0),
                                         startRadiusFraction: 0.3,
@@ -566,14 +578,14 @@ struct WebContentArea: View {
                                     )
                                 )
                         }
-                        
+
                         // Minimal surface highlight
                         Rectangle()
                             .fill(
                                 LinearGradient(
                                     colors: [
                                         Color.white.opacity(0.015),
-                                        Color.clear
+                                        Color.clear,
                                     ],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -582,7 +594,7 @@ struct WebContentArea: View {
                     }
                 )
             }
-            
+
             // Web content with smart status bar overlay and network error handling
             ZStack(alignment: .bottom) {
                 if showNoInternetPage {
@@ -599,7 +611,7 @@ struct WebContentArea: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 } else if let activeTab = tabManager.activeTab {
-                    WebContentView(tab: activeTab)
+                    WebContentView(tab: activeTab, tabManager: tabManager)
                 } else {
                     NewTabView()
                 }
@@ -607,7 +619,8 @@ struct WebContentArea: View {
         }
         .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onReceive(NotificationCenter.default.publisher(for: .showNoInternetConnection)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .showNoInternetConnection)) {
+            notification in
             handleNoInternetConnectionNotification(notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleEdgeToEdge)) { _ in
@@ -615,10 +628,10 @@ struct WebContentArea: View {
         }
         .background(
             // Add drag area to the padding/margin area around web content
-            WindowDragArea(allowsHitTesting: false) // Don't interfere with content clicks
+            WindowDragArea(allowsHitTesting: false)  // Don't interfere with content clicks
                 .background(Color.clear)
         )
-        .padding(2) // 2px margin as requested
+        .padding(2)  // 2px margin as requested
         .onAppear {
             // Sync with URLSynchronizer on appear
             if let activeTab = tabManager.activeTab {
@@ -633,12 +646,12 @@ struct WebContentArea: View {
             }
         }
     }
-    
+
     private func navigateToURL(_ url: String) {
         guard let activeTab = tabManager.activeTab else { return }
-        
+
         let processedURL: URL?
-        
+
         // Use same logic as URLBar for consistency
         if isValidURL(url) {
             if url.hasPrefix("http://") || url.hasPrefix("https://") {
@@ -651,19 +664,19 @@ struct WebContentArea: View {
             let query = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             processedURL = URL(string: "https://www.google.com/search?q=\(query)")
         }
-        
+
         guard let validURL = processedURL else { return }
-        
+
         // Navigate to URL - tab manages its own state
         activeTab.navigate(to: validURL)
     }
-    
+
     private func isValidURL(_ string: String) -> Bool {
         // Check if it already has a scheme
         if string.hasPrefix("http://") || string.hasPrefix("https://") {
             return URL(string: string) != nil
         }
-        
+
         // Check if it looks like a domain (contains . and no spaces)
         if string.contains(".") && !string.contains(" ") {
             // Make sure it's not just a decimal number
@@ -671,7 +684,7 @@ struct WebContentArea: View {
                 return true
             }
         }
-        
+
         return false
     }
 }

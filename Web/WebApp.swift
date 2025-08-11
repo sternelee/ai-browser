@@ -213,6 +213,13 @@ struct BrowserCommands: Commands {
                 NotificationCenter.default.post(name: .focusAIInput, object: nil)
             }
             .keyboardShortcut("a", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("Command Palette…") {
+                NotificationCenter.default.post(name: .showCommandPaletteRequested, object: nil)
+            }
+            .keyboardShortcut("k", modifiers: .command)
         }
 
         CommandGroup(after: .windowArrangement) {
