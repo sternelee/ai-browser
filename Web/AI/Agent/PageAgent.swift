@@ -8,6 +8,8 @@ public final class PageAgent: NSObject {
 
     public private(set) var mode: Mode = .headed
     private weak var webView: WKWebView?
+    private var lastActionAt: Date = .distantPast
+    private let minimumActionInterval: TimeInterval = 0.4  // M2 rate limit: <= 2 actions/sec
 
     public init(webView: WKWebView?) {
         self.webView = webView
@@ -23,7 +25,24 @@ public final class PageAgent: NSObject {
     }
 
     public func requestElements(matching locator: LocatorInput) async -> [ElementSummary] {
-        // M0: return empty; will integrate with JS runtime later
+        guard let webView else { return [] }
+        let encoder = JSONEncoder()
+        guard let locatorData = try? encoder.encode(locator),
+            let locatorJson = String(data: locatorData, encoding: .utf8)
+        else { return [] }
+
+        let escaped = Self.escapeForJavaScriptString(locatorJson)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.findElements ? window.__agent.findElements(JSON.parse('\(escaped)')) : []))();"
+
+        if let jsonString = await Self.evaluateJSString(script, in: webView),
+            let data = jsonString.data(using: .utf8)
+        {
+            let decoder = JSONDecoder()
+            if let elements = try? decoder.decode([ElementSummary].self, from: data) {
+                return elements
+            }
+        }
         return []
     }
 
@@ -39,11 +58,268 @@ public final class PageAgent: NSObject {
                     results.append(
                         ActionResult(actionId: step.id, success: false, message: "invalid url"))
                 }
+            case .findElements:
+                if let locator = step.locator {
+                    let items = await requestElements(matching: locator)
+                    results.append(
+                        ActionResult(
+                            actionId: step.id, success: true,
+                            message: "found \(items.count) elements"))
+                } else {
+                    results.append(
+                        ActionResult(actionId: step.id, success: false, message: "missing locator"))
+                }
+            case .click:
+                if let locator = step.locator {
+                    let ok = await click(locator: locator)
+                    results.append(ActionResult(actionId: step.id, success: ok))
+                } else {
+                    results.append(
+                        ActionResult(actionId: step.id, success: false, message: "missing locator"))
+                }
+            case .typeText:
+                if let locator = step.locator, let text = step.text {
+                    let ok = await typeText(
+                        locator: locator, text: text, submit: step.submit ?? false)
+                    results.append(ActionResult(actionId: step.id, success: ok))
+                } else {
+                    results.append(
+                        ActionResult(
+                            actionId: step.id, success: false, message: "missing locator or text"))
+                }
+            case .select:
+                if let locator = step.locator, let value = step.value {
+                    let ok = await select(locator: locator, value: value)
+                    results.append(ActionResult(actionId: step.id, success: ok))
+                } else {
+                    results.append(
+                        ActionResult(
+                            actionId: step.id, success: false, message: "missing locator or value"))
+                }
+            case .scroll:
+                let ok = await scroll(
+                    target: step.locator, direction: step.direction, amountPx: step.amountPx)
+                results.append(ActionResult(actionId: step.id, success: ok))
+            case .waitFor:
+                let ok = await waitFor(predicate: step, timeoutMs: step.timeoutMs)
+                results.append(ActionResult(actionId: step.id, success: ok))
             default:
                 results.append(
                     ActionResult(actionId: step.id, success: false, message: "not implemented"))
             }
         }
         return results
+    }
+
+    // MARK: - Individual Actions
+
+    public func click(locator: LocatorInput) async -> Bool {
+        await throttleIfNeeded()
+        return await callAgentAction(name: "click", payload: locator)
+    }
+
+    public func typeText(locator: LocatorInput, text: String, submit: Bool) async -> Bool {
+        guard let webView else { return false }
+        await throttleIfNeeded()
+        let encoder = JSONEncoder()
+        guard let locData = try? encoder.encode(locator),
+            let locJson = String(data: locData, encoding: .utf8)
+        else { return false }
+        let escapedLoc = Self.escapeForJavaScriptString(locJson)
+        let escapedText = Self.escapeForJavaScriptString(text)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.typeText ? window.__agent.typeText(JSON.parse('\(escapedLoc)'), JSON.parse('\"\(escapedText)\"'), \(submit ? "true" : "false")) : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
+    public func select(locator: LocatorInput, value: String) async -> Bool {
+        guard let webView else { return false }
+        await throttleIfNeeded()
+        let encoder = JSONEncoder()
+        guard let locData = try? encoder.encode(locator),
+            let locJson = String(data: locData, encoding: .utf8)
+        else { return false }
+        let escapedLoc = Self.escapeForJavaScriptString(locJson)
+        let escapedVal = Self.escapeForJavaScriptString(value)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.select ? window.__agent.select(JSON.parse('\(escapedLoc)'), JSON.parse('\"\(escapedVal)\"')) : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
+    public func scroll(target: LocatorInput?, direction: String?, amountPx: Int?) async -> Bool {
+        guard let webView else { return false }
+        await throttleIfNeeded()
+        let encoder = JSONEncoder()
+        let targetJson: String = {
+            if let target = target, let data = try? encoder.encode(target),
+                let s = String(data: data, encoding: .utf8)
+            {
+                return Self.escapeForJavaScriptString(s)
+            } else {
+                return "null"
+            }
+        }()
+        let dir = direction ?? "down"
+        let amt = amountPx ?? 600
+        let dirEsc = Self.escapeForJavaScriptString(dir)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.scroll ? window.__agent.scroll(\(target == nil ? "null" : "JSON.parse('" + targetJson + "')"), JSON.parse('\"\(dirEsc)\"'), \(amt)) : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
+    // MARK: - M2: Safe Extraction
+    /// Extracts text from the page respecting redaction rules.
+    /// readMode: "selection" | "article" | "all"
+    public func extract(readMode: String, selector: String?) async -> String {
+        guard let webView else { return "" }
+        let safeSelector = selector?.replacingOccurrences(of: "\"", with: "\\\"") ?? ""
+        let mode = readMode.lowercased()
+        let js: String
+        if mode == "selection" {
+            js =
+                "(() => { try { return String(window.getSelection && window.getSelection().toString ? window.getSelection().toString() : ''); } catch(e) { return ''; } })();"
+        } else if mode == "article" {
+            // Prefer <article>, fallback to main content heuristics
+            js =
+                "(() => { try { const el = document.querySelector('article') || document.querySelector('main') || document.body; return (el.innerText || el.textContent || '').slice(0, 20000); } catch(e) { return ''; } })();"
+        } else if !safeSelector.isEmpty {
+            js =
+                "(() => { try { const el = document.querySelector(\"\(safeSelector)\"); return el ? (el.innerText || el.textContent || '').slice(0, 20000) : ''; } catch(e) { return ''; } })();"
+        } else {
+            js =
+                "(() => { try { return (document.body && (document.body.innerText || document.body.textContent) || '').slice(0, 20000); } catch(e) { return ''; } })();"
+        }
+        return await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript(js) { result, _ in
+                continuation.resume(returning: (result as? String) ?? "")
+            }
+        }
+    }
+
+    // MARK: - M3: Vision Snapshot
+    /// Takes a snapshot of the page. If locator provided and cropToElement == true, crops to element bounds.
+    public func takeSnapshotBase64(locator: LocatorInput?, cropToElement: Bool) async -> String? {
+        guard let webView else { return nil }
+        var cropRect: CGRect? = nil
+        if cropToElement, let locator = locator {
+            // Measure the element in viewport coordinates
+            let encoder = JSONEncoder()
+            if let locData = try? encoder.encode(locator),
+                let locJson = String(data: locData, encoding: .utf8)
+            {
+                let escaped = Self.escapeForJavaScriptString(locJson)
+                let measureJS =
+                    "(() => { try { if (!window.__agent || !window.__agent.findElements) return null; const els = window.__agent.findElements(JSON.parse('\(escaped)')); if (!els || els.length === 0) return null; const hint = els[0].locatorHint; let el = null; if (hint) { el = document.querySelector(hint); } if (!el) { el = document.querySelector('[role]') } const r = el ? el.getBoundingClientRect() : null; return r ? {x:r.left, y:r.top, width:r.width, height:r.height} : null; } catch(e) { return null; } })();"
+                if let rectDict = await Self.evaluateJSString(measureJS, in: webView).flatMap({
+                    $0.data(using: .utf8)
+                }).flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) {
+                    if let x = rectDict["x"] as? Double, let y = rectDict["y"] as? Double,
+                        let w = rectDict["width"] as? Double, let h = rectDict["height"] as? Double
+                    {
+                        cropRect = CGRect(x: x, y: y, width: w, height: h)
+                    }
+                }
+            }
+        }
+
+        let config = WKSnapshotConfiguration()
+        config.afterScreenUpdates = true
+        if let cropRect { config.rect = cropRect }
+
+        return await withCheckedContinuation { continuation in
+            webView.takeSnapshot(with: config) { image, error in
+                guard let image else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+                    let png = rep.representation(using: .png, properties: [:])
+                else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: png.base64EncodedString())
+            }
+        }
+    }
+
+    /// Minimal waitFor supporting {readyState:"complete"} or {selector:"..."} or {delayMs:n}
+    public func waitFor(predicate: PageAction, timeoutMs: Int?) async -> Bool {
+        guard let webView else { return false }
+        var pred: [String: Any] = [:]
+        if let text = predicate.text, !text.isEmpty {
+            pred["selector"] = text
+        }
+        if let direction = predicate.direction, direction == "ready" {
+            pred["readyState"] = "complete"
+        }
+        if let amount = predicate.amountPx, amount > 0 { pred["delayMs"] = amount }
+        let to = timeoutMs ?? 5000
+        guard let data = try? JSONSerialization.data(withJSONObject: pred, options: []),
+            let json = String(data: data, encoding: .utf8)
+        else { return false }
+        let escaped = Self.escapeForJavaScriptString(json)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.waitFor ? window.__agent.waitFor(JSON.parse('\(escaped)'), \(to)) : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
+    // MARK: - JS Bridge Helpers
+
+    private static func parseOk(from script: String, in webView: WKWebView) async -> Bool {
+        if let jsonString = await evaluateJSString(script, in: webView),
+            let data = jsonString.data(using: .utf8),
+            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let ok = dict["ok"] as? Bool
+        {
+            return ok
+        }
+        return false
+    }
+
+    private func callAgentAction<T: Encodable>(name: String, payload: T) async -> Bool {
+        guard let webView else { return false }
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(payload),
+            let json = String(data: data, encoding: .utf8)
+        else { return false }
+        let escaped = Self.escapeForJavaScriptString(json)
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.\(name) ? window.__agent.\(name)(JSON.parse('\(escaped)')) : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
+    private static func evaluateJSString(_ script: String, in webView: WKWebView) async -> String? {
+        await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript(script) { result, error in
+                if let s = result as? String, error == nil {
+                    continuation.resume(returning: s)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private static func escapeForJavaScriptString(_ raw: String) -> String {
+        var s = raw
+        s = s.replacingOccurrences(of: "\\", with: "\\\\")
+        s = s.replacingOccurrences(of: "'", with: "\\\'")
+        s = s.replacingOccurrences(of: "\n", with: "\\n")
+        s = s.replacingOccurrences(of: "\r", with: "\\r")
+        s = s.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+        s = s.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return s
+    }
+
+    // MARK: - Rate limiting
+    private func throttleIfNeeded() async {
+        let now = Date()
+        let delta = now.timeIntervalSince(lastActionAt)
+        if delta < minimumActionInterval {
+            let wait = minimumActionInterval - delta
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+        }
+        lastActionAt = Date()
     }
 }

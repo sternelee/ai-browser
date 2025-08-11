@@ -14,13 +14,42 @@ public final class AgentPermissionManager {
     public static let shared = AgentPermissionManager()
     private init() {}
 
+    // M2: simple domain policies for sensitive categories
+    private let sensitiveDomains: Set<String> = [
+        "accounts.google.com", "appleid.apple.com", "login.microsoftonline.com",
+        "bankofamerica.com", "chase.com", "paypal.com",
+    ]
+    private let highRiskPaths: [String] = [
+        "/login", "/signin", "/checkout", "/billing", "/account",
+    ]
+
     public func evaluate(intent: PageActionType, urlHost: String?) -> Decision {
-        // Default permissive for non-destructive actions in M0
+        // M2: stricter defaults with allowlist-like approach for destructive/semi-destructive actions
+        let isSensitiveDomain =
+            urlHost.map { host in
+                sensitiveDomains.contains(host)
+                    || sensitiveDomains.contains(where: { host.hasSuffix($0) })
+            } ?? false
+
         switch intent {
-        case .navigate, .findElements, .scroll, .waitFor, .extract, .switchTab:
+        case .findElements, .waitFor, .scroll, .extract:
             return Decision(allowed: true)
-        default:
-            return Decision(allowed: false, reason: "Not permitted in M0")
+        case .navigate, .switchTab:
+            return Decision(allowed: true)
+        case .select, .click:
+            // Allow clicks generally; on sensitive domains require confirmation via ask_user
+            if isSensitiveDomain {
+                return Decision(allowed: false, reason: "Confirmation required on sensitive domain")
+            }
+            return Decision(allowed: true)
+        case .typeText:
+            if isSensitiveDomain {
+                return Decision(
+                    allowed: false, reason: "Typing blocked on sensitive domain without consent")
+            }
+            return Decision(allowed: true)
+        case .askUser:
+            return Decision(allowed: true)
         }
     }
 }

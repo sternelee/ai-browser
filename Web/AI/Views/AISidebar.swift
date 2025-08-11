@@ -16,6 +16,8 @@ struct AISidebar: View {
     @State private var showingPrivacySettings: Bool = false
     @State private var includeHistoryContext: Bool = true
     @State private var showingClearConfirmation: Bool = false
+    // Agent UI mode: false = Ask (chat), true = Agent (act)
+    @State private var agentMode: Bool = false
 
     // OPTIMIZATION: Fix initialization spinner animation
     @State private var initSpinnerRotation: Double = 0
@@ -32,6 +34,44 @@ struct AISidebar: View {
     init(tabManager: TabManager) {
         self.tabManager = tabManager
         self._aiAssistant = StateObject(wrappedValue: AIAssistant(tabManager: tabManager))
+    }
+
+    // MARK: - Agent Timeline Area
+    @ViewBuilder
+    private func agentTimelineArea() -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                if let run = aiAssistant.currentAgentRun {
+                    ForEach(Array(run.steps.enumerated()), id: \.1.id) { index, step in
+                        AgentTimelineRow(index: index + 1, step: step)
+                    }
+                    if let finishedAt = run.finishedAt {
+                        Text("Finished \(finishedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                    }
+                } else {
+                    Text(
+                        "No agent run yet. Describe what to do (e.g., ‘search for sweater, open the first result, add to cart’)."
+                    )
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial))
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Agent send
+    private func sendAgent() {
+        let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        chatInput = ""
+        Task { await aiAssistant.planAndRunAgent(message) }
     }
 
     var body: some View {
@@ -105,25 +145,25 @@ struct AISidebar: View {
             // Header with AI status
             sidebarHeader()
 
-            // TL;DR Component - progressive disclosure
+            // TL;DR Component – progressive disclosure (absorbs page context)
             TLDRCard(tabManager: tabManager, aiAssistant: aiAssistant)
                 .padding(.bottom, 4)
                 .id("tldr-card")
 
-            // Context status indicator
-            contextStatusView()
-
             Divider()
                 .opacity(0.3)
 
-            // Chat messages area
-            chatMessagesArea()
+            // Content
+            if agentMode {
+                agentTimelineArea()
+            } else {
+                chatMessagesArea()
+            }
 
             // Input area
             chatInputArea()
 
-            // Live usage micro-meter
-            usageMicroMeter()
+            // Usage meter intentionally hidden for a cleaner minimal UI
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -493,55 +533,33 @@ struct AISidebar: View {
 
     @ViewBuilder
     private func chatMessagesPlaceholder() -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.green.opacity(0.2), .green.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 28, height: 28)
-                    .overlay(
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.green)
-                    )
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.green)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    let providerName = providerManager.currentProvider?.displayName ?? "Local"
-                    Text("Ready · \(providerName)")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Text(
-                        providerManager.currentProvider?.providerType == .local
-                            ? "Private • On‑device" : "Cloud • BYOK"
-                    )
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+            let providerBadge: String = {
+                if let p = providerManager.currentProvider {
+                    return p.providerType == .local ? "Local" : p.displayName
+                } else {
+                    return "Local"
                 }
+            }()
 
-                Spacer()
-            }
+            Text("AI Ready · \(providerBadge)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.primary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    suggestionRow(icon: "doc.text", text: "Page")
-                    suggestionRow(icon: "clock", text: "History")
-                    suggestionRow(icon: "magnifyingglass", text: "Search")
-                }
-            }
+            Spacer()
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)  // Fixed minimum height to match initialization view
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 10)
                         .stroke(.quaternary, lineWidth: 0.5)
                 )
         )
@@ -587,7 +605,7 @@ struct AISidebar: View {
     @ViewBuilder
     private func chatInputArea() -> some View {
         VStack(spacing: 8) {
-            // Context controls
+            // Context controls + compact mode toggle
             HStack(spacing: 8) {
                 // History context toggle
                 HStack(spacing: 4) {
@@ -608,6 +626,9 @@ struct AISidebar: View {
 
                 Spacer()
 
+                // Minimal Ask/Agent pill
+                AgentModeTogglePill(isAgent: $agentMode)
+
                 // Privacy settings button
                 Button(action: {
                     showingPrivacySettings = true
@@ -624,40 +645,43 @@ struct AISidebar: View {
 
             // Input field row
             HStack(spacing: 8) {
-                TextField("Ask about this page...", text: $chatInput, axis: .vertical)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .font(.system(size: 14))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.ultraThinMaterial)
-                            .opacity(0.6)
+                TextField(
+                    agentMode ? "Ask the agent to act..." : "Ask about this page...",
+                    text: $chatInput, axis: .vertical
+                )
+                .textFieldStyle(PlainTextFieldStyle())
+                .font(.system(size: 14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.6)
+                )
+                .focused($isChatInputFocused)
+                .onSubmit {
+                    if agentMode { sendAgent() } else { sendMessage() }
+                }
+                .disabled(!aiAssistant.isInitialized)
+                .onChange(of: isChatInputFocused) { _, newValue in
+                    NSLog(
+                        "🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)"
                     )
-                    .focused($isChatInputFocused)
-                    .onSubmit {
-                        sendMessage()
-                    }
-                    .disabled(!aiAssistant.isInitialized)
-                    .onChange(of: isChatInputFocused) { _, newValue in
+                }
+                .onChange(of: aiAssistant.isInitialized) { _, newValue in
+                    NSLog(
+                        "🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)"
+                    )
+                    if !newValue && isChatInputFocused {
                         NSLog(
-                            "🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)"
+                            "🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!"
                         )
                     }
-                    .onChange(of: aiAssistant.isInitialized) { _, newValue in
-                        NSLog(
-                            "🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)"
-                        )
-                        if !newValue && isChatInputFocused {
-                            NSLog(
-                                "🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!"
-                            )
-                        }
-                    }
+                }
 
                 // Send button
                 Button(action: {
-                    sendMessage()
+                    if agentMode { sendAgent() } else { sendMessage() }
                 }) {
                     Image(
                         systemName: aiAssistant.isProcessing
@@ -845,6 +869,16 @@ struct AISidebar: View {
         let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         chatInput = ""
 
+        // DEV: Minimal agent command shim
+        // Usage:
+        //   /tool click {"locator": {"text": "Sign in"}}
+        //   /tool typeText {"locator": {"name": "email"}, "text": "test@example.com"}
+        //   /plan [{"type":"scroll","direction":"down","amountPx":600}]
+        if message.hasPrefix("/tool ") || message.hasPrefix("/plan ") {
+            handleAgentCommand(message)
+            return
+        }
+
         // Set typing state immediately using unified animation system
         aiAssistant.animationState = .typing
 
@@ -876,6 +910,44 @@ struct AISidebar: View {
 
                 NSLog("ℹ️ Streaming error handled by AIAssistant - cleanup completed")
             }
+        }
+    }
+
+    // MARK: - Minimal Agent Command Handler (dev-only)
+    private func handleAgentCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("/tool ") {
+            // Format: /tool <name> <json>
+            let rest = trimmed.dropFirst(6)
+            let parts = rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            guard parts.count == 2 else { return }
+            let name = String(parts[0])
+            let json = String(parts[1])
+            guard let data = json.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                NSLog("❌ /tool args JSON parse failed")
+                return
+            }
+            Task {
+                let result = await aiAssistant.callAgentTool(name: name, arguments: obj)
+                NSLog(
+                    "🛠️ Tool result: name=\(result.name) ok=\(result.ok) message=\(result.message ?? "nil") dataKeys=\(result.data?.keys.map{ $0 } ?? [])"
+                )
+            }
+            return
+        }
+        if trimmed.hasPrefix("/plan ") {
+            // Format: /plan <jsonArray of PageAction>
+            let json = String(trimmed.dropFirst(6))
+            guard let data = json.data(using: .utf8) else { return }
+            do {
+                let plan = try JSONDecoder().decode([PageAction].self, from: data)
+                Task { _ = await aiAssistant.runAgentPlan(plan) }
+            } catch {
+                NSLog("❌ /plan JSON decode failed: \(error)")
+            }
+            return
         }
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -19,6 +20,7 @@ final class ToolRegistry {
         case extract
         case switchTab
         case askUser
+        case snapshot
     }
 
     struct ToolCall: Codable {
@@ -33,13 +35,196 @@ final class ToolRegistry {
         let message: String?
     }
 
-    /// Execute a tool call against the current page/webview. For M0, returns not-implemented.
+    /// Execute a tool call against the current page/webview. M2 adds ask_user and extract; M3 adds snapshot.
     func executeTool(_ call: ToolCall, webView: WKWebView?) async -> ToolObservation {
         guard let name = ToolName(rawValue: call.name) else {
             return ToolObservation(name: call.name, ok: false, data: nil, message: "unknown tool")
         }
-        // M0 stub
-        return ToolObservation(
-            name: name.rawValue, ok: false, data: nil, message: "not implemented")
+        let pageAgent = PageAgent(webView: webView)
+        do {
+            switch name {
+            case .navigate:
+                if let urlStr = call.arguments["url"]?.value as? String,
+                    let url = URL(string: urlStr)
+                {
+                    await pageAgent.navigate(
+                        url, newTab: (call.arguments["newTab"]?.value as? Bool) ?? false)
+                    return ToolObservation(name: name.rawValue, ok: true, data: nil, message: nil)
+                }
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "invalid url")
+            case .findElements:
+                if let locator = try locatorFromArgs(call.arguments) {
+                    let elements = await pageAgent.requestElements(matching: locator)
+                    let boxed: [String: AnyCodable] = ["count": AnyCodable(elements.count)]
+                    return ToolObservation(name: name.rawValue, ok: true, data: boxed, message: nil)
+                }
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "missing locator")
+            case .click:
+                if let locator = try locatorFromArgs(call.arguments) {
+                    let ok = await pageAgent.click(locator: locator)
+                    return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+                }
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "missing locator")
+            case .typeText:
+                if let locator = try locatorFromArgs(call.arguments),
+                    let text = call.arguments["text"]?.value as? String
+                {
+                    let submit = (call.arguments["submit"]?.value as? Bool) ?? false
+                    let ok = await pageAgent.typeText(locator: locator, text: text, submit: submit)
+                    return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+                }
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "missing locator or text")
+            case .select:
+                if let locator = try locatorFromArgs(call.arguments),
+                    let value = call.arguments["value"]?.value as? String
+                {
+                    let ok = await pageAgent.select(locator: locator, value: value)
+                    return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+                }
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "missing locator or value")
+            case .scroll:
+                let locator = try locatorFromArgs(call.arguments)
+                let direction = call.arguments["direction"]?.value as? String
+                let amount = call.arguments["amountPx"]?.value as? Int
+                let ok = await pageAgent.scroll(
+                    target: locator, direction: direction, amountPx: amount)
+                return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+            case .waitFor:
+                var action = PageAction(type: .waitFor)
+                if let sel = call.arguments["selector"]?.value as? String { action.text = sel }
+                if let mode = call.arguments["readyState"]?.value as? String {
+                    action.direction = mode == "complete" ? "ready" : mode
+                }
+                if let delay = call.arguments["delayMs"]?.value as? Int { action.amountPx = delay }
+                let ok = await pageAgent.waitFor(
+                    predicate: action, timeoutMs: call.arguments["timeoutMs"]?.value as? Int)
+                return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+            case .extract:
+                let mode = (call.arguments["readMode"]?.value as? String) ?? "selection"
+                let selector = call.arguments["selector"]?.value as? String
+                let text = await pageAgent.extract(readMode: mode, selector: selector)
+                let boxed: [String: AnyCodable] = [
+                    "text": AnyCodable(text)
+                ]
+                return ToolObservation(
+                    name: name.rawValue, ok: !text.isEmpty, data: boxed, message: nil)
+            case .askUser:
+                let prompt = (call.arguments["prompt"]?.value as? String) ?? ""
+                let choices = call.arguments["choices"]?.value as? [String]
+                let defaultIndex = call.arguments["default"]?.value as? Int
+                let timeoutMs = call.arguments["timeoutMs"]?.value as? Int
+                let result = await presentConsentPrompt(
+                    prompt: prompt, choices: choices, defaultIndex: defaultIndex,
+                    timeoutMs: timeoutMs)
+                var boxed: [String: AnyCodable] = [
+                    "answer": AnyCodable(result.answer ?? ""),
+                    "consent": AnyCodable(result.consent),
+                ]
+                if let idx = result.choiceIndex { boxed["choiceIndex"] = AnyCodable(idx) }
+                return ToolObservation(
+                    name: name.rawValue, ok: result.consent, data: boxed, message: nil)
+            case .switchTab:
+                return ToolObservation(
+                    name: name.rawValue, ok: false, data: nil, message: "not implemented")
+            case .snapshot:
+                let base64 = await pageAgent.takeSnapshotBase64(
+                    locator: try locatorFromArgs(call.arguments),
+                    cropToElement: (call.arguments["cropToElement"]?.value as? Bool) ?? false)
+                let ok = base64 != nil
+                let boxed: [String: AnyCodable]? = ok ? ["image_base64": AnyCodable(base64!)] : nil
+                return ToolObservation(
+                    name: name.rawValue, ok: ok, data: boxed, message: ok ? nil : "snapshot failed")
+            }
+        } catch {
+            return ToolObservation(
+                name: name.rawValue, ok: false, data: nil, message: "invalid arguments")
+        }
+    }
+
+    // MARK: - Helpers
+    private func locatorFromArgs(_ args: [String: AnyCodable]) throws -> LocatorInput? {
+        guard let value = args["locator"] else { return nil }
+        // Accept either dictionary or JSON string
+        if let dict = value.value as? [String: Any] {
+            let data = try JSONSerialization.data(withJSONObject: dict)
+            return try JSONDecoder().decode(LocatorInput.self, from: data)
+        }
+        if let json = value.value as? String, let data = json.data(using: .utf8) {
+            return try JSONDecoder().decode(LocatorInput.self, from: data)
+        }
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(LocatorInput.self, from: data)
+    }
+
+    // MARK: - Consent Prompt
+    private func presentConsentPrompt(
+        prompt: String,
+        choices: [String]?,
+        defaultIndex: Int?,
+        timeoutMs: Int?
+    ) async -> (answer: String?, choiceIndex: Int?, consent: Bool) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = prompt.isEmpty ? "Proceed?" : prompt
+                alert.alertStyle = .warning
+
+                var choiceButtons: [NSButton] = []
+                if let choices, !choices.isEmpty {
+                    for (idx, title) in choices.enumerated() {
+                        let button = alert.addButton(withTitle: title)
+                        button.tag = idx
+                        choiceButtons.append(button)
+                    }
+                } else {
+                    _ = alert.addButton(withTitle: "Allow")
+                    _ = alert.addButton(withTitle: "Cancel")
+                }
+
+                // Timeout handling (optional)
+                var timedOut = false
+                var timer: Timer?
+                if let timeoutMs, timeoutMs >= 1000 {
+                    timer = Timer.scheduledTimer(
+                        withTimeInterval: TimeInterval(timeoutMs) / 1000.0, repeats: false
+                    ) { _ in
+                        timedOut = true
+                        continuation.resume(
+                            returning: (answer: nil, choiceIndex: nil, consent: false))
+                    }
+                }
+
+                let response = alert.runModal()
+                timer?.invalidate()
+                if timedOut {
+                    return
+                }
+
+                if let choices, !choices.isEmpty {
+                    // Map response to index (first button returns .alertFirstButtonReturn)
+                    let index =
+                        response.rawValue
+                        - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+                    let safeIndex = max(0, min(index, choices.count - 1))
+                    continuation.resume(
+                        returning: (
+                            answer: choices[safeIndex], choiceIndex: safeIndex, consent: true
+                        ))
+                } else {
+                    // Two-button Allow/Cancel
+                    let consent = (response == .alertFirstButtonReturn)
+                    continuation.resume(
+                        returning: (
+                            answer: consent ? "allow" : "cancel", choiceIndex: consent ? 0 : 1,
+                            consent: consent
+                        ))
+                }
+            }
+        }
     }
 }

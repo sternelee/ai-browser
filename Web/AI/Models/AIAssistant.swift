@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import WebKit
 
 /// Main AI Assistant coordinator managing local AI capabilities
 /// Integrates MLX framework with context management and conversation handling
@@ -11,6 +12,8 @@ class AIAssistant: ObservableObject {
     @MainActor @Published var isInitialized: Bool = false
     @MainActor @Published var isProcessing: Bool = false
     @MainActor @Published var initializationStatus: String = "Not initialized"
+    // Agent timeline state (for Agent mode in the sidebar)
+    @MainActor @Published var currentAgentRun: AgentRun?
     @MainActor @Published var lastError: String?
 
     // UNIFIED ANIMATION STATE - prevents conflicts between typing/streaming indicators
@@ -161,6 +164,163 @@ class AIAssistant: ObservableObject {
             }
             NSLog("❌ \(errorMessage)")
         }
+    }
+
+    // MARK: - Agent Planning (M2 minimal)
+
+    /// Plans a sequence of PageAction steps from a natural language query using the current provider.
+    func planAgentActions(from query: String) async throws -> [PageAction] {
+        guard let provider = providerManager.currentProvider else {
+            throw AIError.inferenceError("No AI provider available")
+        }
+
+        let schemaSnippet = """
+            Output ONLY JSON: an array of objects where each object is a PageAction with keys:
+            - type: one of ["navigate","findElements","click","typeText","scroll","select","waitFor","extract"]
+            - locator: optional object with keys [role,name,text,css,xpath,near,nth]
+            - url: string (for navigate)
+            - newTab: boolean (for navigate)
+            - text: string (for typeText or waitFor.selector)
+            - value: string (for select)
+            - direction: string (for scroll; "down"|"up" or "ready" for waitFor.readyState)
+            - amountPx: number (for scroll) or delayMs when using waitFor
+            - submit: boolean (for typeText)
+            - timeoutMs: number (for waitFor)
+            Keep actions safe and deterministic. Prefer semantic locators (text/name/role) before css. Do not include prose.
+            Example:
+            [
+              {"type":"navigate","url":"https://www.zara.com","newTab":false},
+              {"type":"waitFor","direction":"ready","timeoutMs":8000},
+              {"type":"typeText","locator":{"role":"textbox","name":"Search"},"text":"sweater", "submit":true},
+              {"type":"waitFor","direction":"ready","timeoutMs":8000},
+              {"type":"click","locator":{"text":"Add to cart","nth":0}}
+            ]
+            """
+
+        let prompt = """
+            You are a planning assistant for a browser automation agent. Given the user request, output JSON ONLY containing a PageAction array that is safe and minimal to accomplish the intent on the CURRENT page context. Avoid destructive actions. Prefer steps like waitFor ready-state between navigations and clicks.
+
+            User request:
+            \(query)
+
+            \(schemaSnippet)
+            """
+
+        let raw = try await provider.generateRawResponse(
+            prompt: prompt, model: provider.selectedModel)
+        if let plan = Self.decodePlan(from: raw) { return plan }
+        throw AIError.inferenceError("Model did not return a valid PageAction JSON plan")
+    }
+
+    /// Plans and executes the agent steps with a live timeline.
+    func planAndRunAgent(_ query: String) async {
+        do {
+            let plan = try await planAgentActions(from: query)
+            await MainActor.run {
+                let steps = plan.map {
+                    AgentStep(id: $0.id, action: $0, state: .planned, message: nil)
+                }
+                self.currentAgentRun = AgentRun(
+                    id: UUID(), title: query, steps: steps, startedAt: Date(), finishedAt: nil)
+            }
+
+            let (maybeWebView, host) = await MainActor.run { () -> (WKWebView?, String?) in
+                (self.tabManager?.activeTab?.webView, self.tabManager?.activeTab?.url?.host)
+            }
+            guard let webView = maybeWebView else {
+                await MainActor.run { self.markTimelineFailureForAll(message: "no webview") }
+                return
+            }
+
+            let agent = PageAgent(webView: webView)
+            for (idx, step) in plan.enumerated() {
+                // Policy gate and consent
+                let decision = AgentPermissionManager.shared.evaluate(
+                    intent: step.type, urlHost: host)
+                if !decision.allowed {
+                    let consent = await self.callAgentTool(
+                        name: "askUser",
+                        arguments: [
+                            "prompt": "Confirm: \(step.type.rawValue) on \(host ?? "site")?",
+                            "choices": ["Allow once", "Cancel"],
+                            "default": 1,
+                            "timeoutMs": 15000,
+                        ])
+                    let allowed = consent.ok && ((consent.data?["choiceIndex"]?.value as? Int) == 0)
+                    if !allowed {
+                        await MainActor.run {
+                            self.updateTimelineStep(
+                                index: idx, state: .failure, message: decision.reason ?? "blocked")
+                            self.currentAgentRun?.finishedAt = Date()
+                        }
+                        return
+                    }
+                }
+
+                await MainActor.run { self.updateTimelineStep(index: idx, state: .running) }
+                let resultArray = await agent.execute(plan: [step])
+                let r = resultArray.first
+                await MainActor.run {
+                    self.updateTimelineStep(
+                        index: idx, state: (r?.success == true) ? .success : .failure,
+                        message: r?.message)
+                }
+            }
+            await MainActor.run { self.currentAgentRun?.finishedAt = Date() }
+        } catch {
+            await MainActor.run {
+                self.currentAgentRun = AgentRun(
+                    id: UUID(), title: query, steps: [], startedAt: Date(), finishedAt: Date())
+            }
+        }
+    }
+
+    @MainActor private func markTimelineFailureForAll(message: String) {
+        guard var run = currentAgentRun else { return }
+        for i in run.steps.indices {
+            run.steps[i].state = .failure
+            run.steps[i].message = message
+        }
+        run.finishedAt = Date()
+        currentAgentRun = run
+    }
+
+    @MainActor private func updateTimelineStep(
+        index: Int, state: AgentStepState, message: String? = nil
+    ) {
+        guard var run = currentAgentRun, index < run.steps.count else { return }
+        run.steps[index].state = state
+        if let message { run.steps[index].message = message }
+        currentAgentRun = run
+    }
+
+    private static func decodePlan(from raw: String) -> [PageAction]? {
+        // Try direct decode
+        if let data = raw.data(using: .utf8),
+            let plan = try? JSONDecoder().decode([PageAction].self, from: data)
+        {
+            return plan
+        }
+        // Strip code fences
+        let stripped = raw.replacingOccurrences(of: "```json", with: "").replacingOccurrences(
+            of: "```", with: "")
+        if let data = stripped.data(using: .utf8),
+            let plan = try? JSONDecoder().decode([PageAction].self, from: data)
+        {
+            return plan
+        }
+        // Extract first JSON array substring
+        if let start = raw.firstIndex(of: "[") {
+            if let end = raw.lastIndex(of: "]"), end >= start {
+                let slice = raw[start...end]
+                if let data = String(slice).data(using: .utf8),
+                    let plan = try? JSONDecoder().decode([PageAction].self, from: data)
+                {
+                    return plan
+                }
+            }
+        }
+        return nil
     }
 
     /// Process a user query with current context and optional history
@@ -375,6 +535,170 @@ class AIAssistant: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Agent Tool Execution
+    /// Execute a provider-agnostic tool call object via `ToolRegistry` against the active tab's webview.
+    private func executeToolCall(_ call: ToolRegistry.ToolCall) async
+        -> ToolRegistry.ToolObservation
+    {
+        guard let webView = await MainActor.run(body: { self.tabManager?.activeTab?.webView })
+        else {
+            return ToolRegistry.ToolObservation(
+                name: call.name, ok: false, data: nil, message: "no webview")
+        }
+        return await ToolRegistry.shared.executeTool(call, webView: webView)
+    }
+
+    /// Execute a plan of `PageAction`s through `PageAgent` on the active tab (headed mode).
+    /// Includes a minimal permission gate per action.
+    func runAgentPlan(_ plan: [PageAction]) async -> [ActionResult] {
+        let (maybeWebView, host) = await MainActor.run { () -> (WKWebView?, String?) in
+            let currentHost = self.tabManager?.activeTab?.url?.host
+            return (self.tabManager?.activeTab?.webView, currentHost)
+        }
+        guard let webView = maybeWebView else { return [] }
+
+        let agent = PageAgent(webView: webView)
+        var gatedPlan: [PageAction] = []
+        for step in plan {
+            let decision = AgentPermissionManager.shared.evaluate(intent: step.type, urlHost: host)
+            if decision.allowed {
+                gatedPlan.append(step)
+                AgentAuditLog.shared.append(
+                    host: host,
+                    action: step.type.rawValue,
+                    parameters: summarize(step),
+                    policyAllowed: true,
+                    policyReason: nil,
+                    requestedConsent: false,
+                    userConsented: nil,
+                    outcomeSuccess: nil,
+                    outcomeMessage: nil
+                )
+            } else {
+                AgentAuditLog.shared.append(
+                    host: host,
+                    action: step.type.rawValue,
+                    parameters: summarize(step),
+                    policyAllowed: false,
+                    policyReason: decision.reason,
+                    requestedConsent: true,
+                    userConsented: nil,
+                    outcomeSuccess: nil,
+                    outcomeMessage: nil
+                )
+
+                let consent = await callAgentTool(
+                    name: "askUser",
+                    arguments: [
+                        "prompt": "Confirm: \(step.type.rawValue) on \(host ?? "site")?",
+                        "choices": ["Allow once", "Cancel"],
+                        "default": 1,
+                        "timeoutMs": 15000,
+                    ]
+                )
+                let userConsented =
+                    consent.ok && ((consent.data?["choiceIndex"]?.value as? Int) == 0)
+                AgentAuditLog.shared.append(
+                    host: host,
+                    action: step.type.rawValue,
+                    parameters: summarize(step),
+                    policyAllowed: false,
+                    policyReason: decision.reason,
+                    requestedConsent: true,
+                    userConsented: userConsented,
+                    outcomeSuccess: nil,
+                    outcomeMessage: userConsented ? "user allowed" : "user canceled"
+                )
+
+                if userConsented {
+                    gatedPlan.append(step)
+                } else {
+                    let failure = ActionResult(
+                        actionId: step.id, success: false, message: decision.reason ?? "blocked")
+                    var partial: [ActionResult] = []
+                    if !gatedPlan.isEmpty {
+                        let prior = await agent.execute(plan: gatedPlan)
+                        partial.append(contentsOf: prior)
+                    }
+                    partial.append(failure)
+                    return partial
+                }
+            }
+        }
+        let results = await agent.execute(plan: gatedPlan)
+        for (idx, step) in gatedPlan.enumerated() {
+            let r = (idx < results.count) ? results[idx] : nil
+            AgentAuditLog.shared.append(
+                host: host,
+                action: step.type.rawValue,
+                parameters: summarize(step),
+                policyAllowed: true,
+                policyReason: nil,
+                requestedConsent: false,
+                userConsented: nil,
+                outcomeSuccess: r?.success,
+                outcomeMessage: r?.message
+            )
+        }
+        return results
+    }
+
+    /// Convenience: call an agent tool by name with arguments on the active tab.
+    /// Example names: navigate, findElements, click, typeText, select, scroll, waitFor.
+    func callAgentTool(name: String, arguments: [String: Any]) async -> ToolRegistry.ToolObservation
+    {
+        // Minimal intent classification: map tool name to PageActionType for policy check
+        let intent: PageActionType? = {
+            switch name {
+            case "navigate": return .navigate
+            case "findElements": return .findElements
+            case "click": return .click
+            case "typeText": return .typeText
+            case "select": return .select
+            case "scroll": return .scroll
+            case "waitFor": return .waitFor
+            case "extract": return .extract
+            case "switchTab": return .switchTab
+            case "askUser": return .askUser
+            default: return nil
+            }
+        }()
+
+        let host = await MainActor.run { self.tabManager?.activeTab?.url?.host }
+        if let intent = intent {
+            let decision = AgentPermissionManager.shared.evaluate(intent: intent, urlHost: host)
+            guard decision.allowed else {
+                return ToolRegistry.ToolObservation(
+                    name: name, ok: false, data: nil, message: decision.reason ?? "blocked")
+            }
+        }
+
+        let wrappedArgs = arguments.mapValues { AnyCodable($0) }
+        let call = ToolRegistry.ToolCall(name: name, arguments: wrappedArgs)
+        return await executeToolCall(call)
+    }
+
+    // MARK: - Helpers
+    private func summarize(_ step: PageAction) -> [String: String] {
+        var dict: [String: String] = [:]
+        if let url = step.url { dict["url"] = url }
+        if let t = step.text { dict["text"] = String(t.prefix(80)) }
+        if let v = step.value { dict["value"] = v }
+        if let dir = step.direction { dict["direction"] = dir }
+        if let amt = step.amountPx { dict["amountPx"] = String(amt) }
+        if let submit = step.submit { dict["submit"] = submit ? "true" : "false" }
+        if let loc = step.locator {
+            var l: [String] = []
+            if let role = loc.role { l.append("role=\(role)") }
+            if let name = loc.name { l.append("name=\(name)") }
+            if let text = loc.text { l.append("text=\(text.prefix(40))") }
+            if let css = loc.css { l.append("css=\(css.prefix(40))") }
+            if let nth = loc.nth { l.append("nth=\(nth)") }
+            dict["locator"] = l.joined(separator: " ")
+        }
+        return dict
     }
 
     /// Get conversation summary for the current session
@@ -1056,6 +1380,42 @@ struct AISystemStatus {
     let hardwareInfo: String
     let historyContextEnabled: Bool
     let historyContextScope: String
+}
+
+// MARK: - Agent timeline models (UI-facing)
+enum AgentStepState: String, Codable, Equatable {
+    case planned
+    case running
+    case success
+    case failure
+}
+
+struct AgentStep: Identifiable, Codable, Equatable {
+    let id: UUID
+    var action: PageAction
+    var state: AgentStepState
+    var message: String?
+}
+
+struct AgentRun: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String
+    var steps: [AgentStep]
+    var startedAt: Date
+    var finishedAt: Date?
+}
+
+extension AgentStep {
+    static func == (lhs: AgentStep, rhs: AgentStep) -> Bool {
+        return lhs.id == rhs.id && lhs.state == rhs.state && lhs.message == rhs.message
+    }
+}
+
+extension AgentRun {
+    static func == (lhs: AgentRun, rhs: AgentRun) -> Bool {
+        return lhs.id == rhs.id && lhs.title == rhs.title && lhs.steps == rhs.steps
+            && lhs.finishedAt == rhs.finishedAt
+    }
 }
 
 /// AI specific errors

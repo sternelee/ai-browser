@@ -99,7 +99,7 @@ struct WebView: NSViewRepresentable {
         }
         config.userContentController.add(context.coordinator, name: "timerCleanup")
 
-        // SECURITY: Inject Agent Bridge runtime (M0 scaffold)
+        // SECURITY: Inject Agent Bridge runtime (M2)
         if let agentBridgeScript = CSPManager.shared.secureScriptInjection(
             script: agentBridgeJavaScript,
             type: .agentBridge,
@@ -461,7 +461,7 @@ struct WebView: NSViewRepresentable {
         """
     }
 
-    // JavaScript for Agent Bridge runtime (M0)
+    // JavaScript for Agent Bridge runtime (M2 safety additions)
     private var agentBridgeJavaScript: String {
         """
         (function() {
@@ -491,6 +491,16 @@ struct WebView: NSViewRepresentable {
           function nameFor(el) {
             return (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('name'))) || (el.innerText || el.textContent || '').trim();
           }
+          function isSensitiveInput(el) {
+            try {
+              const type = (el.type || '').toLowerCase();
+              const name = (el.name || '').toLowerCase();
+              const id = (el.id || '').toLowerCase();
+              const sensitive = ['password','passcode','totp','otp','ssn','social','credit','card','cvv'];
+              if (type === 'password') return true;
+              return sensitive.some(k => name.includes(k) || id.includes(k));
+            } catch { return false; }
+          }
           function toSummary(el, idx, hint) {
             const rect = el.getBoundingClientRect();
             return {
@@ -503,6 +513,104 @@ struct WebView: NSViewRepresentable {
               locatorHint: hint || null,
             };
           }
+          // Minimal overlay utilities
+          let __overlayBox = null;
+          function ensureOverlay() {
+            if (!__overlayBox) {
+              const box = document.createElement('div');
+              box.style.position = 'fixed';
+              box.style.zIndex = '2147483647';
+              box.style.pointerEvents = 'none';
+              box.style.border = '2px solid rgba(59,130,246,0.9)';
+              box.style.borderRadius = '8px';
+              box.style.boxShadow = '0 0 0 2px rgba(59,130,246,0.2), 0 0 12px rgba(59,130,246,0.5)';
+              box.style.transition = 'all 120ms ease-out';
+              box.style.opacity = '0';
+              document.documentElement.appendChild(box);
+              __overlayBox = box;
+            }
+            return __overlayBox;
+          }
+          function showHighlightFor(el, durationMs = 600) {
+            try {
+              const box = ensureOverlay();
+              const r = el.getBoundingClientRect();
+              box.style.left = `${Math.max(0, r.left - 4)}px`;
+              box.style.top = `${Math.max(0, r.top - 4)}px`;
+              box.style.width = `${Math.max(0, r.width + 8)}px`;
+              box.style.height = `${Math.max(0, r.height + 8)}px`;
+              box.style.opacity = '1';
+              clearTimeout(box.__hideTimer);
+              box.__hideTimer = setTimeout(() => { box.style.opacity = '0'; }, durationMs);
+            } catch {}
+          }
+          function ensureBanner() {
+            if (window.__agentBanner) return window.__agentBanner;
+            const bar = document.createElement('div');
+            bar.style.position = 'fixed';
+            bar.style.left = '12px';
+            bar.style.top = '12px';
+            bar.style.padding = '8px 10px';
+            bar.style.font = '12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+            bar.style.color = '#0B1220';
+            bar.style.background = 'rgba(191,219,254,0.9)';
+            bar.style.border = '1px solid rgba(59,130,246,0.35)';
+            bar.style.borderRadius = '10px';
+            bar.style.boxShadow = '0 6px 24px rgba(2,6,23,0.15)';
+            bar.style.zIndex = '2147483647';
+            bar.style.pointerEvents = 'none';
+            bar.style.opacity = '0';
+            bar.style.transition = 'opacity 140ms ease-out';
+            document.documentElement.appendChild(bar);
+            window.__agentBanner = bar;
+            return bar;
+          }
+          function rippleAt(x, y) {
+            try {
+              const dot = document.createElement('div');
+              const size = 16;
+              dot.style.position = 'fixed';
+              dot.style.left = `${x - size/2}px`;
+              dot.style.top = `${y - size/2}px`;
+              dot.style.width = `${size}px`;
+              dot.style.height = `${size}px`;
+              dot.style.borderRadius = '999px';
+              dot.style.background = 'rgba(59,130,246,0.9)';
+              dot.style.zIndex = '2147483647';
+              dot.style.pointerEvents = 'none';
+              dot.style.opacity = '0.9';
+              dot.style.transform = 'scale(0.6)';
+              dot.style.transition = 'transform 250ms ease-out, opacity 300ms ease-out';
+              document.documentElement.appendChild(dot);
+              requestAnimationFrame(() => {
+                dot.style.transform = 'scale(2.8)';
+                dot.style.opacity = '0';
+              });
+              setTimeout(() => { dot.remove(); }, 400);
+            } catch {}
+          }
+          function findByLocator(locator) {
+            if (!locator) return [];
+            let nodes = [];
+            let hint = '';
+            try {
+              if (locator.css) {
+                nodes = Array.from(document.querySelectorAll(locator.css));
+                hint = locator.css;
+              } else if (locator.text || locator.name) {
+                const needle = (locator.text || locator.name || '').toLowerCase();
+                const candidates = Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]'));
+                nodes = candidates.filter(el => (el.innerText || el.textContent || '').toLowerCase().includes(needle));
+                hint = locator.text || locator.name || '';
+              }
+              if (typeof locator.nth === 'number' && nodes[locator.nth]) {
+                return [nodes[locator.nth]];
+              }
+              return nodes;
+            } catch (e) {
+              return [];
+            }
+          }
           // Public API
           window.__agent = window.__agent || {};
           window.__agent.ping = function() {
@@ -511,17 +619,8 @@ struct WebView: NSViewRepresentable {
           // Find elements by simple locator
           window.__agent.findElements = function(locator) {
             try {
-              let nodes = [];
-              let hint = '';
-              if (locator && locator.css) {
-                nodes = Array.from(document.querySelectorAll(locator.css));
-                hint = locator.css;
-              } else if (locator && (locator.text || locator.name)) {
-                const needle = (locator.text || locator.name || '').toLowerCase();
-                const candidates = Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]'));
-                nodes = candidates.filter(el => (el.innerText || el.textContent || '').toLowerCase().includes(needle));
-                hint = locator.text || locator.name || '';
-              }
+              let nodes = findByLocator(locator);
+              let hint = locator && (locator.css || locator.text || locator.name) || '';
               const out = nodes.slice(0, 50).map((el, i) => toSummary(el, i, hint));
               return out;
             } catch (e) {
@@ -531,17 +630,12 @@ struct WebView: NSViewRepresentable {
           // Click the first matching element
           window.__agent.click = function(locator) {
             try {
-              let el = null;
-              if (locator && locator.css) {
-                el = document.querySelector(locator.css);
-              }
-              if (!el && (locator && (locator.text || locator.name))) {
-                const needle = (locator.text || locator.name || '').toLowerCase();
-                const candidates = Array.from(document.querySelectorAll('a,button,input,[role="button"]'));
-                el = candidates.find(n => (n.innerText || n.textContent || '').toLowerCase().includes(needle)) || null;
-              }
+              const el = (findByLocator(locator) || []).find(isVisible) || null;
               if (el && isVisible(el)) {
+                showHighlightFor(el);
                 el.click();
+                const r = el.getBoundingClientRect();
+                rippleAt(r.left + r.width/2, r.top + r.height/2);
                 return { ok: true };
               }
               return { ok: false };
@@ -549,7 +643,120 @@ struct WebView: NSViewRepresentable {
               return { ok: false };
             }
           };
-          try { window.webkit.messageHandlers[CHANNEL].postMessage({ type: 'runtime_ready', version: 'm0' }); } catch (e) {}
+          // Type into an input/textarea and optionally submit
+          window.__agent.typeText = function(locator, text, submit) {
+            try {
+              const el = (findByLocator(locator) || []).find(isVisible) || null;
+              if (!el || !isVisible(el)) return { ok: false };
+              if (el.tagName && el.tagName.toLowerCase() === 'input' || el.tagName && el.tagName.toLowerCase() === 'textarea' || el.isContentEditable) {
+                // Safety: never type into sensitive fields by default
+                if (isSensitiveInput(el)) { return { ok: false }; }
+                showHighlightFor(el, 800);
+                el.focus();
+                if (el.value !== undefined) {
+                  el.value = text;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                } else if (el.isContentEditable) {
+                  el.textContent = text;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                if (submit) {
+                  // Try to submit closest form
+                  const form = el.form || el.closest('form');
+                  if (form) form.requestSubmit ? form.requestSubmit() : form.submit();
+                }
+                return { ok: true };
+              }
+              return { ok: false };
+            } catch (e) { return { ok: false }; }
+          };
+          // Select value in a <select>
+          window.__agent.select = function(locator, value) {
+            try {
+              const el = (findByLocator(locator) || []).find(isVisible) || null;
+              if (!el || el.tagName.toLowerCase() !== 'select') return { ok: false };
+              showHighlightFor(el, 800);
+              el.value = value;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return { ok: true };
+            } catch (e) { return { ok: false }; }
+          };
+          // Scroll behavior: to target or window by direction/amount
+          window.__agent.scroll = function(locator, direction, amountPx) {
+            try {
+              const amt = typeof amountPx === 'number' ? amountPx : 600;
+              const dir = (direction || 'down').toLowerCase();
+              const el = locator ? (findByLocator(locator) || [])[0] : null;
+              const target = el || window;
+              const dx = 0;
+              const dy = dir === 'down' ? amt : dir === 'up' ? -amt : amt;
+              if (target === window) {
+                window.scrollBy({ left: dx, top: dy, behavior: 'smooth' });
+              } else {
+                target.scrollBy({ left: dx, top: dy, behavior: 'smooth' });
+              }
+              return { ok: true };
+            } catch (e) { return { ok: false }; }
+          };
+          // Wait for predicate: readyState complete, selector presence, or delay
+          window.__agent.waitFor = async function(predicate, timeoutMs) {
+            const start = Date.now();
+            const timeout = typeof timeoutMs === 'number' ? timeoutMs : 5000;
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+            try {
+              if (predicate && predicate.readyState === 'complete') {
+                while (document.readyState !== 'complete') {
+                  if (Date.now() - start > timeout) return { ok: false };
+                  await sleep(100);
+                }
+                return { ok: true };
+              }
+              if (predicate && predicate.selector) {
+                while (true) {
+                  const node = document.querySelector(predicate.selector);
+                  if (node && isVisible(node)) return { ok: true };
+                  if (Date.now() - start > timeout) return { ok: false };
+                  await sleep(100);
+                }
+              }
+              if (predicate && typeof predicate.delayMs === 'number') {
+                await sleep(Math.min(predicate.delayMs, timeout));
+                return { ok: true };
+              }
+            } catch (e) { /* fallthrough */ }
+            return { ok: false };
+          };
+          // Overlay helpers exposed to native
+          window.__agent.overlayHighlight = function(locator, durationMs) {
+            try {
+              const el = (findByLocator(locator) || []).find(isVisible) || null;
+              if (el) { showHighlightFor(el, durationMs || 800); return { ok: true }; }
+            } catch {}
+            return { ok: false };
+          };
+          window.__agent.overlayHighlightByCss = function(css, durationMs) {
+            try {
+              const el = document.querySelector(css);
+              if (el && isVisible(el)) { showHighlightFor(el, durationMs || 800); return { ok: true }; }
+            } catch {}
+            return { ok: false };
+          };
+          window.__agent.overlayClear = function() {
+            try { if (__overlayBox) { __overlayBox.style.opacity = '0'; } return { ok: true }; } catch { return { ok: false }; }
+          };
+          window.__agent.banner = function(text, durationMs) {
+            try {
+              const bar = ensureBanner();
+              bar.textContent = String(text || '');
+              bar.style.opacity = '1';
+              clearTimeout(bar.__hideTimer);
+              bar.__hideTimer = setTimeout(() => { bar.style.opacity = '0'; }, Math.min(Math.max(durationMs || 1200, 600), 4000));
+              return { ok: true };
+            } catch { return { ok: false }; }
+          };
+          try { window.webkit.messageHandlers[CHANNEL].postMessage({ type: 'runtime_ready', version: 'm2' }); } catch (e) {}
         })();
         """
     }
@@ -1805,7 +2012,7 @@ struct WebView: NSViewRepresentable {
                         switch type {
                         case "runtime_ready":
                             agentRuntimeReady = true
-                            NSLog("🛰️ Agent runtime ready (M0)")
+                            NSLog("🛰️ Agent runtime ready (M2)")
                         case "ping":
                             NSLog("🛰️ Agent ping received")
                         default:
