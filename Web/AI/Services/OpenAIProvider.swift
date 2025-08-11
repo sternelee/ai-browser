@@ -505,6 +505,22 @@ class OpenAIProvider: ExternalAPIProvider {
                         )
                     }
 
+                    // Smart fallback for GPT-5: switch max_tokens -> max_completion_tokens if needed
+                    if httpResponse.statusCode == 400 && allowSamplingFallback,
+                        OpenAIProvider.isMaxTokensUnsupportedError(data)
+                    {
+                        var fixed = payload
+                        if let max = fixed.removeValue(forKey: "max_tokens") {
+                            fixed["max_completion_tokens"] = max
+                        }
+                        NSLog("↘️ Retrying OpenAI request with max_completion_tokens for GPT-5")
+                        return try await makeAPIRequest(
+                            endpoint: endpoint,
+                            payload: fixed,
+                            allowSamplingFallback: false
+                        )
+                    }
+
                     if httpResponse.statusCode == 404 || httpResponse.statusCode == 400 {
                         throw AIProviderError.providerSpecificError(
                             "Model not available or request invalid (HTTP \(httpResponse.statusCode)). Check selected model id and account access."
@@ -636,6 +652,43 @@ class OpenAIProvider: ExternalAPIProvider {
                                     }
                                 }
                             }
+
+                            // Smart fallback for max_tokens vs max_completion_tokens for GPT-5
+                            if hr.statusCode == 400,
+                                OpenAIProvider.isMaxTokensUnsupportedError(d)
+                            {
+                                if var obj = try? JSONSerialization.jsonObject(
+                                    with: request.httpBody ?? Data()) as? [String: Any]
+                                {
+                                    obj.removeValue(forKey: "stream")
+                                    // Rename max_tokens -> max_completion_tokens if present
+                                    if let max = obj.removeValue(forKey: "max_tokens") {
+                                        obj["max_completion_tokens"] = max
+                                    }
+                                    var retryReq = URLRequest(url: request.url!)
+                                    retryReq.httpMethod = "POST"
+                                    request.allHTTPHeaderFields?.forEach { k, v in
+                                        retryReq.setValue(v, forHTTPHeaderField: k)
+                                    }
+                                    retryReq.httpBody = try? JSONSerialization.data(
+                                        withJSONObject: obj)
+                                    if let (rd, rr) = try? await URLSession.shared.data(
+                                        for: retryReq),
+                                        let rhr = rr as? HTTPURLResponse,
+                                        200...299 ~= rhr.statusCode,
+                                        let rjson = (try? JSONSerialization.jsonObject(with: rd))
+                                            as? [String: Any],
+                                        let rchoices = rjson["choices"] as? [[String: Any]],
+                                        let rfirst = rchoices.first,
+                                        let rmessage = rfirst["message"] as? [String: Any],
+                                        let rcontent = rmessage["content"] as? String
+                                    {
+                                        continuation.yield(rcontent)
+                                        continuation.finish()
+                                        return
+                                    }
+                                }
+                            }
                         }
 
                         throw AIProviderError.providerSpecificError(
@@ -723,7 +776,7 @@ class OpenAIProvider: ExternalAPIProvider {
     // MARK: - Model helpers
 
     private func isNewModelAPI(_ modelId: String) -> Bool {
-        return modelId.hasPrefix("gpt-4o")
+        return modelId.hasPrefix("gpt-4o") || modelId.hasPrefix("gpt-5")
     }
 
     // MARK: - Error helpers
@@ -734,6 +787,11 @@ class OpenAIProvider: ExternalAPIProvider {
     }
     private static func isTemperatureUnsupportedErrorData(_ data: Data) -> Bool {
         isTemperatureUnsupportedErrorBody(data)
+    }
+    /// Detect OpenAI error when `max_tokens` key is not supported
+    private static func isMaxTokensUnsupportedError(_ data: Data) -> Bool {
+        guard let snippet = String(data: data, encoding: .utf8)?.lowercased() else { return false }
+        return snippet.contains("unsupported parameter") && snippet.contains("max_tokens")
     }
 
     // MARK: - Fallback handling
