@@ -96,13 +96,13 @@ class OpenAIProvider: ExternalAPIProvider {
             throw AIProviderError.missingAPIKey(displayName)
         }
 
-        // Test API key with a simple request
+        // Test API key with a simple request to a generally available model
+        let testModel = selectedModel?.id ?? "gpt-4o-mini"
         let testPayload: [String: Any] = [
-            "model": "gpt-3.5-turbo",
+            "model": testModel,
             "messages": [
-                ["role": "user", "content": "Hi"]
+                ["role": "user", "content": "ping"]
             ],
-            "max_tokens": 5,
         ]
 
         do {
@@ -125,7 +125,7 @@ class OpenAIProvider: ExternalAPIProvider {
         model: AIModel?
     ) async throws -> AIResponse {
         let startTime = Date()
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
+        let initialModelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -135,18 +135,19 @@ class OpenAIProvider: ExternalAPIProvider {
         let messages = buildMessages(
             query: query, context: effectiveContext, history: conversationHistory)
 
-        let payload: [String: Any] = [
-            "model": modelId,
-            "messages": messages,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-        ]
-
         do {
-            let response = try await makeAPIRequest(
+            var basePayload: [String: Any] = [
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.9,
+            ]
+            let tokensKey = isNewModelAPI(initialModelId) ? "max_completion_tokens" : "max_tokens"
+            basePayload[tokensKey] = 2048
+
+            let (response, usedModelId) = try await requestWithModelFallback(
                 endpoint: "/chat/completions",
-                payload: payload
+                baseModelId: initialModelId,
+                basePayload: basePayload
             )
 
             guard let choices = response["choices"] as? [[String: Any]],
@@ -168,7 +169,7 @@ class OpenAIProvider: ExternalAPIProvider {
                 completionTokens = usage["completion_tokens"] as? Int ?? 0
                 tokenCount = (usage["total_tokens"] as? Int) ?? (promptTokens + completionTokens)
                 cost = estimateCostUSD(
-                    forModelId: modelId, promptTokens: promptTokens,
+                    forModelId: usedModelId, promptTokens: promptTokens,
                     completionTokens: completionTokens)
             }
 
@@ -182,7 +183,7 @@ class OpenAIProvider: ExternalAPIProvider {
             // Usage store event
             AIUsageStore.shared.append(
                 providerId: providerId,
-                modelId: modelId,
+                modelId: usedModelId,
                 promptTokens: promptTokens,
                 completionTokens: completionTokens,
                 estimatedCostUSD: cost,
@@ -193,7 +194,7 @@ class OpenAIProvider: ExternalAPIProvider {
 
             // Create metadata for external API response
             let metadata = ResponseMetadata(
-                modelVersion: modelId,
+                modelVersion: usedModelId,
                 inferenceMethod: .fallback,
                 contextUsed: context != nil,
                 processingSteps: [],
@@ -222,7 +223,7 @@ class OpenAIProvider: ExternalAPIProvider {
         conversationHistory: [ConversationMessage],
         model: AIModel?
     ) async throws -> AsyncThrowingStream<String, Error> {
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
+        let initialModelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         // Apply rate limiting
         await applyRateLimit()
@@ -232,24 +233,55 @@ class OpenAIProvider: ExternalAPIProvider {
         let messages = buildMessages(
             query: query, context: effectiveContext, history: conversationHistory)
 
-        let payload: [String: Any] = [
-            "model": modelId,
-            "messages": messages,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "stream": true,
-        ]
+        func buildPayload(with modelId: String) -> [String: Any] {
+            var payload: [String: Any] = [
+                "model": modelId,
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "stream": true,
+            ]
+            let tokensKey = isNewModelAPI(modelId) ? "max_completion_tokens" : "max_tokens"
+            payload[tokensKey] = 2048
+            return payload
+        }
 
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     let startTime = Date()
                     var charCount = 0
-                    let stream = try await makeStreamingAPIRequest(
-                        endpoint: "/chat/completions",
-                        payload: payload
-                    )
+                    var attemptedModelId = initialModelId
+                    var stream: AsyncThrowingStream<String, Error>!
+                    do {
+                        stream = try await makeStreamingAPIRequest(
+                            endpoint: "/chat/completions",
+                            payload: buildPayload(with: attemptedModelId)
+                        )
+                    } catch {
+                        // Fallback only if initial is a gpt-5* model and we likely hit 400/404
+                        if attemptedModelId.hasPrefix("gpt-5") {
+                            let fallbackIds = ["gpt-4o-mini", "gpt-4o"]
+                            var succeeded = false
+                            for fid in fallbackIds {
+                                do {
+                                    attemptedModelId = fid
+                                    stream = try await makeStreamingAPIRequest(
+                                        endpoint: "/chat/completions",
+                                        payload: buildPayload(with: fid)
+                                    )
+                                    NSLog("↘️ OpenAI streaming fell back to \(fid)")
+                                    succeeded = true
+                                    break
+                                } catch {
+                                    continue
+                                }
+                            }
+                            if !succeeded { throw error }
+                        } else {
+                            throw error
+                        }
+                    }
 
                     for try await chunk in stream {
                         charCount += chunk.count
@@ -260,10 +292,10 @@ class OpenAIProvider: ExternalAPIProvider {
                     let estTokens = Int((Double(charCount) / 4.0).rounded())
                     let responseTime = Date().timeIntervalSince(startTime)
                     let estCost = estimateCostUSD(
-                        forModelId: modelId, promptTokens: 0, completionTokens: estTokens)
+                        forModelId: attemptedModelId, promptTokens: 0, completionTokens: estTokens)
                     AIUsageStore.shared.append(
                         providerId: providerId,
-                        modelId: modelId,
+                        modelId: attemptedModelId,
                         promptTokens: 0,
                         completionTokens: estTokens,
                         estimatedCostUSD: estCost,
@@ -285,22 +317,20 @@ class OpenAIProvider: ExternalAPIProvider {
         prompt: String,
         model: AIModel?
     ) async throws -> String {
-        let modelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
+        let initialModelId = model?.id ?? selectedModel?.id ?? "gpt-5-mini"
 
         await applyRateLimit()
 
-        let payload: [String: Any] = [
-            "model": modelId,
-            "messages": [
-                ["role": "user", "content": prompt]
-            ],
-            "max_tokens": 1024,
+        var basePayload: [String: Any] = [
+            "messages": [["role": "user", "content": prompt]],
             "temperature": 0.7,
         ]
-
-        let response = try await makeAPIRequest(
+        let tokensKey = isNewModelAPI(initialModelId) ? "max_completion_tokens" : "max_tokens"
+        basePayload[tokensKey] = 1024
+        let (response, _) = try await requestWithModelFallback(
             endpoint: "/chat/completions",
-            payload: payload
+            baseModelId: initialModelId,
+            basePayload: basePayload
         )
 
         guard let choices = response["choices"] as? [[String: Any]],
@@ -404,7 +434,17 @@ class OpenAIProvider: ExternalAPIProvider {
                             "HTTP \(httpResponse.statusCode)")
                     }
                 default:
+                    // Log body for diagnostics (truncate to keep logs small)
+                    let snippet = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+                    let trimmed = snippet.prefix(500)
+                    NSLog("❗️OpenAI HTTP \(httpResponse.statusCode): \(trimmed)")
                     recordRequestFailure(httpStatus: httpResponse.statusCode)
+                    if httpResponse.statusCode == 404 || httpResponse.statusCode == 400 {
+                        // Common when model id is invalid or not enabled
+                        throw AIProviderError.providerSpecificError(
+                            "Model not available or request invalid (HTTP \(httpResponse.statusCode)). Check selected model id and account access."
+                        )
+                    }
                     throw AIProviderError.providerSpecificError("HTTP \(httpResponse.statusCode)")
                 }
             } catch {
@@ -453,11 +493,53 @@ class OpenAIProvider: ExternalAPIProvider {
                 do {
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
-                    guard let httpResponse = response as? HTTPURLResponse,
-                        httpResponse.statusCode == 200
-                    else {
-                        recordRequestFailure(httpStatus: (response as? HTTPURLResponse)?.statusCode)
+                    guard let httpResponse = response as? HTTPURLResponse else {
                         throw AIProviderError.networkError(URLError(.badServerResponse))
+                    }
+                    if httpResponse.statusCode != 200 {
+                        // Attempt to read error body and also try a non-streaming fallback for a graceful UX
+                        recordRequestFailure(httpStatus: httpResponse.statusCode)
+
+                        // Log diagnostic snippet by retrying without streaming
+                        var diagRequest = URLRequest(url: request.url!)
+                        diagRequest.httpMethod = "POST"
+                        request.allHTTPHeaderFields?.forEach { k, v in
+                            diagRequest.setValue(v, forHTTPHeaderField: k)
+                        }
+                        // Remove stream flag if present
+                        if var obj = try? JSONSerialization.jsonObject(
+                            with: request.httpBody ?? Data()) as? [String: Any]
+                        {
+                            obj.removeValue(forKey: "stream")
+                            diagRequest.httpBody = try? JSONSerialization.data(withJSONObject: obj)
+                        } else {
+                            diagRequest.httpBody = request.httpBody
+                        }
+
+                        if let (d, r) = try? await URLSession.shared.data(for: diagRequest),
+                            let hr = r as? HTTPURLResponse
+                        {
+                            let snippet = String(data: d, encoding: .utf8) ?? "<non-utf8>"
+                            NSLog("❗️OpenAI STREAM HTTP \(hr.statusCode): \(snippet.prefix(500)))")
+
+                            // If the diagnostic retry actually succeeded, yield content once as a fallback
+                            if 200...299 ~= hr.statusCode,
+                                let json = (try? JSONSerialization.jsonObject(with: d))
+                                    as? [String: Any],
+                                let choices = json["choices"] as? [[String: Any]],
+                                let first = choices.first,
+                                let message = first["message"] as? [String: Any],
+                                let content = message["content"] as? String
+                            {
+                                continuation.yield(content)
+                                continuation.finish()
+                                return
+                            }
+                        }
+
+                        throw AIProviderError.providerSpecificError(
+                            "Streaming HTTP \(httpResponse.statusCode). Check model id and account access."
+                        )
                     }
 
                     recordRequestSuccess()
@@ -535,6 +617,48 @@ class OpenAIProvider: ExternalAPIProvider {
             return AIProviderError.networkError(urlError)
         }
         return AIProviderError.providerSpecificError(error.localizedDescription)
+    }
+
+    // MARK: - Model helpers
+
+    private func isNewModelAPI(_ modelId: String) -> Bool {
+        return modelId.hasPrefix("gpt-5") || modelId.hasPrefix("gpt-4o")
+    }
+
+    // MARK: - Fallback handling
+
+    private func requestWithModelFallback(
+        endpoint: String,
+        baseModelId: String,
+        basePayload: [String: Any]
+    ) async throws -> ([String: Any], String) {
+        // Try primary model first
+        do {
+            let payload = mergedPayload(basePayload, modelId: baseModelId)
+            let json = try await makeAPIRequest(endpoint: endpoint, payload: payload)
+            return (json, baseModelId)
+        } catch {
+            // On 400/404 or bad server response, try fallbacks when model is likely unsupported
+            if baseModelId.hasPrefix("gpt-5") {
+                for fid in ["gpt-4o-mini", "gpt-4o"] {
+                    do {
+                        let payload = mergedPayload(basePayload, modelId: fid)
+                        let json = try await makeAPIRequest(endpoint: endpoint, payload: payload)
+                        NSLog("↘️ OpenAI fell back to \(fid) for endpoint \(endpoint)")
+                        return (json, fid)
+                    } catch {
+                        continue
+                    }
+                }
+            }
+            throw error
+        }
+    }
+
+    private func mergedPayload(_ base: [String: Any], modelId: String) -> [String: Any] {
+        var payload = base
+        payload["model"] = modelId
+        return payload
     }
 
     // MARK: - Settings

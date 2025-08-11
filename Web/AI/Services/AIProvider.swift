@@ -250,8 +250,11 @@ class AIProviderManager: ObservableObject {
             let provider = availableProviders.first(where: { $0.providerId == savedProviderId })
         {
             currentProvider = provider
+        } else if let external = availableProviders.first(where: { $0.providerType == .external }) {
+            // Prefer an external provider by default when a key exists (BYOK)
+            currentProvider = external
         } else {
-            // Default to local MLX provider
+            // Fallback to local MLX provider
             currentProvider = availableProviders.first { $0.providerType == .local }
         }
     }
@@ -285,14 +288,19 @@ class AIProviderManager: ObservableObject {
         }
 
         // Add new provider
+        let newProvider: AIProvider
         switch providerType {
         case .openai:
-            availableProviders.append(OpenAIProvider())
+            newProvider = OpenAIProvider()
         case .anthropic:
-            availableProviders.append(AnthropicProvider())
+            newProvider = AnthropicProvider()
         case .gemini:
-            availableProviders.append(GeminiProvider())
+            newProvider = GeminiProvider()
         }
+        availableProviders.append(newProvider)
+
+        // Auto-switch to the newly added provider for a seamless BYOK experience
+        Task { try? await switchProvider(to: newProvider) }
     }
 
     /// Remove external provider when API key is deleted

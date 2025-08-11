@@ -511,13 +511,17 @@ struct AISidebar: View {
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Ready")
+                    let providerName = providerManager.currentProvider?.displayName ?? "Local"
+                    Text("Ready · \(providerName)")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
 
-                    Text("Local • Private")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                    Text(
+                        providerManager.currentProvider?.providerType == .local
+                            ? "Private • On‑device" : "Cloud • BYOK"
+                    )
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
                 }
 
                 Spacer()
