@@ -286,8 +286,11 @@ class BackgroundResourceManager: ObservableObject {
             """
 
         webView.evaluateJavaScript(resumptionScript) { result, error in
-            if let error = error { AppLog.warn("WebView resumption script error: \(error.localizedDescription)") }
-            else { AppLog.debug("WebView resumed successfully") }
+            if let error = error {
+                AppLog.warn("WebView resumption script error: \(error.localizedDescription)")
+            } else {
+                AppLog.debug("WebView resumed successfully")
+            }
         }
     }
 
@@ -370,8 +373,11 @@ class BackgroundResourceManager: ObservableObject {
             webView.evaluateJavaScript(
                 "if (window.cleanupAllTimers) { window.cleanupAllTimers(); }"
             ) { result, error in
-                if let error = error { AppLog.warn("Timer cleanup error: \(error.localizedDescription)") }
-                else { AppLog.debug("Timers cleaned up successfully") }
+                if let error = error {
+                    AppLog.warn("Timer cleanup error: \(error.localizedDescription)")
+                } else {
+                    AppLog.debug("Timers cleaned up successfully")
+                }
             }
         }
     }

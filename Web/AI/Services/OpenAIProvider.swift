@@ -606,7 +606,8 @@ class OpenAIProvider: ExternalAPIProvider {
                             let hr = r as? HTTPURLResponse
                         {
                             let snippet = String(data: d, encoding: .utf8) ?? "<non-utf8>"
-                            AppLog.warn("OpenAI STREAM HTTP \(hr.statusCode): \(snippet.prefix(500))")
+                            AppLog.warn(
+                                "OpenAI STREAM HTTP \(hr.statusCode): \(snippet.prefix(500))")
 
                             // If the diagnostic retry actually succeeded, yield content once as a fallback
                             if 200...299 ~= hr.statusCode,

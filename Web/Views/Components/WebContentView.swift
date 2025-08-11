@@ -329,7 +329,10 @@ struct ExistingWebView: NSViewRepresentable {
                         """
                     ) { _, error in
                         if let error = error {
-                            if AppLog.isVerboseEnabled { AppLog.debug("Failed to dispatch resize: \(error.localizedDescription)") }
+                            if AppLog.isVerboseEnabled {
+                                AppLog.debug(
+                                    "Failed to dispatch resize: \(error.localizedDescription)")
+                            }
                         }
                     }
 

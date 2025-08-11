@@ -1,5 +1,5 @@
-import SwiftUI
 import Combine
+import SwiftUI
 
 /// Next-generation TL;DR component with progressive disclosure
 /// Auto-generates summaries of current page content with subtle, minimal UI
@@ -7,7 +7,7 @@ struct TLDRCard: View {
     @ObservedObject var tabManager: TabManager
     @ObservedObject var aiAssistant: AIAssistant
     @ObservedObject private var contextManager = ContextManager.shared
-    
+
     @State private var isExpanded: Bool = false
     @State private var tldrSummary: String = ""
     @State private var sentimentEmoji: String = ""
@@ -16,15 +16,15 @@ struct TLDRCard: View {
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
     @State private var isCancelled: Bool = false
-    
+
     // Streaming state for real-time TL;DR generation
     @State private var isStreaming: Bool = false
     @State private var streamingText: String = ""
-    
+
     // Animation states
     @State private var pulseOpacity: Double = 0.3
     @State private var shimmerOffset: CGFloat = -200
-    
+
     var body: some View {
         VStack(spacing: 0) {
             if isExpanded {
@@ -75,9 +75,9 @@ struct TLDRCard: View {
             }
         }
     }
-    
+
     // MARK: - Collapsed View
-    
+
     @ViewBuilder
     private func collapsedView() -> some View {
         HStack(spacing: 6) {
@@ -96,7 +96,7 @@ struct TLDRCard: View {
                     Circle()
                         .fill(statusGradient)
                         .frame(width: 16, height: 16)
-                    
+
                     if isGenerating {
                         // Subtle loading animation
                         Circle()
@@ -111,7 +111,9 @@ struct TLDRCard: View {
                             .frame(width: 14, height: 14)
                             .rotationEffect(.degrees(shimmerOffset))
                             .onAppear {
-                                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                                withAnimation(
+                                    .linear(duration: 1.2).repeatForever(autoreverses: false)
+                                ) {
                                     shimmerOffset = 360
                                 }
                             }
@@ -125,12 +127,12 @@ struct TLDRCard: View {
                     }
                 }
             }
-            
+
             // TL;DR label
             Text("TL;DR")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.primary.opacity(0.8))
-            
+
             // AI Busy indicator if processing chat
             if aiAssistant.isProcessing && !isGenerating {
                 Text("AI Busy")
@@ -143,9 +145,9 @@ struct TLDRCard: View {
                             .fill(.orange.opacity(0.1))
                     )
             }
-            
+
             Spacer()
-            
+
             // Expand hint
             Image(systemName: "chevron.up")
                 .font(.system(size: 8, weight: .medium))
@@ -155,9 +157,9 @@ struct TLDRCard: View {
         .padding(.vertical, 6)
         .disabled(isGenerating && tldrSummary.isEmpty)
     }
-    
+
     // MARK: - Expanded View
-    
+
     @ViewBuilder
     private func expandedView() -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -167,14 +169,14 @@ struct TLDRCard: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.blue)
-                    
+
                     Text("TL;DR")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.primary)
                 }
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         isExpanded = false
@@ -186,9 +188,9 @@ struct TLDRCard: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            
+
             // Content area
-            if (isGenerating && tldrSummary.isEmpty && !isStreaming) {
+            if isGenerating && tldrSummary.isEmpty && !isStreaming {
                 generatingView()
             } else if showError {
                 errorView()
@@ -200,9 +202,9 @@ struct TLDRCard: View {
         }
         .padding(12)
     }
-    
+
     // MARK: - Content Views
-    
+
     @ViewBuilder
     private func generatingView() -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -215,7 +217,7 @@ struct TLDRCard: View {
                                 colors: [
                                     .secondary.opacity(0.1),
                                     .secondary.opacity(0.3),
-                                    .secondary.opacity(0.1)
+                                    .secondary.opacity(0.1),
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
@@ -228,26 +230,26 @@ struct TLDRCard: View {
                         .clipped()
                 }
             }
-            
+
             Text("Analyzing page content...")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary.opacity(0.7))
         }
     }
-    
+
     @ViewBuilder
     private func errorView() -> some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 10))
                 .foregroundColor(.orange)
-            
+
             Text("Unable to generate summary")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
-            
+
             Spacer()
-            
+
             Button("Retry") {
                 autoGenerateTLDR()
             }
@@ -256,20 +258,20 @@ struct TLDRCard: View {
             .buttonStyle(PlainButtonStyle())
         }
     }
-    
+
     @ViewBuilder
     private func emptyStateView() -> some View {
         HStack(spacing: 6) {
             Image(systemName: "doc.text")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary.opacity(0.6))
-            
+
             Text("No content to summarize")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary.opacity(0.8))
         }
     }
-    
+
     @ViewBuilder
     private func summaryView() -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -279,7 +281,7 @@ struct TLDRCard: View {
                     Text("Sentiment:")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.secondary.opacity(0.7))
-                    
+
                     Text(sentimentEmoji)
                         .font(.system(size: 12))
                 }
@@ -291,22 +293,30 @@ struct TLDRCard: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            
+
             // Render TLDR summary with markdown support (streaming or final)
             Group {
                 // Use streaming text if currently streaming, otherwise use final summary
                 let displayText = isStreaming ? streamingText : tldrSummary
-                
+
                 // Preprocess to fix missing spaces that break markdown
-                let processedSummary = displayText
-                    .replacingOccurrences(of: "(?<=[.!?:])(?=[A-Z])", with: " ", options: .regularExpression)
+                let processedSummary =
+                    displayText
+                    .replacingOccurrences(
+                        of: "(?<=[.!?:])(?=[A-Z])", with: " ", options: .regularExpression
+                    )
                     // Insert a line-break before list markers that directly follow a colon ("We can:*" → "We can:\n* ")
-                    .replacingOccurrences(of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
-                
+                    .replacingOccurrences(
+                        of: "(?<=:)\\s*\\*", with: "\n* ", options: .regularExpression)
+
                 // Only parse markdown for final text to avoid crashes with incomplete syntax during streaming
                 if isStreaming {
                     Text(processedSummary)
-                } else if let attributedString = try? AttributedString(markdown: processedSummary, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+                } else if let attributedString = try? AttributedString(
+                    markdown: processedSummary,
+                    options: AttributedString.MarkdownParsingOptions(
+                        interpretedSyntax: .inlineOnlyPreservingWhitespace))
+                {
                     Text(attributedString)
                 } else {
                     // Fallback to plain text if markdown parsing fails
@@ -324,7 +334,7 @@ struct TLDRCard: View {
                 streamingIndicator(),
                 alignment: .bottomTrailing
             )
-            
+
             // Word count indicator (show for streaming text or final summary)
             if !tldrSummary.isEmpty || isStreaming {
                 let displayText = isStreaming ? streamingText : tldrSummary
@@ -333,22 +343,22 @@ struct TLDRCard: View {
                         Text("\(displayText.split(separator: " ").count) words")
                             .font(.system(size: 9, weight: .medium))
                             .foregroundColor(.secondary.opacity(0.6))
-                        
+
                         if isStreaming {
                             Text("• streaming")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(.blue.opacity(0.8))
                         }
-                        
+
                         Spacer()
                     }
                 }
             }
         }
     }
-    
+
     // MARK: - Streaming Indicator
-    
+
     @ViewBuilder
     private func streamingIndicator() -> some View {
         if isStreaming {
@@ -363,9 +373,9 @@ struct TLDRCard: View {
             }
         }
     }
-    
+
     // MARK: - Background Styling
-    
+
     @ViewBuilder
     private func cardBackground() -> some View {
         ZStack {
@@ -373,7 +383,7 @@ struct TLDRCard: View {
             Rectangle()
                 .fill(.ultraThinMaterial)
                 .opacity(isExpanded ? 0.8 : 0.6)
-            
+
             // Subtle gradient overlay
             Rectangle()
                 .fill(
@@ -381,7 +391,7 @@ struct TLDRCard: View {
                         colors: [
                             Color.blue.opacity(0.02),
                             Color.blue.opacity(0.01),
-                            Color.clear
+                            Color.clear,
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -389,9 +399,9 @@ struct TLDRCard: View {
                 )
         }
     }
-    
+
     // MARK: - Computed Properties
-    
+
     private var statusIcon: String {
         if showError {
             return "exclamationmark"
@@ -401,7 +411,7 @@ struct TLDRCard: View {
             return "checkmark"
         }
     }
-    
+
     private var statusGradient: LinearGradient {
         if showError {
             return LinearGradient(
@@ -423,24 +433,25 @@ struct TLDRCard: View {
             )
         }
     }
-    
+
     // MARK: - Auto-Generation Logic
-    
+
     private func autoGenerateTLDR() {
         guard let activeTab = tabManager.activeTab,
-              let currentURL = activeTab.url?.absoluteString,
-              currentURL != lastProcessedURL,
-              !currentURL.isEmpty,
-              aiAssistant.isInitialized else {
+            let currentURL = activeTab.url?.absoluteString,
+            currentURL != lastProcessedURL,
+            !currentURL.isEmpty,
+            aiAssistant.isInitialized
+        else {
             return
         }
-        
+
         // CONCURRENCY CHECK: Don't start if AI is already busy with chat
         if aiAssistant.isProcessing {
             NSLog("⚠️ TL;DR: Skipping generation - AI is busy with chat")
             return
         }
-        
+
         // Reset state for new page
         showError = false
         errorMessage = ""
@@ -451,14 +462,14 @@ struct TLDRCard: View {
         isGenerating = true
         isStreaming = false
         streamingText = ""
-        
+
         NSLog("🔄 TL;DR: Auto-generating with streaming for \(currentURL)")
-        
+
         Task {
             do {
                 // Small delay to ensure context is extracted after page load
-                try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds for page content to be fully extracted
-                
+                try await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds for page content to be fully extracted
+
                 // Check if cancelled or AI became busy during delay
                 if await MainActor.run(body: { isCancelled }) || aiAssistant.isProcessing {
                     await MainActor.run {
@@ -468,30 +479,30 @@ struct TLDRCard: View {
                     }
                     return
                 }
-                
+
                 // Start streaming generation
                 await MainActor.run {
                     isStreaming = true
-                    isGenerating = false // Switch from loading to streaming
+                    isGenerating = false  // Switch from loading to streaming
                 }
-                
+
                 // Generate TL;DR using the new streaming method
                 let stream = aiAssistant.generatePageTLDRStreaming()
-                
+
                 var accumulatedResponse = ""
-                
+
                 // Process streaming response
                 for try await chunk in stream {
                     accumulatedResponse += chunk
-                    
+
                     await MainActor.run {
                         streamingText = accumulatedResponse
                     }
                 }
-                
+
                 // Parse final response and update UI
                 let (emoji, summary) = parseTLDRResponse(accumulatedResponse)
-                
+
                 await MainActor.run {
                     isStreaming = false
                     isGenerating = false
@@ -499,10 +510,12 @@ struct TLDRCard: View {
                     tldrSummary = summary
                     streamingText = ""
                     showError = false
-                    
-                    if AppLog.isVerboseEnabled { AppLog.debug("TL;DR streaming done: emoji=\(emoji) len=\(summary.count)") }
+
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("TL;DR streaming done: emoji=\(emoji) len=\(summary.count)")
+                    }
                 }
-                
+
             } catch {
                 await MainActor.run {
                     isGenerating = false
@@ -510,54 +523,61 @@ struct TLDRCard: View {
                     streamingText = ""
                     showError = true
                     errorMessage = error.localizedDescription
-                    
+
                     AppLog.error("TL;DR streaming failed: \(error.localizedDescription)")
                 }
             }
         }
     }
-    
+
     /// Parse emoji and summary from AI response
     private func parseTLDRResponse(_ response: String) -> (emoji: String, summary: String) {
         let lines = response.split(separator: "\n", omittingEmptySubsequences: true)
-        
+
         // Look for emoji in first line or extract from response
         var emoji = ""
         var summary = response
-        
+
         // Try to extract emoji from first line
         if let firstLine = lines.first {
             let firstLineStr = String(firstLine).trimmingCharacters(in: .whitespacesAndNewlines)
             // Check if first line contains an emoji (common sentiment emojis)
-            let sentimentEmojis = ["📰", "🔬", "💼", "🎬", "⚠️", "😊", "😐", "😟", "🏠", "🛒", "🎮", "🎵", "🍔", "✈️", "⚽", "🎨", "📊", "💡"]
-            
+            let sentimentEmojis = [
+                "📰", "🔬", "💼", "🎬", "⚠️", "😊", "😐", "😟", "🏠", "🛒", "🎮", "🎵", "🍔", "✈️", "⚽", "🎨", "📊",
+                "💡",
+            ]
+
             for sentimentEmoji in sentimentEmojis {
                 if firstLineStr.contains(sentimentEmoji) {
                     emoji = sentimentEmoji
                     // Remove emoji from summary
-                    summary = response.replacingOccurrences(of: sentimentEmoji, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    summary = response.replacingOccurrences(of: sentimentEmoji, with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
                     break
                 }
             }
         }
-        
+
         // If no emoji found, default based on content keywords
         if emoji.isEmpty {
             let lowercasedResponse = response.lowercased()
             if lowercasedResponse.contains("news") || lowercasedResponse.contains("breaking") {
                 emoji = "📰"
-            } else if lowercasedResponse.contains("tech") || lowercasedResponse.contains("software") {
+            } else if lowercasedResponse.contains("tech") || lowercasedResponse.contains("software")
+            {
                 emoji = "🔬"
-            } else if lowercasedResponse.contains("business") || lowercasedResponse.contains("finance") {
+            } else if lowercasedResponse.contains("business")
+                || lowercasedResponse.contains("finance")
+            {
                 emoji = "💼"
             } else {
-                emoji = "😐" // Default neutral
+                emoji = "😐"  // Default neutral
             }
         }
-        
+
         return (emoji: emoji, summary: summary)
     }
-    
+
     /// Cancel TL;DR generation if user starts interacting with chat
     func cancelTLDRIfGenerating() {
         if isGenerating || isStreaming {
@@ -568,22 +588,22 @@ struct TLDRCard: View {
             NSLog("🚫 TL;DR: Generation cancelled due to user interaction")
         }
     }
-    
+
     // MARK: - Animation Helpers
-    
+
     private func startPulseAnimation() {
         withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             pulseOpacity = 0.8
         }
     }
-    
+
     private func startSpinnerAnimation() {
         shimmerOffset = 0
         withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
             shimmerOffset = 360
         }
     }
-    
+
     private func stopSpinnerAnimation() {
         shimmerOffset = 0
     }
@@ -598,7 +618,7 @@ struct TLDRCard: View {
             aiAssistant: AIAssistant()
         )
         .frame(width: 300)
-        
+
         Spacer()
     }
     .padding()

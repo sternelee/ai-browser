@@ -139,7 +139,9 @@ final class AIUsageStore: ObservableObject {
                 encoder.dateEncodingStrategy = .iso8601
                 let data = try encoder.encode(snapshot)
                 try data.write(to: storageURL, options: .atomic)
-            } catch { AppLog.warn("Failed to persist AI usage events: \(error.localizedDescription)") }
+            } catch {
+                AppLog.warn("Failed to persist AI usage events: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -151,6 +153,9 @@ final class AIUsageStore: ObservableObject {
             decoder.dateDecodingStrategy = .iso8601
             let items = try decoder.decode([AIUsageEvent].self, from: data)
             self.events = items
-        } catch { AppLog.warn("Failed to load AI usage events: \(error.localizedDescription)"); self.events = [] }
+        } catch {
+            AppLog.warn("Failed to load AI usage events: \(error.localizedDescription)")
+            self.events = []
+        }
     }
 }

@@ -122,7 +122,8 @@ class AIAssistant: ObservableObject {
                                 await self.updateStatus("Initializing MLX framework...")
                                 try await self.mlxWrapper.initialize()
                             } catch {
-                                 AppLog.error("MLX initialization failed: \(error.localizedDescription)")
+                                AppLog.error(
+                                    "MLX initialization failed: \(error.localizedDescription)")
                             }
                         }
                     }
@@ -132,7 +133,8 @@ class AIAssistant: ObservableObject {
                             await self.updateStatus("Setting up privacy protection...")
                             try await self.privacyManager.initialize()
                         } catch {
-                             AppLog.error("Privacy manager init failed: \(error.localizedDescription)")
+                            AppLog.error(
+                                "Privacy manager init failed: \(error.localizedDescription)")
                         }
                     }
                 }
@@ -239,9 +241,19 @@ class AIAssistant: ObservableObject {
             }
             NSLog("🛰️ Agent: Plan decoded with \(plan.count) steps")
             await MainActor.run {
-                let steps = plan.map {
-                    AgentStep(id: $0.id, action: $0, state: .planned, message: nil)
-                }
+                var steps: [AgentStep] = []
+                // Add a leading pseudo-step to show user's instruction in the timeline
+                let userStep = AgentStep(
+                    id: UUID(),
+                    action: PageAction(type: .askUser, text: query),
+                    state: .success,
+                    message: nil
+                )
+                steps.append(userStep)
+                steps.append(
+                    contentsOf: plan.map {
+                        AgentStep(id: $0.id, action: $0, state: .planned, message: nil)
+                    })
                 self.currentAgentRun = AgentRun(
                     id: UUID(), title: query, steps: steps, startedAt: Date(), finishedAt: nil)
             }
@@ -301,9 +313,18 @@ class AIAssistant: ObservableObject {
                     "🛰️ Agent: Planning failed (\(error.localizedDescription)). Using heuristic fallback plan (\(fallback.count) steps)"
                 )
                 await MainActor.run {
-                    let steps = fallback.map {
-                        AgentStep(id: $0.id, action: $0, state: .planned, message: nil)
-                    }
+                    var steps: [AgentStep] = []
+                    let userStep = AgentStep(
+                        id: UUID(),
+                        action: PageAction(type: .askUser, text: query),
+                        state: .success,
+                        message: nil
+                    )
+                    steps.append(userStep)
+                    steps.append(
+                        contentsOf: fallback.map {
+                            AgentStep(id: $0.id, action: $0, state: .planned, message: nil)
+                        })
                     self.currentAgentRun = AgentRun(
                         id: UUID(), title: query, steps: steps, startedAt: Date(), finishedAt: nil)
                 }
@@ -474,7 +495,9 @@ class AIAssistant: ObservableObject {
             // Extract context from current webpage with optional history
             let webpageContext = await extractCurrentContext()
             if let webpageContext = webpageContext {
-                AppLog.debug("AI Chat: Extracted context: \(webpageContext.text.count) chars, q=\(webpageContext.contentQuality)")
+                AppLog.debug(
+                    "AI Chat: Extracted context: \(webpageContext.text.count) chars, q=\(webpageContext.contentQuality)"
+                )
                 if includeContext && isContentTooGarbled(webpageContext.text) {
                     AppLog.debug("AI Chat: Page content noisy; using title-only context")
                 }
@@ -486,8 +509,11 @@ class AIAssistant: ObservableObject {
                 includeContext
                 ? await contextManager.getFormattedContext(
                     from: webpageContext, includeHistory: includeHistory) : nil
-            if let context = context { AppLog.debug("AI Chat: Using formatted context (\(context.count) chars)") }
-            else { AppLog.debug("AI Chat: No context provided to model") }
+            if let context = context {
+                AppLog.debug("AI Chat: Using formatted context (\(context.count) chars)")
+            } else {
+                AppLog.debug("AI Chat: No context provided to model")
+            }
 
             // Create conversation entry
             let userMessage = ConversationMessage(
@@ -549,7 +575,9 @@ class AIAssistant: ObservableObject {
                     // Extract context from current webpage with optional history
                     let webpageContext = await self.extractCurrentContext()
                     if let webpageContext = webpageContext {
-                        AppLog.debug("Streaming: context=\(webpageContext.text.count) q=\(webpageContext.contentQuality)")
+                        AppLog.debug(
+                            "Streaming: context=\(webpageContext.text.count) q=\(webpageContext.contentQuality)"
+                        )
                     } else {
                         AppLog.debug("Streaming: No webpage context extracted")
                     }
@@ -859,7 +887,8 @@ class AIAssistant: ObservableObject {
                 "📄 Page content detected but contains mostly code/markup. Unable to generate meaningful summary."
         }
 
-        AppLog.debug("TL;DR: Using context (len=\(context.text.count), q=\(context.contentQuality))")
+        AppLog.debug(
+            "TL;DR: Using context (len=\(context.text.count), q=\(context.contentQuality))")
 
         // Create clean, direct TL;DR prompt - simplified for better model performance
         let cleanedContent = cleanContentForTLDR(context.text)
@@ -950,11 +979,13 @@ class AIAssistant: ObservableObject {
                     // Extract context from current webpage
                     let webpageContext = await extractCurrentContext()
                     guard let context = webpageContext, !context.text.isEmpty else {
-                    AppLog.warn("TL;DR Streaming: No context available")
+                        AppLog.warn("TL;DR Streaming: No context available")
                         throw AIError.contextProcessingFailed("No content available to summarize")
                     }
 
-                    AppLog.debug("TL;DR Streaming: Using context len=\(context.text.count) q=\(context.contentQuality)")
+                    AppLog.debug(
+                        "TL;DR Streaming: Using context len=\(context.text.count) q=\(context.contentQuality)"
+                    )
 
                     // Create clean, direct TL;DR prompt - simplified for better streaming performance
                     let cleanedContent = cleanContentForTLDR(context.text)
@@ -971,7 +1002,10 @@ class AIAssistant: ObservableObject {
                         """
 
                     // Log full TLDR prompt for debugging
-                    if AppLog.isVerboseEnabled { AppLog.debug("FULL TLDR PROMPT (truncated)\n\(String(tldrPrompt.prefix(1200)))") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug(
+                            "FULL TLDR PROMPT (truncated)\n\(String(tldrPrompt.prefix(1200)))")
+                    }
 
                     // Use current provider streaming response with post-processing for TL;DR
                     guard let provider = providerManager.currentProvider else {
@@ -1038,7 +1072,9 @@ class AIAssistant: ObservableObject {
         let lowercased = content.lowercased()
         let totalLength = content.count
 
-        if AppLog.isVerboseEnabled { AppLog.debug("Garbage detect (len=\(totalLength)): '\(content.prefix(100))…'") }
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("Garbage detect (len=\(totalLength)): '\(content.prefix(100))…'")
+        }
 
         // Check for high ratio of JavaScript/HTML artifacts - be more aggressive
         let jsPatterns = [
@@ -1079,7 +1115,9 @@ class AIAssistant: ObservableObject {
             || punctuationRatio > 0.3 || readableWordsRatio < 0.2 || totalLength < 50  // Reduced from 100
 
         if AppLog.isVerboseEnabled {
-            AppLog.debug("Garbage analysis: js=\(jsRatio), punct=\(punctuationRatio), readable=\(readableWordsRatio), len=\(totalLength), patterns=\(detectedPatterns.joined(separator: ", ")), isGarbage=\(isGarbage)")
+            AppLog.debug(
+                "Garbage analysis: js=\(jsRatio), punct=\(punctuationRatio), readable=\(readableWordsRatio), len=\(totalLength), patterns=\(detectedPatterns.joined(separator: ", ")), isGarbage=\(isGarbage)"
+            )
         }
 
         return isGarbage
@@ -1121,7 +1159,12 @@ class AIAssistant: ObservableObject {
             cleaned = cleaned.replacingOccurrences(
                 of: pattern, with: replacement, options: .regularExpression)
             let removed = before - cleaned.count
-            if removed > 0 { removedCount += removed; if AppLog.isVerboseEnabled { AppLog.debug("Pattern removed: \(pattern) -> \(removed)") } }
+            if removed > 0 {
+                removedCount += removed
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Pattern removed: \(pattern) -> \(removed)")
+                }
+            }
         }
 
         if AppLog.isVerboseEnabled { AppLog.debug("Total removed: \(removedCount)") }
@@ -1219,7 +1262,7 @@ class AIAssistant: ObservableObject {
             }
         }
         if badPatternCount >= 2 {  // Only reject if multiple bad patterns present
-                AppLog.debug("TLDR validation: multiple bad patterns \(badPatternCount)")
+            AppLog.debug("TLDR validation: multiple bad patterns \(badPatternCount)")
             return true
         }
 
@@ -1396,7 +1439,9 @@ class AIAssistant: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] progress in
                 if progress > 0 && progress < 1.0 {
-                    if AppLog.isVerboseEnabled { AppLog.debug("MLX download progress: \(progress * 100)%") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("MLX download progress: \(progress * 100)%")
+                    }
                     Task {
                         await self?.updateStatus(
                             "Downloading MLX AI model: \(Int(progress * 100))%")

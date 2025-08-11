@@ -168,7 +168,9 @@ struct WebView: NSViewRepresentable {
             // CRITICAL: Ensure exclusive WebView ownership per tab
             if let existingWebView = tab.webView, existingWebView !== webView {
                 if AppLog.isVerboseEnabled {
-                    print("⚠️ WARNING: Tab \(tab.id) already has a different WebView instance. This could cause content bleeding.")
+                    print(
+                        "⚠️ WARNING: Tab \(tab.id) already has a different WebView instance. This could cause content bleeding."
+                    )
                 }
             }
             tab.webView = webView
@@ -195,7 +197,10 @@ struct WebView: NSViewRepresentable {
                         """
                     ) { _, error in
                         if let error = error {
-                            if AppLog.isVerboseEnabled { AppLog.debug("Failed to dispatch resize: \(error.localizedDescription)") }
+                            if AppLog.isVerboseEnabled {
+                                AppLog.debug(
+                                    "Failed to dispatch resize: \(error.localizedDescription)")
+                            }
                         }
                     }
                 }
@@ -612,6 +617,9 @@ struct WebView: NSViewRepresentable {
                   selector = 'a, [role="link"]';
                 } else if (role === 'select') {
                   selector = 'select';
+                } else if (role === 'article' || role === 'post') {
+                  // Articles/posts on modern sites (e.g., Reddit)
+                  selector = 'article, [role="article"], [data-testid="post-container"], shreddit-post';
                 }
 
                 const candidates = Array.from(document.querySelectorAll(selector));
@@ -683,10 +691,25 @@ struct WebView: NSViewRepresentable {
           window.__agent.click = function(locator) {
             try {
               const el = (findByLocator(locator) || []).find(isVisible) || null;
-              if (el && isVisible(el)) {
-                showHighlightFor(el);
-                el.click();
-                const r = el.getBoundingClientRect();
+              let target = el;
+              const isClickable = (node) => {
+                if (!node) return false;
+                const tag = (node.tagName || '').toLowerCase();
+                if (tag === 'a' || tag === 'button' || tag === 'input' || tag === 'summary') return true;
+                const role = (node.getAttribute && node.getAttribute('role')) || '';
+                if (role === 'button' || role === 'link') return true;
+                return typeof node.onclick === 'function' || node.hasAttribute && node.hasAttribute('onclick');
+              };
+              if (target && !isClickable(target)) {
+                // Prefer primary body link patterns used on content sites
+                target = target.querySelector('a[data-click-id="body"], a[href], h3 a, h2 a, .title a, a[role="link"]');
+                if (target && !isVisible(target)) target = null;
+              }
+              if (target && isVisible(target)) {
+                try { target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch {}
+                showHighlightFor(target);
+                target.click();
+                const r = target.getBoundingClientRect();
                 rippleAt(r.left + r.width/2, r.top + r.height/2);
                 return { ok: true };
               }
@@ -821,7 +844,9 @@ struct WebView: NSViewRepresentable {
         // Check current URL first
         if let currentURL = url {
             if isOAuthURL(currentURL) {
-                if AppLog.isVerboseEnabled { AppLog.debug("OAuth flow (current URL): \(currentURL.host ?? "unknown")") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("OAuth flow (current URL): \(currentURL.host ?? "unknown")")
+                }
                 return true
             }
         }
@@ -829,7 +854,9 @@ struct WebView: NSViewRepresentable {
         // Check tab's URL if available
         if let tabURL = tab?.url {
             if isOAuthURL(tabURL) {
-                if AppLog.isVerboseEnabled { AppLog.debug("OAuth flow (tab URL): \(tabURL.host ?? "unknown")") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("OAuth flow (tab URL): \(tabURL.host ?? "unknown")")
+                }
                 return true
             }
         }
@@ -1132,7 +1159,9 @@ struct WebView: NSViewRepresentable {
                 }
             }
 
-            if AppLog.isVerboseEnabled { AppLog.debug("Mixed content monitoring enabled for tab \(tabID)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Mixed content monitoring enabled for tab \(tabID)")
+            }
         }
 
         private func handleMixedContentStatusChange(webView: WKWebView) {
@@ -1147,7 +1176,9 @@ struct WebView: NSViewRepresentable {
 
             // Log security event if mixed content detected
             if status.mixedContentDetected {
-                AppLog.warn("Mixed content detected on \(status.url?.host ?? "unknown") - secure=\(status.hasOnlySecureContent)")
+                AppLog.warn(
+                    "Mixed content detected on \(status.url?.host ?? "unknown") - secure=\(status.hasOnlySecureContent)"
+                )
             }
         }
 
@@ -1286,7 +1317,9 @@ struct WebView: NSViewRepresentable {
 
             // Check if we have a URL to reload
             guard webView.url != nil else {
-                if AppLog.isVerboseEnabled { AppLog.debug("WebContent terminated but no URL to reload") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("WebContent terminated but no URL to reload")
+                }
                 return
             }
 
@@ -1306,7 +1339,9 @@ struct WebView: NSViewRepresentable {
             }
 
             // Only reload if we have connectivity and circuit breaker allows it
-            if AppLog.isVerboseEnabled { AppLog.debug("WebContent terminated – reloading (network ok, breaker closed)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("WebContent terminated – reloading (network ok, breaker closed)")
+            }
 
             // Add slight delay to prevent immediate re-termination
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -2066,7 +2101,7 @@ struct WebView: NSViewRepresentable {
                         }
                     }
                 case .invalid(let error):
-                AppLog.warn("CSP: Agent bridge validation failed: \(error.description)")
+                    AppLog.warn("CSP: Agent bridge validation failed: \(error.description)")
                 }
 
             default:
@@ -2087,9 +2122,13 @@ struct WebView: NSViewRepresentable {
                 "if (window.cleanupAllTimers) { window.cleanupAllTimers(); }"
             ) { result, error in
                 if let error = error {
-                    if AppLog.isVerboseEnabled { print("⚠️ Timer cleanup error: \(error.localizedDescription)") }
+                    if AppLog.isVerboseEnabled {
+                        print("⚠️ Timer cleanup error: \(error.localizedDescription)")
+                    }
                 } else {
-                    if AppLog.isVerboseEnabled { print("🧹 WebView timer cleanup executed successfully") }
+                    if AppLog.isVerboseEnabled {
+                        print("🧹 WebView timer cleanup executed successfully")
+                    }
                 }
             }
         }
@@ -2198,11 +2237,19 @@ struct WebView: NSViewRepresentable {
                     bestContext = context
 
                     // Log extraction attempt
-                    if AppLog.isVerboseEnabled { AppLog.debug("Auto-read attempt #\(attemptCount): len=\(context.text.count) q=\(context.contentQuality) (\(context.qualityDescription))") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug(
+                            "Auto-read attempt #\(attemptCount): len=\(context.text.count) q=\(context.contentQuality) (\(context.qualityDescription))"
+                        )
+                    }
 
                     // Check if we have good enough content or if JS recommends no retry
                     if context.isHighQuality || !context.shouldRetry {
-                        if AppLog.isVerboseEnabled { AppLog.debug("Auto-read complete: len=\(context.text.count) title=\(context.title)") }
+                        if AppLog.isVerboseEnabled {
+                            AppLog.debug(
+                                "Auto-read complete: len=\(context.text.count) title=\(context.title)"
+                            )
+                        }
                         break
                     }
 

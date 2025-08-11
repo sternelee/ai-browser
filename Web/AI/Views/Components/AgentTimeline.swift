@@ -6,14 +6,17 @@ struct AgentTimelineRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            VStack(spacing: 4) {
-                statusIcon
+            ZStack(alignment: .top) {
+                // Continuous connector line that spans card height
                 Rectangle()
-                    .fill(Color.secondary.opacity(0.2))
+                    .fill(Color.secondary.opacity(0.15))
                     .frame(width: 1)
                     .frame(maxHeight: .infinity)
+                statusIcon
+                    .background(Color.clear)
+                    .offset(x: -0.5)  // center over line
             }
-            .frame(width: 12)
+            .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(stepTitle(step.action))
@@ -32,7 +35,23 @@ struct AgentTimelineRow: View {
             Spacer()
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial))
+        .background(
+            ZStack(alignment: .leading) {
+                // Soft gradient background to reduce harsh failure look
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.06), Color.white.opacity(0.02)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                // Left accent bar reflecting state
+                Rectangle()
+                    .fill(accentColorForState(step.state))
+                    .frame(width: 2)
+                    .opacity(0.8)
+            }
+        )
     }
 
     @ViewBuilder private var statusIcon: some View {
@@ -45,7 +64,8 @@ struct AgentTimelineRow: View {
             Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(
                 .system(size: 12))
         case .failure:
-            Image(systemName: "xmark.circle.fill").foregroundColor(.red).font(.system(size: 12))
+            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                .font(.system(size: 12))
         }
     }
 
@@ -70,6 +90,8 @@ struct AgentTimelineRow: View {
         case .switchTab:
             return "Switch tab"
         case .askUser:
+            // When used as first pseudo-step, show the raw instruction
+            if let t = action.text, !t.isEmpty { return t }
             return "Ask user"
         }
     }
@@ -82,5 +104,14 @@ struct AgentTimelineRow: View {
         if let css = loc.css { parts.append("css=\(css)") }
         if let nth = loc.nth { parts.append("nth=\(nth)") }
         return parts.joined(separator: " · ")
+    }
+
+    private func accentColorForState(_ state: AgentStepState) -> Color {
+        switch state {
+        case .planned: return .secondary.opacity(0.3)
+        case .running: return .blue.opacity(0.8)
+        case .success: return .green.opacity(0.8)
+        case .failure: return .orange.opacity(0.8)
+        }
     }
 }

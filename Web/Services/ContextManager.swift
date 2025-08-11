@@ -1,101 +1,109 @@
-import Foundation
-import WebKit
-import SwiftUI
 import CoreData
+import Foundation
+import SwiftUI
+import WebKit
 
 /// Manages webpage content extraction and context generation for AI integration
 /// Provides cleaned, summarized webpage content to enhance AI responses
 @MainActor
 class ContextManager: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     @Published var isExtracting: Bool = false
     @Published var lastExtractedContext: WebpageContext?
     @Published var contextStatus: String = "Ready"
-    
+
     // MARK: - Singleton
-    
+
     static let shared = ContextManager()
-    
+
     // MARK: - Properties
-    
+
     /// Maximum number of characters allowed in `WebpageContext.text`.
     /// 0 ➜ unlimited (no truncation). We default to **0** because modern Apple-Silicon devices can easily feed tens of thousands of characters to the 2B Gemma model.
     /// If we later decide to cap it dynamically, we just need to set this to a non-zero value.
     private let maxContentLength: Int = 0
-    private let contentExtractionTimeout = 10.0 // seconds
+    private let contentExtractionTimeout = 10.0  // seconds
     private var lastExtractionTime: Date?
-    private let minExtractionInterval: TimeInterval = 2.0 // Prevent spam extraction
-    
+    private let minExtractionInterval: TimeInterval = 2.0  // Prevent spam extraction
+
     // ENHANCED: Content extraction caching
     private var contextCache: [String: CachedContext] = [:]
-    private let maxCacheSize = 50 // Maximum number of cached contexts
-    private let cacheExpirationTime: TimeInterval = 300 // 5 minutes
-    private var cacheAccessOrder: [String] = [] // For LRU eviction
-    
+    private let maxCacheSize = 50  // Maximum number of cached contexts
+    private let cacheExpirationTime: TimeInterval = 300  // 5 minutes
+    private var cacheAccessOrder: [String] = []  // For LRU eviction
+
     // HISTORY CONTEXT CONFIGURATION
-    private let maxHistoryItems = 10 // Limit history items for context
-    private let maxHistoryDays: TimeInterval = 1 * 24 * 60 * 60 // 1 day lookback
-    private let maxHistoryContentLength = 3000 // Limit history context size
-    
+    private let maxHistoryItems = 10  // Limit history items for context
+    private let maxHistoryDays: TimeInterval = 1 * 24 * 60 * 60  // 1 day lookback
+    private let maxHistoryContentLength = 3000  // Limit history context size
+
     // Privacy settings for history context
     @Published var isHistoryContextEnabled: Bool = true
     @Published var historyContextScope: HistoryContextScope = .recent
-    
+
     private init() {
         AppLog.debug("ContextManager initialized")
     }
-    
+
     // MARK: - Public Interface
-    
+
     /// Extract context from the currently active tab
     func extractCurrentPageContext(from tabManager: TabManager) async -> WebpageContext? {
         guard let activeTab = tabManager.activeTab,
-              let webView = activeTab.webView else {
-            if AppLog.isVerboseEnabled { AppLog.debug("No active tab/WebView for context extraction") }
+            let webView = activeTab.webView
+        else {
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("No active tab/WebView for context extraction")
+            }
             return nil
         }
-        
+
         // Only throttle if we have *already* extracted context for the *same* page very recently.
         // This prevents scenarios where the user quickly navigates to a new URL but the previous
         // page's context is still returned because the interval has not expired (e.g. navigating
         // from a weather page to a social media post within two seconds). [[Fixes stale-context bug]]
         if let lastTime = lastExtractionTime,
-           Date().timeIntervalSince(lastTime) < minExtractionInterval,
-           let lastContext = lastExtractedContext {
+            Date().timeIntervalSince(lastTime) < minExtractionInterval,
+            let lastContext = lastExtractedContext
+        {
             let currentURL = await webView.url?.absoluteString
             if lastContext.url == currentURL {
                 return lastContext
             }
         }
-        
+
         return await extractPageContext(from: webView, tab: activeTab)
     }
-    
+
     /// Extract context from specific WebView with intelligent caching
     func extractPageContext(from webView: WKWebView, tab: Tab) async -> WebpageContext? {
         guard let url = await webView.url?.absoluteString else {
             if AppLog.isVerboseEnabled { AppLog.debug("No URL for context extraction") }
             return nil
         }
-        
+
         // Check cache first
         if let cachedContext = getCachedContext(for: url) {
-            if AppLog.isVerboseEnabled { AppLog.debug("Using cached context: len=\(cachedContext.context.text.count) title=\(cachedContext.context.title)") }
-            
+            if AppLog.isVerboseEnabled {
+                AppLog.debug(
+                    "Using cached context: len=\(cachedContext.context.text.count) title=\(cachedContext.context.title)"
+                )
+            }
+
             await MainActor.run {
                 lastExtractedContext = cachedContext.context
             }
-            
+
             return cachedContext.context
         }
-        
+
         await MainActor.run {
             isExtracting = true
             contextStatus = "Extracting page content..."
         }
-        
+
         defer {
             Task { @MainActor in
                 isExtracting = false
@@ -103,20 +111,22 @@ class ContextManager: ObservableObject {
             }
             lastExtractionTime = Date()
         }
-        
+
         do {
             let context = try await performContentExtraction(from: webView, tab: tab)
-            
+
             // Cache the extracted context
             cacheContext(context, for: url)
-            
+
             await MainActor.run {
                 lastExtractedContext = context
             }
-            
-            if AppLog.isVerboseEnabled { AppLog.debug("Context extracted: len=\(context.text.count) url=\(context.url)") }
+
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Context extracted: len=\(context.text.count) url=\(context.url)")
+            }
             return context
-            
+
         } catch {
             AppLog.warn("Context extraction failed: \(error.localizedDescription)")
             await MainActor.run {
@@ -125,20 +135,26 @@ class ContextManager: ObservableObject {
             return nil
         }
     }
-    
+
     /// Returns a rich, structured context string for the AI model by combining the current page data
     /// with optional browsing-history context. The page section includes title, URL, word count,
     /// a list of headings & prominent links, and finally the raw (truncated) body text.
-    func getFormattedContext(from context: WebpageContext?, includeHistory: Bool = true) -> String? {
+    func getFormattedContext(from context: WebpageContext?, includeHistory: Bool = true) -> String?
+    {
         var sections: [String] = []
 
         // 1. Current page
         if let context = context {
             let formattedContext = formatWebpageContext(context)
             sections.append(formattedContext)
-            if AppLog.isVerboseEnabled { AppLog.debug("Formatted context length: \(formattedContext.count) from \(context.title)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug(
+                    "Formatted context length: \(formattedContext.count) from \(context.title)")
+            }
         } else {
-            if AppLog.isVerboseEnabled { AppLog.debug("No context provided to getFormattedContext") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("No context provided to getFormattedContext")
+            }
         }
 
         // 2. Browsing history (optional)
@@ -146,13 +162,15 @@ class ContextManager: ObservableObject {
             sections.append(historyContext)
         }
 
-        guard !sections.isEmpty else { 
+        guard !sections.isEmpty else {
             if AppLog.isVerboseEnabled { AppLog.debug("No sections to format - returning nil") }
-            return nil 
+            return nil
         }
-        
+
         let finalContext = sections.joined(separator: "\n\n---\n\n")
-        if AppLog.isVerboseEnabled { AppLog.debug("Final formatted context len=\(finalContext.count)") }
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("Final formatted context len=\(finalContext.count)")
+        }
         return finalContext
     }
 
@@ -191,80 +209,84 @@ class ContextManager: ObservableObject {
         let dynamicWordCount = ctx.text.split { $0.isWhitespace || $0.isNewline }.count
 
         let formattedResult = """
-        Current webpage context:
-        Title: \(ctx.title)
-        URL: \(ctx.url)
-        Word Count: \(dynamicWordCount)
+            Current webpage context:
+            Title: \(ctx.title)
+            URL: \(ctx.url)
+            Word Count: \(dynamicWordCount)
 
-        Outline (headings):
-        \(headingLines.isEmpty ? "(none)" : headingLines)
+            Outline (headings):
+            \(headingLines.isEmpty ? "(none)" : headingLines)
 
-        Prominent links:
-        \(linkLines.isEmpty ? "(none)" : linkLines)
+            Prominent links:
+            \(linkLines.isEmpty ? "(none)" : linkLines)
 
-        Preview:
-        \(preview)
+            Preview:
+            \(preview)
 
-        Full content (truncated to \(maxContentLength) chars):
-        \(ctx.text)
-        """
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("formatWebpageContext len=\(formattedResult.count) text=\(ctx.text.count)") }
+            Full content (truncated to \(maxContentLength) chars):
+            \(ctx.text)
+            """
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("formatWebpageContext len=\(formattedResult.count) text=\(ctx.text.count)")
+        }
         return formattedResult
     }
-    
+
     /// Get browsing history context for AI processing
     func getHistoryContext() -> String? {
         let historyItems = extractRelevantHistory()
         guard !historyItems.isEmpty else { return nil }
-        
+
         var historyParts: [String] = ["Recent browsing history context:"]
-        
+
         for (index, item) in historyItems.enumerated() {
             let timeAgo = formatTimeAgo(item.lastVisitDate)
             let domain = extractDomain(from: item.url) ?? "unknown"
-            
-            let historyEntry = "\(index + 1). \(item.title ?? "Untitled") (\(domain)) - visited \(timeAgo)"
+
+            let historyEntry =
+                "\(index + 1). \(item.title ?? "Untitled") (\(domain)) - visited \(timeAgo)"
             historyParts.append(historyEntry)
         }
-        
+
         let historyContext = historyParts.joined(separator: "\n")
-        
+
         // Limit history context size
         if historyContext.count > maxHistoryContentLength {
             let truncated = String(historyContext.prefix(maxHistoryContentLength))
             return truncated + "... (history truncated for context)"
         }
-        
+
         return historyContext
     }
-    
+
     /// Check if context extraction is available for the current tab
     func canExtractContext(from tabManager: TabManager) -> Bool {
         guard let activeTab = tabManager.activeTab,
-              let webView = activeTab.webView else {
+            let webView = activeTab.webView
+        else {
             return false
         }
-        
+
         guard let url = webView.url else {
             return false
         }
-        
+
         // Don't extract from special URLs
         let scheme = url.scheme?.lowercased() ?? ""
         return scheme == "http" || scheme == "https"
     }
-    
+
     // MARK: - History Context Methods
-    
+
     /// Extract relevant browsing history for AI context
     private func extractRelevantHistory() -> [HistoryItem] {
         let historyService = HistoryService.shared
         let cutoffDate = Date().addingTimeInterval(-maxHistoryDays)
-        
+
         // Get recent history based on scope
         let historyItems: [HistoryItem]
-        
+
         switch historyContextScope {
         case .recent:
             historyItems = Array(historyService.recentHistory.prefix(maxHistoryItems))
@@ -277,57 +299,58 @@ class ContextManager: ObservableObject {
         case .mostVisited:
             historyItems = historyService.getMostVisited(limit: maxHistoryItems)
         }
-        
+
         // Filter out items older than cutoff and limit results
-        let filteredItems = historyItems
+        let filteredItems =
+            historyItems
             .filter { $0.lastVisitDate >= cutoffDate }
             .filter { !shouldExcludeFromHistoryContext($0.url) }
             .prefix(maxHistoryItems)
-        
+
         return Array(filteredItems)
     }
-    
+
     /// Check if URL should be excluded from history context
     private func shouldExcludeFromHistoryContext(_ url: String) -> Bool {
         let excludedDomains = [
             "localhost", "127.0.0.1", "::1",
             "chrome://", "webkit://", "about:",
-            "data:", "file://"
+            "data:", "file://",
         ]
-        
+
         for excludedDomain in excludedDomains {
             if url.contains(excludedDomain) {
                 return true
             }
         }
-        
+
         // Exclude sensitive domains (banking, medical, etc.)
         let sensitiveDomains = [
             "bank", "medical", "health", "pharmacy",
-            "login", "auth", "secure", "private"
+            "login", "auth", "secure", "private",
         ]
-        
+
         let lowercaseUrl = url.lowercased()
         for sensitiveDomain in sensitiveDomains {
             if lowercaseUrl.contains(sensitiveDomain) {
                 return true
             }
         }
-        
+
         return false
     }
-    
+
     /// Extract domain from URL for context display
     private func extractDomain(from url: String) -> String? {
         guard let urlObj = URL(string: url) else { return nil }
         return urlObj.host
     }
-    
+
     /// Format time ago string for history context
     private func formatTimeAgo(_ date: Date) -> String {
         let now = Date()
         let interval = now.timeIntervalSince(date)
-        
+
         if interval < 60 {
             return "just now"
         } else if interval < 3600 {
@@ -343,193 +366,228 @@ class ContextManager: ObservableObject {
             return formatter.string(from: date)
         }
     }
-    
+
     /// Configure history context settings
     func configureHistoryContext(enabled: Bool, scope: HistoryContextScope) {
         isHistoryContextEnabled = enabled
         historyContextScope = scope
-        if AppLog.isVerboseEnabled { AppLog.debug("History context configured: enabled=\(enabled) scope=\(scope)") }
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("History context configured: enabled=\(enabled) scope=\(scope)")
+        }
     }
-    
+
     /// Clear history context cache (for privacy)
     func clearHistoryContextCache() {
         // Clear any cached history context data
         if AppLog.isVerboseEnabled { AppLog.debug("History context cache cleared") }
     }
-    
+
     // MARK: - Content Caching Methods
-    
+
     /// Get cached context for URL if it exists and is still fresh
     private func getCachedContext(for url: String) -> CachedContext? {
         // Clean up expired entries first
         cleanExpiredCache()
-        
+
         guard let cachedContext = contextCache[url] else {
             return nil
         }
-        
+
         // Check if cache entry is still fresh
         if Date().timeIntervalSince(cachedContext.cachedAt) > cacheExpirationTime {
             contextCache.removeValue(forKey: url)
             cacheAccessOrder.removeAll { $0 == url }
             return nil
         }
-        
+
         // Update access order for LRU
         cacheAccessOrder.removeAll { $0 == url }
         cacheAccessOrder.append(url)
-        
+
         return cachedContext
     }
-    
+
     /// Cache extracted context for future use
     private func cacheContext(_ context: WebpageContext, for url: String) {
         // Only cache high-quality content
         guard context.contentQuality > 15 else {
-            if AppLog.isVerboseEnabled { AppLog.debug("Skipping cache for low-quality content (q=\(context.contentQuality))") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Skipping cache for low-quality content (q=\(context.contentQuality))")
+            }
             return
         }
-        
+
         // Implement LRU eviction if cache is full
         if contextCache.count >= maxCacheSize {
             evictLeastRecentlyUsed()
         }
-        
+
         let cachedContext = CachedContext(
             context: context,
             cachedAt: Date(),
             accessCount: 1
         )
-        
+
         contextCache[url] = cachedContext
         cacheAccessOrder.removeAll { $0 == url }
         cacheAccessOrder.append(url)
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("Context cached for \(URL(string: url)?.host ?? "unknown"): len=\(context.text.count) q=\(context.contentQuality)") }
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug(
+                "Context cached for \(URL(string: url)?.host ?? "unknown"): len=\(context.text.count) q=\(context.contentQuality)"
+            )
+        }
     }
-    
+
     /// Remove expired cache entries
     private func cleanExpiredCache() {
         let now = Date()
         let expiredUrls = contextCache.compactMap { (url, cachedContext) in
             now.timeIntervalSince(cachedContext.cachedAt) > cacheExpirationTime ? url : nil
         }
-        
+
         for url in expiredUrls {
             contextCache.removeValue(forKey: url)
             cacheAccessOrder.removeAll { $0 == url }
         }
-        
-        if !expiredUrls.isEmpty { if AppLog.isVerboseEnabled { AppLog.debug("Cleaned \(expiredUrls.count) expired cache entries") } }
+
+        if !expiredUrls.isEmpty {
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Cleaned \(expiredUrls.count) expired cache entries")
+            }
+        }
     }
-    
+
     /// Evict least recently used cache entries
     private func evictLeastRecentlyUsed() {
-        let removeCount = maxCacheSize / 4 // Remove 25% of cache when full
+        let removeCount = maxCacheSize / 4  // Remove 25% of cache when full
         let urlsToRemove = Array(cacheAccessOrder.prefix(removeCount))
-        
+
         for url in urlsToRemove {
             contextCache.removeValue(forKey: url)
             cacheAccessOrder.removeAll { $0 == url }
         }
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("Evicted \(urlsToRemove.count) LRU cache entries") }
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("Evicted \(urlsToRemove.count) LRU cache entries")
+        }
     }
-    
+
     /// Clear all cached contexts
     func clearContextCache() {
         contextCache.removeAll()
         cacheAccessOrder.removeAll()
         if AppLog.isVerboseEnabled { AppLog.debug("All context cache cleared") }
     }
-    
+
     /// Get cache statistics for debugging
     func getCacheStatistics() -> (size: Int, hitRate: Double, avgQuality: Double) {
         let size = contextCache.count
-        
+
         let totalAccess = contextCache.values.reduce(0) { $0 + $1.accessCount }
         let hitRate = totalAccess > 0 ? Double(size) / Double(totalAccess) : 0.0
-        
-        let avgQuality = contextCache.isEmpty ? 0.0 : 
-            Double(contextCache.values.reduce(0) { $0 + $1.context.contentQuality }) / Double(size)
-        
+
+        let avgQuality =
+            contextCache.isEmpty
+            ? 0.0
+            : Double(contextCache.values.reduce(0) { $0 + $1.context.contentQuality })
+                / Double(size)
+
         return (size: size, hitRate: hitRate, avgQuality: avgQuality)
     }
-    
+
     // MARK: - Private Methods
-    
-    private func performContentExtraction(from webView: WKWebView, tab: Tab) async throws -> WebpageContext {
+
+    private func performContentExtraction(from webView: WKWebView, tab: Tab) async throws
+        -> WebpageContext
+    {
         // ENHANCED: Multi-strategy content extraction with comprehensive fallbacks
-        
+
         var bestContext: WebpageContext?
         var extractionStrategies: [ExtractionStrategy] = []
-        
+
         // Strategy 1: Enhanced JavaScript extraction (primary)
         extractionStrategies.append(.enhancedJavaScript)
-        
+
         // Strategy 2: Network request interception (if available)
         extractionStrategies.append(.networkInterception)
-        
+
         // Strategy 3: Lazy-load scroll extraction
         extractionStrategies.append(.lazyLoadScroll)
-        
+
         // Strategy 4: Emergency DOM extraction
         extractionStrategies.append(.emergencyExtraction)
-        
+
         for (index, strategy) in extractionStrategies.enumerated() {
-            if AppLog.isVerboseEnabled { AppLog.debug("Extraction attempt #\(index + 1): \(strategy.description)") }
-            
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Extraction attempt #\(index + 1): \(strategy.description)")
+            }
+
             do {
-                let context = try await executeExtractionStrategy(strategy, webView: webView, tab: tab)
-                
-                if bestContext == nil || context.contentQuality > (bestContext?.contentQuality ?? 0) {
+                let context = try await executeExtractionStrategy(
+                    strategy, webView: webView, tab: tab)
+
+                if bestContext == nil || context.contentQuality > (bestContext?.contentQuality ?? 0)
+                {
                     bestContext = context
                 }
-                
+
                 // If we have high-quality content, we can stop
                 if context.isHighQuality {
-                    if AppLog.isVerboseEnabled { AppLog.debug("High-quality content via \(strategy.description)") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("High-quality content via \(strategy.description)")
+                    }
                     break
                 }
-                
+
                 // If strategy recommends no retry, continue to next strategy
                 if !context.shouldRetry && context.contentQuality > 10 {
-                    if AppLog.isVerboseEnabled { AppLog.debug("Acceptable content via \(strategy.description)") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("Acceptable content via \(strategy.description)")
+                    }
                     break
                 }
-                
+
             } catch {
-                if AppLog.isVerboseEnabled { AppLog.debug("Strategy \(strategy.description) failed: \(error.localizedDescription)") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug(
+                        "Strategy \(strategy.description) failed: \(error.localizedDescription)")
+                }
                 continue
             }
         }
-        
+
         guard let finalContext = bestContext else {
             throw ContextError.extractionTimeout
         }
-        
+
         return finalContext
     }
-    
-    private func executeExtractionStrategy(_ strategy: ExtractionStrategy, webView: WKWebView, tab: Tab) async throws -> WebpageContext {
+
+    private func executeExtractionStrategy(
+        _ strategy: ExtractionStrategy, webView: WKWebView, tab: Tab
+    ) async throws -> WebpageContext {
         switch strategy {
         case .enhancedJavaScript:
             return try await performJavaScriptExtraction(webView: webView, tab: tab)
-            
+
         case .networkInterception:
             // For now, fall back to JavaScript - network interception would require WKURLScheme handling
             return try await performJavaScriptExtraction(webView: webView, tab: tab)
-            
+
         case .lazyLoadScroll:
             return try await performLazyLoadExtraction(webView: webView, tab: tab)
-            
+
         case .emergencyExtraction:
             return try await performEmergencyExtraction(webView: webView, tab: tab)
         }
     }
-    
-    private func performJavaScriptExtraction(webView: WKWebView, tab: Tab) async throws -> WebpageContext {
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<WebpageContext, Error>) in
+
+    private func performJavaScriptExtraction(webView: WKWebView, tab: Tab) async throws
+        -> WebpageContext
+    {
+        return try await withCheckedThrowingContinuation {
+            (cont: CheckedContinuation<WebpageContext, Error>) in
             let script = contentExtractionJavaScript
 
             // Set timeout for JavaScript execution
@@ -543,7 +601,8 @@ class ContextManager: ObservableObject {
                 webView.evaluateJavaScript(script) { result, error in
                     timeoutTask.cancel()
                     if let error = error {
-                        cont.resume(throwing: ContextError.javascriptError(error.localizedDescription))
+                        cont.resume(
+                            throwing: ContextError.javascriptError(error.localizedDescription))
                         return
                     }
                     guard let data = result as? [String: Any] else {
@@ -551,9 +610,12 @@ class ContextManager: ObservableObject {
                         return
                     }
                     do {
-                        let context = try self?.parseExtractionResult(data, from: webView, tab: tab) ?? 
-                            WebpageContext(url: webView.url?.absoluteString ?? "", title: "", text: "", 
-                                         headings: [], links: [], wordCount: 0, extractionDate: Date(), tabId: tab.id)
+                        let context =
+                            try self?.parseExtractionResult(data, from: webView, tab: tab)
+                            ?? WebpageContext(
+                                url: webView.url?.absoluteString ?? "", title: "", text: "",
+                                headings: [], links: [], wordCount: 0, extractionDate: Date(),
+                                tabId: tab.id)
                         cont.resume(returning: context)
                     } catch {
                         cont.resume(throwing: error)
@@ -562,76 +624,81 @@ class ContextManager: ObservableObject {
             }
         }
     }
-    
-    private func performLazyLoadExtraction(webView: WKWebView, tab: Tab) async throws -> WebpageContext {
+
+    private func performLazyLoadExtraction(webView: WKWebView, tab: Tab) async throws
+        -> WebpageContext
+    {
         // First trigger lazy loading
         await triggerLazyLoadScroll(on: webView)
-        
+
         // Wait for content to load
-        try await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-        
+        try await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
+
         // Then perform JavaScript extraction
         return try await performJavaScriptExtraction(webView: webView, tab: tab)
     }
-    
-    private func performEmergencyExtraction(webView: WKWebView, tab: Tab) async throws -> WebpageContext {
+
+    private func performEmergencyExtraction(webView: WKWebView, tab: Tab) async throws
+        -> WebpageContext
+    {
         // Simplified extraction that just gets all visible text
         let emergencyScript = """
-        (function() {
-            try {
-                var title = document.title || '';
-                var url = window.location.href;
-                var bodyText = document.body.innerText || document.body.textContent || '';
-                
-                // Clean basic content
-                var cleanedText = bodyText
-                    .replace(/\\s+/g, ' ')
-                    .replace(/\\n+/g, '\\n')
-                    .trim();
-                
-                var wordCount = cleanedText.split(/\\s+/).filter(w => w.length > 0).length;
-                
-                return {
-                    success: true,
-                    text: cleanedText,
-                    title: title,
-                    url: url,
-                    headings: [],
-                    links: [],
-                    wordCount: wordCount,
-                    extractionMethod: 'emergency',
-                    contentQuality: Math.min(cleanedText.length / 50, 15), // Basic quality score
-                    frameworksDetected: [],
-                    extractionAttempt: 1,
-                    isContentStable: true,
-                    contentChanges: 0,
-                    shouldRetry: false
-                };
-                
-            } catch (error) {
-                return {
-                    success: false,
-                    error: error.toString(),
-                    text: 'Emergency extraction failed',
-                    title: document.title || 'Unknown',
-                    url: window.location.href,
-                    headings: [],
-                    links: [],
-                    wordCount: 0,
-                    extractionMethod: 'emergency-error',
-                    contentQuality: 0,
-                    frameworksDetected: [],
-                    extractionAttempt: 1
-                };
-            }
-        })();
-        """
-        
+            (function() {
+                try {
+                    var title = document.title || '';
+                    var url = window.location.href;
+                    var bodyText = document.body.innerText || document.body.textContent || '';
+                    
+                    // Clean basic content
+                    var cleanedText = bodyText
+                        .replace(/\\s+/g, ' ')
+                        .replace(/\\n+/g, '\\n')
+                        .trim();
+                    
+                    var wordCount = cleanedText.split(/\\s+/).filter(w => w.length > 0).length;
+                    
+                    return {
+                        success: true,
+                        text: cleanedText,
+                        title: title,
+                        url: url,
+                        headings: [],
+                        links: [],
+                        wordCount: wordCount,
+                        extractionMethod: 'emergency',
+                        contentQuality: Math.min(cleanedText.length / 50, 15), // Basic quality score
+                        frameworksDetected: [],
+                        extractionAttempt: 1,
+                        isContentStable: true,
+                        contentChanges: 0,
+                        shouldRetry: false
+                    };
+                    
+                } catch (error) {
+                    return {
+                        success: false,
+                        error: error.toString(),
+                        text: 'Emergency extraction failed',
+                        title: document.title || 'Unknown',
+                        url: window.location.href,
+                        headings: [],
+                        links: [],
+                        wordCount: 0,
+                        extractionMethod: 'emergency-error',
+                        contentQuality: 0,
+                        frameworksDetected: [],
+                        extractionAttempt: 1
+                    };
+                }
+            })();
+            """
+
         return try await withCheckedThrowingContinuation { cont in
             Task { @MainActor [weak self] in
                 webView.evaluateJavaScript(emergencyScript) { result, error in
                     if let error = error {
-                        cont.resume(throwing: ContextError.javascriptError(error.localizedDescription))
+                        cont.resume(
+                            throwing: ContextError.javascriptError(error.localizedDescription))
                         return
                     }
                     guard let data = result as? [String: Any] else {
@@ -639,9 +706,12 @@ class ContextManager: ObservableObject {
                         return
                     }
                     do {
-                        let context = try self?.parseExtractionResult(data, from: webView, tab: tab) ?? 
-                            WebpageContext(url: webView.url?.absoluteString ?? "", title: "", text: "", 
-                                         headings: [], links: [], wordCount: 0, extractionDate: Date(), tabId: tab.id)
+                        let context =
+                            try self?.parseExtractionResult(data, from: webView, tab: tab)
+                            ?? WebpageContext(
+                                url: webView.url?.absoluteString ?? "", title: "", text: "",
+                                headings: [], links: [], wordCount: 0, extractionDate: Date(),
+                                tabId: tab.id)
                         cont.resume(returning: context)
                     } catch {
                         cont.resume(throwing: error)
@@ -650,18 +720,21 @@ class ContextManager: ObservableObject {
             }
         }
     }
-    
-    private func parseExtractionResult(_ data: [String: Any], from webView: WKWebView, tab: Tab) throws -> WebpageContext {
+
+    private func parseExtractionResult(_ data: [String: Any], from webView: WKWebView, tab: Tab)
+        throws -> WebpageContext
+    {
         guard let rawText = data["text"] as? String,
-              let title = data["title"] as? String,
-              let url = data["url"] as? String else {
+            let title = data["title"] as? String,
+            let url = data["url"] as? String
+        else {
             throw ContextError.missingRequiredFields
         }
-        
+
         // Clean and process the content
         let cleanedText = cleanExtractedContent(rawText)
         let truncatedText = truncateContent(cleanedText)
-        
+
         // Extract additional metadata
         let headings = data["headings"] as? [String] ?? []
         let links = data["links"] as? [String] ?? []
@@ -671,7 +744,7 @@ class ContextManager: ObservableObject {
         let extractionMethod = data["extractionMethod"] as? String ?? "unknown"
         let postCount = data["postCount"] as? Int ?? 0
         let isMultiPost = data["isMultiPost"] as? Bool ?? false
-        
+
         // ENHANCED: Extract new quality metrics
         let contentQuality = data["contentQuality"] as? Int ?? 0
         let frameworksDetected = data["frameworksDetected"] as? [String] ?? []
@@ -679,23 +752,35 @@ class ContextManager: ObservableObject {
         let isContentStable = data["isContentStable"] as? Bool ?? true
         let contentChanges = data["contentChanges"] as? Int ?? 0
         let shouldRetry = data["shouldRetry"] as? Bool ?? false
-        
+
         // ENHANCED: Log comprehensive extraction results
         if isMultiPost {
-            if AppLog.isVerboseEnabled { AppLog.debug("Multi-post extraction: \(postCount) posts from \(URL(string: url)?.host ?? "unknown")") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug(
+                    "Multi-post extraction: \(postCount) posts from \(URL(string: url)?.host ?? "unknown")"
+                )
+            }
         }
-        
+
         if !frameworksDetected.isEmpty {
-            if AppLog.isVerboseEnabled { AppLog.debug("Frameworks detected: \(frameworksDetected.joined(separator: ", "))") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Frameworks detected: \(frameworksDetected.joined(separator: ", "))")
+            }
         }
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("Extract method=\(extractionMethod) posts=\(postCount) len=\(truncatedText.count) q=\(contentQuality) attempt=\(extractionAttempt) stable=\(isContentStable) changes=\(contentChanges)") }
-        
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug(
+                "Extract method=\(extractionMethod) posts=\(postCount) len=\(truncatedText.count) q=\(contentQuality) attempt=\(extractionAttempt) stable=\(isContentStable) changes=\(contentChanges)"
+            )
+        }
+
         // Store enhanced metrics for potential retry logic
         if shouldRetry {
-            if AppLog.isVerboseEnabled { AppLog.debug("Content quality insufficient (\(contentQuality)) – retry recommended") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Content quality insufficient (\(contentQuality)) – retry recommended")
+            }
         }
-        
+
         return WebpageContext(
             url: url,
             title: title,
@@ -713,53 +798,63 @@ class ContextManager: ObservableObject {
             shouldRetry: shouldRetry
         )
     }
-    
+
     // Enhanced retry logic based on content quality metrics
     private func shouldRetryExtraction(for context: WebpageContext) -> Bool {
         // Use the JavaScript-calculated shouldRetry flag as primary indicator
         if context.shouldRetry {
             return true
         }
-        
+
         // Additional fallback checks for backward compatibility
-        return context.contentQuality < 20 || 
-               context.text.count < 200 || 
-               (!context.isContentStable && context.wordCount < 100)
+        return context.contentQuality < 20 || context.text.count < 200
+            || (!context.isContentStable && context.wordCount < 100)
     }
-    
+
     private func cleanExtractedContent(_ text: String) -> String {
         // Remove CSS and HTML artifacts first
         var cleaned = text
-        
+
         // Remove CSS rules and selectors
-        cleaned = cleaned.replacingOccurrences(of: "\\.[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "#[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
-        
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\.[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(
+            of: "#[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(
+            of: "[a-zA-Z0-9_-]+\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+
         // Remove CSS property patterns
-        cleaned = cleaned.replacingOccurrences(of: "[a-zA-Z-]+:\\s*[^;]+;", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "\\.([-_a-zA-Z0-9]+)", with: "", options: .regularExpression)
-        
+        cleaned = cleaned.replacingOccurrences(
+            of: "[a-zA-Z-]+:\\s*[^;]+;", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\.([-_a-zA-Z0-9]+)", with: "", options: .regularExpression)
+
         // Remove HTML tags
         cleaned = cleaned.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        
+
         // Remove JavaScript patterns
-        cleaned = cleaned.replacingOccurrences(of: "function\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "\\([^)]*\\)\\s*=>\\s*[^;\\n]+[;\\n]?", with: "", options: .regularExpression)
-        
+        cleaned = cleaned.replacingOccurrences(
+            of: "function\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\([^)]*\\)\\s*=>\\s*[^;\\n]+[;\\n]?", with: "", options: .regularExpression)
+
         // Remove common web artifacts
-        cleaned = cleaned.replacingOccurrences(of: "\\b(fill|stroke|url|rgba?|#[0-9a-fA-F]{3,8})\\b", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "\\b(px|em|rem|vh|vw|%|deg)\\b", with: "", options: .regularExpression)
-        
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\b(fill|stroke|url|rgba?|#[0-9a-fA-F]{3,8})\\b", with: "",
+            options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\b(px|em|rem|vh|vw|%|deg)\\b", with: "", options: .regularExpression)
+
         // Remove excessive whitespace and clean up content
-        cleaned = cleaned
+        cleaned =
+            cleaned
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "\\n+", with: "\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         return cleaned
     }
-    
+
     private func truncateContent(_ text: String) -> String {
         // If no limit set or text is within limit, return as-is
         if maxContentLength == 0 || text.count <= maxContentLength {
@@ -775,9 +870,9 @@ class ContextManager: ObservableObject {
 
         return String(text.prefix(maxContentLength)) + "... (content truncated)"
     }
-    
+
     // MARK: - JavaScript for Content Extraction
-    
+
     private var contentExtractionJavaScript: String {
         """
         (function() {
@@ -1384,7 +1479,8 @@ class ContextManager: ObservableObject {
     /// Programmatically scrolls the page to the bottom (and briefly back to top) to trigger lazy-loaded content like virtualised lists.
     /// Must be called on the main actor because it touches the WebView JS runtime.
     private func triggerLazyLoadScroll(on webView: WKWebView) async {
-        let js = "(function(){ const scrollBottom = () => window.scrollTo(0, document.body.scrollHeight); scrollBottom(); setTimeout(scrollBottom, 200); setTimeout(() => window.scrollTo(0,0), 400); })();"
+        let js =
+            "(function(){ const scrollBottom = () => window.scrollTo(0, document.body.scrollHeight); scrollBottom(); setTimeout(scrollBottom, 200); setTimeout(() => window.scrollTo(0,0), 400); })();"
         do {
             _ = try await webView.evaluateJavaScript(js)
         } catch {
@@ -1413,24 +1509,26 @@ struct WebpageContext: Identifiable, Codable {
     let wordCount: Int
     let extractionDate: Date
     let tabId: UUID
-    
+
     // ENHANCED: Quality and extraction metadata
     let extractionMethod: String
     let contentQuality: Int
     let frameworksDetected: [String]
     let isContentStable: Bool
     let shouldRetry: Bool
-    
+
     private enum CodingKeys: String, CodingKey {
         case url, title, text, headings, links, wordCount, extractionDate, tabId
         case extractionMethod, contentQuality, frameworksDetected, isContentStable, shouldRetry
     }
-    
+
     // Default initializer for backward compatibility
-    init(url: String, title: String, text: String, headings: [String], links: [String], 
-         wordCount: Int, extractionDate: Date, tabId: UUID,
-         extractionMethod: String = "unknown", contentQuality: Int = 0, 
-         frameworksDetected: [String] = [], isContentStable: Bool = true, shouldRetry: Bool = false) {
+    init(
+        url: String, title: String, text: String, headings: [String], links: [String],
+        wordCount: Int, extractionDate: Date, tabId: UUID,
+        extractionMethod: String = "unknown", contentQuality: Int = 0,
+        frameworksDetected: [String] = [], isContentStable: Bool = true, shouldRetry: Bool = false
+    ) {
         self.url = url
         self.title = title
         self.text = text
@@ -1445,31 +1543,31 @@ struct WebpageContext: Identifiable, Codable {
         self.isContentStable = isContentStable
         self.shouldRetry = shouldRetry
     }
-    
+
     /// Get a concise summary for display
     var summary: String {
         let previewLength = 100
         if text.count <= previewLength {
             return text
         }
-        
+
         let truncated = String(text.prefix(previewLength))
         if let lastSpace = truncated.lastIndex(of: " ") {
             return String(truncated[..<lastSpace]) + "..."
         }
         return truncated + "..."
     }
-    
+
     /// Check if the context is still fresh
     var isFresh: Bool {
-        Date().timeIntervalSince(extractionDate) < 300 // 5 minutes
+        Date().timeIntervalSince(extractionDate) < 300  // 5 minutes
     }
-    
+
     /// Check if the content quality is sufficient for AI processing
     var isHighQuality: Bool {
         return contentQuality >= 25 && wordCount >= 50
     }
-    
+
     /// Get quality description for debugging
     var qualityDescription: String {
         switch contentQuality {
@@ -1495,7 +1593,7 @@ enum HistoryContextScope: String, CaseIterable {
     case today = "today"
     case lastHour = "lastHour"
     case mostVisited = "mostVisited"
-    
+
     var displayName: String {
         switch self {
         case .recent:
@@ -1516,7 +1614,7 @@ enum ExtractionStrategy: CaseIterable {
     case networkInterception
     case lazyLoadScroll
     case emergencyExtraction
-    
+
     var description: String {
         switch self {
         case .enhancedJavaScript:
@@ -1540,7 +1638,7 @@ enum ContextError: LocalizedError {
     case invalidResponse
     case missingRequiredFields
     case contentTooLarge
-    
+
     var errorDescription: String? {
         switch self {
         case .noWebView:
@@ -1560,4 +1658,3 @@ enum ContextError: LocalizedError {
         }
     }
 }
-

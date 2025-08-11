@@ -62,7 +62,9 @@ class PrivacyManager: ObservableObject {
             try await cleanupExpiredData()
 
             isInitialized = true
-            if AppLog.isVerboseEnabled { AppLog.debug("Privacy Manager init completed (keychain deferred)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Privacy Manager init completed (keychain deferred)")
+            }
 
         } catch {
             AppLog.error("Privacy Manager init failed: \(error.localizedDescription)")
@@ -150,7 +152,9 @@ class PrivacyManager: ObservableObject {
                 EncryptedDataCodable(from: encryptedData))
             try encodedEnvelope.write(to: fileURL, options: .atomic)
 
-            if AppLog.isVerboseEnabled { AppLog.debug("Encrypted conversation stored: \(filename)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Encrypted conversation stored: \(filename)")
+            }
 
         } catch {
             throw PrivacyError.storageError(error.localizedDescription)
@@ -174,7 +178,9 @@ class PrivacyManager: ObservableObject {
             let age = Date().timeIntervalSince(envelope.timestamp)
             if age > TimeInterval(dataRetentionDays * 24 * 3600) {
                 try fileManager.removeItem(at: fileURL)
-                if AppLog.isVerboseEnabled { AppLog.debug("Expired conversation deleted: \(filename)") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Expired conversation deleted: \(filename)")
+                }
                 return nil
             }
 
@@ -236,7 +242,7 @@ class PrivacyManager: ObservableObject {
                 try fileManager.removeItem(at: fileURL)
             }
 
-        AppLog.debug("All AI conversation data purged")
+            AppLog.debug("All AI conversation data purged")
 
         } catch {
             throw PrivacyError.purgeError(error.localizedDescription)
@@ -280,13 +286,16 @@ class PrivacyManager: ObservableObject {
                 existingKeyData = try keychain.getData(encryptionKeyIdentifier)
             } catch {
                 // Log and treat as missing – will generate a new key below.
-                AppLog.warn("Keychain retrieval failed; will regenerate key: \(error.localizedDescription)")
+                AppLog.warn(
+                    "Keychain retrieval failed; will regenerate key: \(error.localizedDescription)")
                 existingKeyData = nil
             }
 
             if let data = existingKeyData {
                 encryptionKey = SymmetricKey(data: data)
-                if AppLog.isVerboseEnabled { AppLog.debug("Encryption key retrieved from keychain") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Encryption key retrieved from keychain")
+                }
             } else {
                 // Generate new key
                 let newKey = SymmetricKey(size: .bits256)
@@ -295,9 +304,12 @@ class PrivacyManager: ObservableObject {
                 // Store key in keychain; ignore duplicate errors as we just tried to read
                 do {
                     try keychain.set(newKey.data, forKey: encryptionKeyIdentifier)
-                    if AppLog.isVerboseEnabled { AppLog.debug("Generated and stored new encryption key") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("Generated and stored new encryption key")
+                    }
                 } catch {
-                    AppLog.warn("Failed to store new key in keychain: \(error.localizedDescription)")
+                    AppLog.warn(
+                        "Failed to store new key in keychain: \(error.localizedDescription)")
                     // Do not throw – we already have a key in memory and can continue.
                 }
             }
@@ -326,7 +338,9 @@ class PrivacyManager: ObservableObject {
             }
 
             if deletedCount > 0 {
-                if AppLog.isVerboseEnabled { AppLog.debug("Cleaned up \(deletedCount) expired conversation files") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Cleaned up \(deletedCount) expired conversation files")
+                }
             }
 
         } catch {

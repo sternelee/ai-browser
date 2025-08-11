@@ -31,5 +31,3 @@ enum AppLog {
         logger.error("\(message)")
     }
 }
-
-

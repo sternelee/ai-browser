@@ -258,6 +258,10 @@ public final class PageAgent: NSObject {
         let delay = predicate.delayMs ?? predicate.amountPx
         if let amount = delay, amount > 0 { pred["delayMs"] = amount }
         let to = timeoutMs ?? 5000
+        if pred.isEmpty {
+            // If no predicate provided, treat timeout as a simple delay to stabilize UI
+            pred["delayMs"] = min(max(300, to), 8000)
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: pred, options: []),
             let json = String(data: data, encoding: .utf8)
         else { return false }

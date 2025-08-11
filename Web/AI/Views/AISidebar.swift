@@ -70,13 +70,18 @@ struct AISidebar: View {
     private func sendAgent() {
         let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
+        // Immediate processing state for Agent mode
+        aiAssistant.animationState = .processing
         chatInput = ""
         // Support dev slash-commands in Agent mode as well
         if message.hasPrefix("/tool ") || message.hasPrefix("/plan ") {
             handleAgentCommand(message)
             return
         }
-        Task { await aiAssistant.planAndRunAgent(message) }
+        Task {
+            await aiAssistant.planAndRunAgent(message)
+            await MainActor.run { aiAssistant.animationState = .idle }
+        }
     }
 
     var body: some View {
@@ -160,7 +165,12 @@ struct AISidebar: View {
 
             // Content
             if agentMode {
-                agentTimelineArea()
+                ZStack {
+                    agentTimelineArea()
+                    if aiAssistant.animationState == .processing {
+                        processingOverlay()
+                    }
+                }
             } else {
                 chatMessagesArea()
             }
@@ -605,6 +615,51 @@ struct AISidebar: View {
         .padding(.vertical, 2)
     }
 
+    // MARK: - Processing Overlay (Agent Mode)
+    @ViewBuilder
+    private func processingOverlay() -> some View {
+        VStack(spacing: 12) {
+            // Raycast/Linear inspired subtle pulse
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 42, height: 42)
+                Circle()
+                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
+                    .frame(width: 26, height: 26)
+                    .overlay(
+                        Circle()
+                            .trim(from: 0, to: 0.65)
+                            .stroke(
+                                Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                            )
+                            .rotationEffect(.degrees(initSpinnerRotation))
+                            .onAppear {
+                                withAnimation(
+                                    .linear(duration: 1.4).repeatForever(autoreverses: false)
+                                ) {
+                                    initSpinnerRotation = 360
+                                }
+                            }
+                    )
+            }
+            Text("Planning actions…")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.12), radius: 14, x: 0, y: 8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
     // MARK: - Chat Input Area
 
     @ViewBuilder
@@ -885,10 +940,14 @@ struct AISidebar: View {
                 var fullResponse = ""
                 for try await chunk in stream {
                     fullResponse += chunk
-                    if AppLog.isVerboseEnabled { AppLog.debug("Streaming token (total=\(fullResponse.count))") }
+                    if AppLog.isVerboseEnabled {
+                        AppLog.debug("Streaming token (total=\(fullResponse.count))")
+                    }
                 }
 
-                if AppLog.isVerboseEnabled { AppLog.debug("Streaming completed: len=\(fullResponse.count)") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Streaming completed: len=\(fullResponse.count)")
+                }
 
             } catch {
                 AppLog.error("Sidebar streaming failed: \(error.localizedDescription)")
@@ -900,7 +959,9 @@ struct AISidebar: View {
                     }
                 }
 
-                if AppLog.isVerboseEnabled { AppLog.debug("Streaming error handled - cleanup done") }
+                if AppLog.isVerboseEnabled {
+                    AppLog.debug("Streaming error handled - cleanup done")
+                }
             }
         }
     }

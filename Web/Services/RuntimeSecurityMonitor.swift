@@ -1,66 +1,67 @@
+import CryptoKit
 import Foundation
 import OSLog
-import CryptoKit
-import UserNotifications
 import SwiftUI
+import UserNotifications
 
 /// Runtime Security Monitor for hardened runtime entitlement risk mitigation
-/// 
+///
 /// This service provides compensating security controls when using high-risk entitlements
 /// like com.apple.security.cs.allow-jit to minimize attack surface and detect exploitation attempts.
 ///
 /// Security Controls Implemented:
 /// - Memory usage anomaly detection
-/// - Executable allocation monitoring  
+/// - Executable allocation monitoring
 /// - Process integrity verification
 /// - Suspicious activity detection
 /// - Security event logging and alerting
 class RuntimeSecurityMonitor: ObservableObject {
     static let shared = RuntimeSecurityMonitor()
-    
+
     private let logger = Logger(subsystem: "com.web.browser", category: "SecurityMonitor")
     private let securityQueue = DispatchQueue(label: "runtime.security.monitor", qos: .utility)
-    
+
     // MARK: - Security Monitoring State
-    
+
     @Published private(set) var securityStatus: SecurityStatus = .secure
     @Published private(set) var detectedThreats: [SecurityThreat] = []
-    
+
     private var isMonitoring = false
     private var monitoringTimer: Timer?
     private var baselineMetrics: ProcessMetrics?
-    
+
     // MARK: - Security Thresholds
-    
+
     private struct SecurityThresholds {
-        static let maxExecutableMemory: UInt64 = 500 * 1024 * 1024 // 500MB
-        static let maxExecutableMemoryWithAI: UInt64 = 50 * 1024 * 1024 * 1024 // 50GB for AI models
+        static let maxExecutableMemory: UInt64 = 500 * 1024 * 1024  // 500MB
+        static let maxExecutableMemoryWithAI: UInt64 = 50 * 1024 * 1024 * 1024  // 50GB for AI models
         static let maxJITAllocationsPerSecond: Int = 100
-        static let anomalyDetectionWindow: TimeInterval = 60.0 // 60 seconds
+        static let anomalyDetectionWindow: TimeInterval = 60.0  // 60 seconds
     }
-    
+
     private init() {
         setupSecurityMonitoring()
     }
-    
+
     // MARK: - Public Interface
-    
+
     /// Start runtime security monitoring with compensating controls
     func startMonitoring() {
         guard !isMonitoring else { return }
-        
+
         AppLog.debug("Runtime security: start monitoring")
-        
+
         isMonitoring = true
-        
+
         // Capture baseline metrics
         captureBaseline()
-        
+
         // Start periodic monitoring (reduced frequency for less log spam)
-        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        monitoringTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) {
+            [weak self] _ in
             self?.performSecurityCheck()
         }
-        
+
         // Register for memory pressure notifications
         NotificationCenter.default.addObserver(
             self,
@@ -68,31 +69,34 @@ class RuntimeSecurityMonitor: ObservableObject {
             name: NSNotification.Name("NSProcessInfoMemoryPressureWarning"),
             object: nil
         )
-        
+
         // Log security monitoring activation
-        logSecurityEvent(RuntimeSecurityEvent.monitoringStarted, details: "Compensating controls active for JIT entitlement")
+        logSecurityEvent(
+            RuntimeSecurityEvent.monitoringStarted,
+            details: "Compensating controls active for JIT entitlement")
     }
-    
+
     /// Stop runtime security monitoring
     func stopMonitoring() {
         guard isMonitoring else { return }
-        
+
         AppLog.debug("Runtime security: stop monitoring")
-        
+
         isMonitoring = false
         monitoringTimer?.invalidate()
         monitoringTimer = nil
-        
+
         NotificationCenter.default.removeObserver(self)
-        
-        logSecurityEvent(RuntimeSecurityEvent.monitoringStopped, details: "Security monitoring deactivated")
+
+        logSecurityEvent(
+            RuntimeSecurityEvent.monitoringStopped, details: "Security monitoring deactivated")
     }
-    
+
     /// Get current security assessment
     func getSecurityAssessment() -> SecurityAssessment {
         let currentMetrics = getCurrentProcessMetrics()
-        let recentThreats = detectedThreats.filter { Date().timeIntervalSince($0.timestamp) < 300 } // Last 5 minutes
-        
+        let recentThreats = detectedThreats.filter { Date().timeIntervalSince($0.timestamp) < 300 }  // Last 5 minutes
+
         return SecurityAssessment(
             status: securityStatus,
             processMetrics: currentMetrics,
@@ -101,33 +105,35 @@ class RuntimeSecurityMonitor: ObservableObject {
             compensatingControlsActive: isMonitoring
         )
     }
-    
+
     // MARK: - Security Monitoring Implementation
-    
+
     private func setupSecurityMonitoring() {
         // Configure security logging
         AppLog.debug("Runtime security: init")
-        
+
         // Verify entitlements
         verifySecurityEntitlements()
-        
+
         // Set up mixed content security monitoring
         setupMixedContentSecurityIntegration()
-        
+
         // Set up CSP security monitoring
         setupCSPSecurityIntegration()
-        
+
         // Start monitoring immediately on init
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.startMonitoring()
         }
     }
-    
+
     private func captureBaseline() {
         baselineMetrics = getCurrentProcessMetrics()
-        if AppLog.isVerboseEnabled { AppLog.debug("Baseline security metrics: \(String(describing: self.baselineMetrics))") }
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("Baseline security metrics: \(String(describing: self.baselineMetrics))")
+        }
     }
-    
+
     private func performSecurityCheck() {
         securityQueue.async { [weak self] in
             self?.checkMemoryAnomalies()
@@ -136,147 +142,156 @@ class RuntimeSecurityMonitor: ObservableObject {
             self?.cleanupOldThreats()
         }
     }
-    
+
     private func checkMemoryAnomalies() {
         // Memory growth rate monitoring disabled due to AI model interference
         // AI models can cause legitimate rapid memory growth that triggers false positives
         // Keeping function for future potential enhancements but not performing checks
         return
     }
-    
+
     private func checkExecutableMemoryUsage() {
         let current = getCurrentProcessMetrics()
-        
+
         // Determine if this looks like AI model usage (very high executable memory)
         let isLikelyAIUsage = current.executableMemory > SecurityThresholds.maxExecutableMemory * 10
-        let threshold = isLikelyAIUsage ? SecurityThresholds.maxExecutableMemoryWithAI : SecurityThresholds.maxExecutableMemory
-        
+        let threshold =
+            isLikelyAIUsage
+            ? SecurityThresholds.maxExecutableMemoryWithAI : SecurityThresholds.maxExecutableMemory
+
         if current.executableMemory > threshold {
-            let executableMemoryMB = current.executableMemory / (1024*1024)
+            let executableMemoryMB = current.executableMemory / (1024 * 1024)
             let threat = SecurityThreat(
                 type: .executableMemoryAbuse,
                 severity: isLikelyAIUsage ? .medium : .critical,
-                description: "Excessive executable memory allocation: \(executableMemoryMB) MB\(isLikelyAIUsage ? " (likely AI model)" : "")",
+                description:
+                    "Excessive executable memory allocation: \(executableMemoryMB) MB\(isLikelyAIUsage ? " (likely AI model)" : "")",
                 details: [
                     "executable_memory": String(current.executableMemory),
                     "threshold": String(threshold),
-                    "likely_ai_usage": String(isLikelyAIUsage)
+                    "likely_ai_usage": String(isLikelyAIUsage),
                 ]
             )
-            
+
             handleSecurityThreat(threat)
         }
     }
-    
+
     private func checkProcessIntegrity() {
         // Verify process hasn't been tampered with
         guard let processPath = Bundle.main.executablePath, !processPath.isEmpty else {
             if AppLog.isVerboseEnabled { AppLog.debug("Process integrity: no executable path") }
             return
         }
-        
+
         // Only check if file exists to avoid excessive error logging
         guard FileManager.default.fileExists(atPath: processPath) else {
             if AppLog.isVerboseEnabled { AppLog.debug("Process integrity: exec not found") }
             return
         }
-        
+
         do {
             let processData = try Data(contentsOf: URL(fileURLWithPath: processPath))
             let processHash = SHA256.hash(data: processData)
             let hashString = processHash.compactMap { String(format: "%02x", $0) }.joined()
-            
+
             // Store and compare with baseline (simplified for demo)
             // In production, this would compare against known good hash
-            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity hash: \(hashString.prefix(16))…") }
-            
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Process integrity hash: \(hashString.prefix(16))…")
+            }
+
         } catch {
             // Reduced severity to avoid false positives during development
-            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity check failed: \(error.localizedDescription)") }
+            if AppLog.isVerboseEnabled {
+                AppLog.debug("Process integrity check failed: \(error.localizedDescription)")
+            }
         }
     }
-    
+
     private func handleSecurityThreat(_ threat: SecurityThreat) {
         DispatchQueue.main.async { [weak self] in
             self?.detectedThreats.append(threat)
-            
+
             // Update security status based on threat severity
             if threat.severity == .critical {
                 self?.securityStatus = .compromised
             } else if threat.severity == .high && self?.securityStatus == .secure {
                 self?.securityStatus = .threatened
             }
-            
+
             // Log security event
             self?.logSecurityEvent(RuntimeSecurityEvent.threatDetected, details: threat.description)
-            
+
             // Send notification for critical threats
             if threat.severity == .critical {
                 self?.sendSecurityAlert(threat)
             }
         }
     }
-    
+
     private func cleanupOldThreats() {
-        let cutoffTime = Date().addingTimeInterval(-300) // 5 minutes ago
+        let cutoffTime = Date().addingTimeInterval(-300)  // 5 minutes ago
         DispatchQueue.main.async { [weak self] in
             self?.detectedThreats.removeAll { $0.timestamp < cutoffTime }
-            
+
             // Reset security status if no recent threats
             if self?.detectedThreats.isEmpty == true {
                 self?.securityStatus = .secure
             }
         }
     }
-    
+
     // MARK: - Process Metrics
-    
+
     private func getCurrentProcessMetrics() -> ProcessMetrics {
         let task = mach_task_self_
         var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
-        
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
+
         let result = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
                 task_info(task, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
             }
         }
-        
+
         let memoryUsage = result == KERN_SUCCESS ? UInt64(info.resident_size) : 0
-        
+
         return ProcessMetrics(
             timestamp: Date(),
             memoryUsage: memoryUsage,
             executableMemory: getExecutableMemoryUsage()
         )
     }
-    
+
     private func getExecutableMemoryUsage() -> UInt64 {
         // Simplified executable memory estimation
         // In production, this would use vm_region_64 to scan memory regions
         let task = mach_task_self_
         var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
-        
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size)
+
         let result = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
                 task_info(task, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
             }
         }
-        
+
         // Rough estimate: assume 10% of virtual memory could be executable
         return result == KERN_SUCCESS ? UInt64(info.virtual_size) / 10 : 0
     }
-    
+
     // MARK: - Security Event Logging
-    
+
     private func logSecurityEvent(_ event: RuntimeSecurityEvent, details: String) {
         let _ = SecurityLogEntry(
             event: event,
             details: details,
             timestamp: Date()
         )
-        
+
         // Log to system logger
         switch event {
         case .threatDetected:
@@ -286,74 +301,77 @@ class RuntimeSecurityMonitor: ObservableObject {
         case .monitoringStopped:
             logger.info("⏹️ \(details)")
         }
-        
+
         // In production: send to centralized security monitoring system
     }
-    
+
     private func sendSecurityAlert(_ threat: SecurityThreat) {
         // Send system notification for critical security threats using modern UserNotifications
         let content = UNMutableNotificationContent()
         content.title = "Security Alert"
         content.body = "Critical security threat detected: \(threat.description)"
         content.sound = .default
-        
+
         let request = UNNotificationRequest(
             identifier: "security-alert-\(threat.id.uuidString)",
             content: content,
             trigger: nil
         )
-        
+
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                self.logger.error("Failed to send security notification: \(error.localizedDescription)")
+                self.logger.error(
+                    "Failed to send security notification: \(error.localizedDescription)")
             }
         }
-        
+
         logger.critical("🚨 CRITICAL SECURITY ALERT: \(threat.description)")
     }
-    
+
     // MARK: - Entitlement Verification
-    
+
     private func verifySecurityEntitlements() {
         let entitlements = getEntitlements()
-        
+
         if entitlements.allowsJIT {
             logger.warning("⚠️ JIT entitlement enabled - compensating controls required")
         }
-        
+
         if entitlements.allowsUnsignedExecutableMemory {
-            logger.error("🔴 CRITICAL: Unsigned executable memory entitlement detected - severe security risk")
+            logger.error(
+                "🔴 CRITICAL: Unsigned executable memory entitlement detected - severe security risk"
+            )
         }
-        
+
         logger.info("🔒 Entitlement verification complete")
     }
-    
+
     private func getEntitlements() -> EntitlementStatus {
         // In production, this would read actual entitlements from code signature
         // For now, we'll check based on our known configuration
         return EntitlementStatus(
-            allowsJIT: true, // We know this is enabled
-            allowsUnsignedExecutableMemory: false // We removed this
+            allowsJIT: true,  // We know this is enabled
+            allowsUnsignedExecutableMemory: false  // We removed this
         )
     }
-    
+
     // MARK: - Memory Pressure Handling
-    
+
     @objc private func handleMemoryPressure() {
         logger.warning("⚠️ Memory pressure detected - potential security implication")
-        
+
         let threat = SecurityThreat(
             type: .memoryPressure,
             severity: .medium,
             description: "System memory pressure detected",
             details: ["source": "NSProcessInfoMemoryPressureWarning"]
         )
-        
+
         handleSecurityThreat(threat)
     }
-    
+
     // MARK: - Security Integration Methods
-    
+
     private func setupMixedContentSecurityIntegration() {
         // Listen for mixed content security events
         NotificationCenter.default.addObserver(
@@ -363,10 +381,10 @@ class RuntimeSecurityMonitor: ObservableObject {
         ) { [weak self] notification in
             self?.handleMixedContentSecurityEvent(notification)
         }
-        
+
         if AppLog.isVerboseEnabled { AppLog.debug("Security integration: mixed content enabled") }
     }
-    
+
     private func setupCSPSecurityIntegration() {
         // Listen for CSP violation events
         NotificationCenter.default.addObserver(
@@ -376,18 +394,21 @@ class RuntimeSecurityMonitor: ObservableObject {
         ) { [weak self] notification in
             self?.handleCSPSecurityEvent(notification)
         }
-        
+
         if AppLog.isVerboseEnabled { AppLog.debug("Security integration: CSP enabled") }
     }
-    
+
     private func handleMixedContentSecurityEvent(_ notification: Notification) {
-        guard let mixedContentEvent = notification.object as? MixedContentManager.MixedContentSecurityEvent else {
+        guard
+            let mixedContentEvent = notification.object
+                as? MixedContentManager.MixedContentSecurityEvent
+        else {
             return
         }
-        
+
         let severity: SecurityThreat.ThreatSeverity
         let threatType: SecurityThreat.ThreatType
-        
+
         switch mixedContentEvent.eventType {
         case .mixedContentDetected:
             severity = .medium
@@ -402,27 +423,30 @@ class RuntimeSecurityMonitor: ObservableObject {
             severity = .low
             threatType = .mixedContentViolation
         case .contentBlocked:
-            severity = .low // Low because content was successfully blocked
+            severity = .low  // Low because content was successfully blocked
             threatType = .mixedContentViolation
         }
-        
+
         let threat = SecurityThreat(
             type: threatType,
             severity: severity,
             description: "Mixed content security event: \(mixedContentEvent.eventType)",
             details: mixedContentEvent.details
         )
-        
+
         handleSecurityThreat(threat)
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("Mixed content event processed: \(String(describing: mixedContentEvent.eventType))") }
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug(
+                "Mixed content event processed: \(String(describing: mixedContentEvent.eventType))")
+        }
     }
-    
+
     private func handleCSPSecurityEvent(_ notification: Notification) {
         guard let cspViolation = notification.object as? CSPManager.CSPViolation else {
             return
         }
-        
+
         let severity: SecurityThreat.ThreatSeverity
         switch cspViolation.severity {
         case .low:
@@ -434,7 +458,7 @@ class RuntimeSecurityMonitor: ObservableObject {
         case .critical:
             severity = .critical
         }
-        
+
         let threat = SecurityThreat(
             type: .contentSecurityPolicyBreach,
             severity: severity,
@@ -442,37 +466,41 @@ class RuntimeSecurityMonitor: ObservableObject {
             details: [
                 "source": cspViolation.source,
                 "details": cspViolation.details,
-                "timestamp": ISO8601DateFormatter().string(from: cspViolation.timestamp)
+                "timestamp": ISO8601DateFormatter().string(from: cspViolation.timestamp),
             ]
         )
-        
+
         handleSecurityThreat(threat)
-        
-        if AppLog.isVerboseEnabled { AppLog.debug("CSP violation processed: \(String(describing: cspViolation.violationType))") }
+
+        if AppLog.isVerboseEnabled {
+            AppLog.debug(
+                "CSP violation processed: \(String(describing: cspViolation.violationType))")
+        }
     }
-    
+
     /// Enhanced security assessment that includes all security components
     func getComprehensiveSecurityAssessment() -> ComprehensiveSecurityAssessment {
         let baseAssessment = getSecurityAssessment()
-        
+
         // Get mixed content security status
         let mixedContentStats = MixedContentManager.shared.getSecurityStatistics()
-        let mixedContentSecure = mixedContentStats.currentPolicy == .block && mixedContentStats.recentViolations == 0
-        
+        let mixedContentSecure =
+            mixedContentStats.currentPolicy == .block && mixedContentStats.recentViolations == 0
+
         // Get CSP security status
         let cspStats = CSPManager.shared.getSecurityStatistics()
         let cspSecure = cspStats.isCSPEnabled && cspStats.criticalViolations == 0
-        
+
         // Calculate overall security score
         let securityComponents = [
-            baseAssessment.jitEntitlementEnabled ? 0.7 : 1.0, // JIT reduces score
+            baseAssessment.jitEntitlementEnabled ? 0.7 : 1.0,  // JIT reduces score
             mixedContentSecure ? 1.0 : 0.6,
             cspSecure ? 1.0 : 0.5,
-            baseAssessment.status == .secure ? 1.0 : 0.3
+            baseAssessment.status == .secure ? 1.0 : 0.3,
         ]
-        
+
         let overallScore = securityComponents.reduce(0, +) / Double(securityComponents.count)
-        
+
         return ComprehensiveSecurityAssessment(
             baseAssessment: baseAssessment,
             mixedContentSecure: mixedContentSecure,
@@ -485,47 +513,51 @@ class RuntimeSecurityMonitor: ObservableObject {
             )
         )
     }
-    
+
     private func generateSecurityRecommendations(
         mixedContentSecure: Bool,
         cspSecure: Bool,
         baseSecure: Bool
     ) -> [SecurityRecommendation] {
         var recommendations: [SecurityRecommendation] = []
-        
+
         if !mixedContentSecure {
-            recommendations.append(SecurityRecommendation(
-                priority: .high,
-                category: .mixedContent,
-                title: "Mixed Content Policy",
-                description: "Consider using 'Block All Mixed Content' policy for maximum security",
-                action: "Update mixed content settings"
-            ))
+            recommendations.append(
+                SecurityRecommendation(
+                    priority: .high,
+                    category: .mixedContent,
+                    title: "Mixed Content Policy",
+                    description:
+                        "Consider using 'Block All Mixed Content' policy for maximum security",
+                    action: "Update mixed content settings"
+                ))
         }
-        
+
         if !cspSecure {
-            recommendations.append(SecurityRecommendation(
-                priority: .high,
-                category: .contentSecurity,
-                title: "Content Security Policy",
-                description: "Enable CSP strict mode and resolve violation issues",
-                action: "Review CSP settings and violations"
-            ))
+            recommendations.append(
+                SecurityRecommendation(
+                    priority: .high,
+                    category: .contentSecurity,
+                    title: "Content Security Policy",
+                    description: "Enable CSP strict mode and resolve violation issues",
+                    action: "Review CSP settings and violations"
+                ))
         }
-        
+
         if !baseSecure {
-            recommendations.append(SecurityRecommendation(
-                priority: .critical,
-                category: .runtime,
-                title: "Runtime Security",
-                description: "Runtime security threats detected - review system integrity",
-                action: "Check runtime security monitoring"
-            ))
+            recommendations.append(
+                SecurityRecommendation(
+                    priority: .critical,
+                    category: .runtime,
+                    title: "Runtime Security",
+                    description: "Runtime security threats detected - review system integrity",
+                    action: "Check runtime security monitoring"
+                ))
         }
-        
+
         return recommendations
     }
-    
+
     deinit {
         stopMonitoring()
     }
@@ -537,7 +569,7 @@ enum SecurityStatus {
     case secure
     case threatened
     case compromised
-    
+
     var description: String {
         switch self {
         case .secure: return "Secure"
@@ -554,7 +586,7 @@ struct SecurityThreat {
     let description: String
     let details: [String: String]
     let timestamp = Date()
-    
+
     enum ThreatType {
         case memoryAnomaly
         case executableMemoryAbuse
@@ -564,7 +596,7 @@ struct SecurityThreat {
         case contentSecurityPolicyBreach
         case securityContextDegradation
     }
-    
+
     enum ThreatSeverity {
         case low, medium, high, critical
     }
@@ -607,7 +639,7 @@ struct ComprehensiveSecurityAssessment {
     let cspSecure: Bool
     let overallSecurityScore: Double
     let securityRecommendations: [SecurityRecommendation]
-    
+
     var overallSecurityLevel: SecurityLevel {
         switch overallSecurityScore {
         case 0.9...1.0:
@@ -620,10 +652,10 @@ struct ComprehensiveSecurityAssessment {
             return .vulnerable
         }
     }
-    
+
     enum SecurityLevel {
         case secure, good, acceptable, vulnerable
-        
+
         var description: String {
             switch self {
             case .secure: return "Secure"
@@ -632,7 +664,7 @@ struct ComprehensiveSecurityAssessment {
             case .vulnerable: return "Vulnerable"
             }
         }
-        
+
         var color: Color {
             switch self {
             case .secure: return .green
@@ -650,10 +682,10 @@ struct SecurityRecommendation {
     let title: String
     let description: String
     let action: String
-    
+
     enum Priority {
         case low, medium, high, critical
-        
+
         var color: Color {
             switch self {
             case .low: return .blue
@@ -663,10 +695,10 @@ struct SecurityRecommendation {
             }
         }
     }
-    
+
     enum Category {
         case mixedContent, contentSecurity, runtime, certificates
-        
+
         var icon: String {
             switch self {
             case .mixedContent: return "exclamationmark.shield"
