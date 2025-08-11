@@ -39,31 +39,41 @@ struct AISidebar: View {
     // MARK: - Agent Timeline Area
     @ViewBuilder
     private func agentTimelineArea() -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if let run = aiAssistant.currentAgentRun {
-                    ForEach(Array(run.steps.enumerated()), id: \.1.id) { index, step in
-                        AgentTimelineRow(index: index + 1, step: step)
-                    }
-                    if let finishedAt = run.finishedAt {
-                        Text("Finished \(finishedAt.formatted(date: .omitted, time: .shortened))")
+        ScrollViewReader { _ in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if !aiAssistant.isInitialized {
+                        aiInitializationView()
+                    } else if let run = aiAssistant.currentAgentRun {
+                        // Render the user's instruction using the same user-bubble style as Ask mode
+                        ChatBubbleView(
+                            message: ConversationMessage(
+                                role: .user,
+                                content: run.title,
+                                timestamp: run.startedAt
+                            )
+                        )
+                        .padding(.bottom, 4)
+
+                        ForEach(Array(run.steps.enumerated()), id: \.1.id) { index, step in
+                            AgentTimelineRow(index: index + 1, step: step)
+                        }
+                        if let finishedAt = run.finishedAt {
+                            Text(
+                                "Finished \(finishedAt.formatted(date: .omitted, time: .shortened))"
+                            )
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                             .padding(.top, 4)
+                        }
+                    } else {
+                        agentReadyPlaceholder()
                     }
-                } else {
-                    Text(
-                        "No agent run yet. Describe what to do (e.g., ‘search for sweater, open the first result, add to cart’)."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial))
                 }
+                .padding(.vertical, 8)
             }
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Agent send
@@ -562,6 +572,40 @@ struct AISidebar: View {
             }()
 
             Text("AI Ready · \(providerBadge)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.primary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(.quaternary, lineWidth: 0.5)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func agentReadyPlaceholder() -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wand.and.sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.green)
+
+            let providerBadge: String = {
+                if let p = providerManager.currentProvider {
+                    return p.providerType == .local ? "Local" : p.displayName
+                } else {
+                    return "Local"
+                }
+            }()
+
+            Text("Agent Ready · \(providerBadge)")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.primary)
 

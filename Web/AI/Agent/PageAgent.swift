@@ -35,6 +35,21 @@ public final class PageAgent: NSObject {
         let script =
             "(() => JSON.stringify(window.__agent && window.__agent.findElements ? window.__agent.findElements(JSON.parse('\(escaped)')) : []))();"
 
+        // Poll up to ~3s for dynamic content like Reddit posts
+        let start = Date().timeIntervalSince1970
+        let timeout: Double = 3.0
+        while Date().timeIntervalSince1970 - start < timeout {
+            if let jsonString = await Self.evaluateJSString(script, in: webView),
+                let data = jsonString.data(using: .utf8)
+            {
+                let decoder = JSONDecoder()
+                if let elements = try? decoder.decode([ElementSummary].self, from: data) {
+                    if !elements.isEmpty { return elements }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+        // One final attempt to return whatever is present (even empty)
         if let jsonString = await Self.evaluateJSString(script, in: webView),
             let data = jsonString.data(using: .utf8)
         {
@@ -248,27 +263,59 @@ public final class PageAgent: NSObject {
     /// Minimal waitFor supporting {readyState:"complete"} or {selector:"..."} or {delayMs:n}
     public func waitFor(predicate: PageAction, timeoutMs: Int?) async -> Bool {
         guard let webView else { return false }
-        var pred: [String: Any] = [:]
-        if let text = predicate.text, !text.isEmpty {
-            pred["selector"] = text
-        }
-        if let direction = predicate.direction, direction == "ready" {
-            pred["readyState"] = "complete"
-        }
-        let delay = predicate.delayMs ?? predicate.amountPx
-        if let amount = delay, amount > 0 { pred["delayMs"] = amount }
+
+        // Swift-side implementation to avoid Promise bridging issues in WKWebView
         let to = timeoutMs ?? 5000
-        if pred.isEmpty {
-            // If no predicate provided, treat timeout as a simple delay to stabilize UI
-            pred["delayMs"] = min(max(300, to), 8000)
+
+        // Case 1: explicit delay
+        if let delay = predicate.delayMs ?? predicate.amountPx, delay > 0 {
+            let clamped = min(max(0, delay), to)
+            try? await Task.sleep(nanoseconds: UInt64(clamped) * 1_000_000)
+            return true
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: pred, options: []),
-            let json = String(data: data, encoding: .utf8)
-        else { return false }
-        let escaped = Self.escapeForJavaScriptString(json)
-        let script =
-            "(() => JSON.stringify(window.__agent && window.__agent.waitFor ? window.__agent.waitFor(JSON.parse('\(escaped)'), \(to)) : { ok: false }))();"
-        return await Self.parseOk(from: script, in: webView)
+
+        let deadline = Date().timeIntervalSince1970 + Double(to) / 1000.0
+
+        // Helper: evaluate a boolean JS expression
+        func evalBool(_ js: String) async -> Bool {
+            await withCheckedContinuation { continuation in
+                webView.evaluateJavaScript(js) { result, _ in
+                    continuation.resume(returning: (result as? Bool) == true)
+                }
+            }
+        }
+
+        // Case 2: wait for readyState === 'complete'
+        if predicate.direction == "ready" {
+            while Date().timeIntervalSince1970 < deadline {
+                let ready = await evalBool("document.readyState === 'complete'")
+                if ready { return true }
+                try? await Task.sleep(nanoseconds: 120_000_000)
+            }
+            return false
+        }
+
+        // Case 3: wait for a visible selector (predicate.text used as CSS selector)
+        if let selector = predicate.text, !selector.isEmpty {
+            // Escape selector for safe JS embedding
+            let safeSelector =
+                selector
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\\'")
+                .replacingOccurrences(of: "\n", with: " ")
+            let js =
+                "(() => { try { const el = document.querySelector('\(safeSelector)'); if (!el) return false; const r = el.getBoundingClientRect(); const s = window.getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; } catch (e) { return false; } })();"
+            while Date().timeIntervalSince1970 < deadline {
+                if await evalBool(js) { return true }
+                try? await Task.sleep(nanoseconds: 120_000_000)
+            }
+            return false
+        }
+
+        // Default: small stabilization wait
+        let fallback = min(max(300, to), 8000)
+        try? await Task.sleep(nanoseconds: UInt64(fallback) * 1_000_000)
+        return true
     }
 
     // MARK: - JS Bridge Helpers

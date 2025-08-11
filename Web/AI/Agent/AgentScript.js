@@ -46,6 +46,13 @@
       if (locator.css) {
         nodes = Array.from(document.querySelectorAll(locator.css));
         hint = locator.css;
+        if (!nodes.length) {
+          const css = String(locator.css || '').toLowerCase();
+          const looksLikeRedditPost = css.includes('post-container') || css.includes('shreddit') || css.includes('a[data-click-id="body"]');
+          if (looksLikeRedditPost) {
+            nodes = Array.from(document.querySelectorAll('article, [role="article"], [data-testid="post-container"], shreddit-post, .Post, .thing'));
+          }
+        }
       } else {
         const role = (locator.role || '').toLowerCase();
         const hasNeedle = Boolean(locator.text || locator.name);
@@ -60,6 +67,9 @@
           selector = 'a, [role="link"]';
         } else if (role === 'select') {
           selector = 'select';
+        } else if (role === 'article' || role === 'post') {
+          // Modern content sites (e.g., Reddit) use custom elements/attrs for posts
+          selector = 'article, [role="article"], [data-testid="post-container"], shreddit-post, .Post, .thing';
         }
 
         const candidates = Array.from(document.querySelectorAll(selector));
@@ -83,7 +93,12 @@
           if (role) {
             const r = roleFor(el).toLowerCase();
             if (role === 'textbox' && !(r === 'textbox' || r === 'input')) return false;
-            if (role !== 'textbox' && r !== role) return false;
+            if (role === 'article') {
+              const articleLike = r === 'article' || (el.matches && el.matches('[role="article"], article, [data-testid="post-container"], shreddit-post, .Post, .thing'));
+              if (!articleLike) return false;
+            } else if (role !== 'textbox' && r !== role) {
+              return false;
+            }
           }
           if (!hasNeedle) return true;
           const inner = ((el.innerText || el.textContent || '')).toLowerCase();

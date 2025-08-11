@@ -64,7 +64,8 @@ struct AgentTimelineRow: View {
             Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(
                 .system(size: 12))
         case .failure:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+            // Neutral informative symbol to reduce anxiety — indicates an action didn't complete, not a security issue
+            Image(systemName: "xmark.circle.fill").foregroundColor(.orange)
                 .font(.system(size: 12))
         }
     }

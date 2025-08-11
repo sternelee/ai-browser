@@ -239,6 +239,8 @@ class AIAssistant: ObservableObject {
                 )
                 plan = fallback
             }
+            // Site-aware post-processing (e.g., ensure dynamic content has a selector wait)
+            plan = Self.postProcessPlanForSites(plan)
             NSLog("🛰️ Agent: Plan decoded with \(plan.count) steps")
             await MainActor.run {
                 var steps: [AgentStep] = []
@@ -336,7 +338,8 @@ class AIAssistant: ObservableObject {
                     return
                 }
                 let agent = PageAgent(webView: webView)
-                for (idx, step) in fallback.enumerated() {
+                let adjusted = Self.postProcessPlanForSites(fallback)
+                for (idx, step) in adjusted.enumerated() {
                     let decision = AgentPermissionManager.shared.evaluate(
                         intent: step.type, urlHost: host)
                     if !decision.allowed {
@@ -375,6 +378,56 @@ class AIAssistant: ObservableObject {
                     finishedAt: Date())
             }
         }
+    }
+
+    /// Insert domain-specific waits for dynamic content surfaces
+    private static func postProcessPlanForSites(_ plan: [PageAction]) -> [PageAction] {
+        var out: [PageAction] = []
+        func redditSelectorWait() -> PageAction {
+            // Wait for presence of post containers/anchors
+            return PageAction(
+                type: .waitFor,
+                text:
+                    "div[data-testid=\"post-container\"], article, [role=article], shreddit-post, .Post, .thing",
+                timeoutMs: 8000
+            )
+        }
+        for (idx, step) in plan.enumerated() {
+            out.append(step)
+            // If navigating to Reddit, insert an additional selector wait after any ready wait (or immediately)
+            if step.type == .navigate, let url = step.url?.lowercased(), url.contains("reddit.com")
+            {
+                let next = (idx + 1) < plan.count ? plan[idx + 1] : nil
+                if next?.type == .waitFor, next?.direction == "ready" {
+                    // Insert after the ready wait in the outer loop when we reach it
+                    // We detect at the ready step below.
+                } else {
+                    out.append(redditSelectorWait())
+                }
+            } else if step.type == .waitFor, step.direction == "ready" {
+                // If previous was a navigate to Reddit, follow with selector wait
+                if idx > 0 {
+                    let prev = plan[idx - 1]
+                    if prev.type == .navigate, let url = prev.url?.lowercased(),
+                        url.contains("reddit.com")
+                    {
+                        out.append(redditSelectorWait())
+                    }
+                }
+            } else if step.type == .findElements {
+                // If looking for Reddit posts, ensure a selector wait just before
+                if let css = step.locator?.css?.lowercased(),
+                    css.contains("post-container") || css.contains("shreddit")
+                {
+                    out.insert(redditSelectorWait(), at: max(out.count - 1, 0))
+                }
+                if let role = step.locator?.role?.lowercased(), role == "article" || role == "post"
+                {
+                    out.insert(redditSelectorWait(), at: max(out.count - 1, 0))
+                }
+            }
+        }
+        return out
     }
 
     @MainActor private func markTimelineFailureForAll(message: String) {
