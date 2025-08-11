@@ -53,7 +53,7 @@ class ContextManager: ObservableObject {
     func extractCurrentPageContext(from tabManager: TabManager) async -> WebpageContext? {
         guard let activeTab = tabManager.activeTab,
               let webView = activeTab.webView else {
-            NSLog("⚠️ No active tab or WebView available for context extraction")
+            if AppLog.isVerboseEnabled { AppLog.debug("No active tab/WebView for context extraction") }
             return nil
         }
         
@@ -76,13 +76,13 @@ class ContextManager: ObservableObject {
     /// Extract context from specific WebView with intelligent caching
     func extractPageContext(from webView: WKWebView, tab: Tab) async -> WebpageContext? {
         guard let url = await webView.url?.absoluteString else {
-            NSLog("⚠️ No URL available for context extraction")
+            if AppLog.isVerboseEnabled { AppLog.debug("No URL for context extraction") }
             return nil
         }
         
         // Check cache first
         if let cachedContext = getCachedContext(for: url) {
-            NSLog("🎯 Using cached context: \(cachedContext.context.text.count) characters from \(cachedContext.context.title)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Using cached context: len=\(cachedContext.context.text.count) title=\(cachedContext.context.title)") }
             
             await MainActor.run {
                 lastExtractedContext = cachedContext.context
@@ -114,11 +114,11 @@ class ContextManager: ObservableObject {
                 lastExtractedContext = context
             }
             
-            NSLog("✅ Context extracted: \(context.text.count) characters from \(context.url)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Context extracted: len=\(context.text.count) url=\(context.url)") }
             return context
             
         } catch {
-            NSLog("❌ Context extraction failed: \(error.localizedDescription)")
+            AppLog.warn("Context extraction failed: \(error.localizedDescription)")
             await MainActor.run {
                 contextStatus = "Extraction failed"
             }
@@ -136,9 +136,9 @@ class ContextManager: ObservableObject {
         if let context = context {
             let formattedContext = formatWebpageContext(context)
             sections.append(formattedContext)
-            NSLog("🔍 Formatted context length: \(formattedContext.count) characters from \(context.title)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Formatted context length: \(formattedContext.count) from \(context.title)") }
         } else {
-            NSLog("⚠️ No context provided to getFormattedContext")
+            if AppLog.isVerboseEnabled { AppLog.debug("No context provided to getFormattedContext") }
         }
 
         // 2. Browsing history (optional)
@@ -147,12 +147,12 @@ class ContextManager: ObservableObject {
         }
 
         guard !sections.isEmpty else { 
-            NSLog("⚠️ No sections to format - returning nil")
+            if AppLog.isVerboseEnabled { AppLog.debug("No sections to format - returning nil") }
             return nil 
         }
         
         let finalContext = sections.joined(separator: "\n\n---\n\n")
-        NSLog("✅ Final formatted context: \(finalContext.count) characters")
+        if AppLog.isVerboseEnabled { AppLog.debug("Final formatted context len=\(finalContext.count)") }
         return finalContext
     }
 
@@ -209,7 +209,7 @@ class ContextManager: ObservableObject {
         \(ctx.text)
         """
         
-        NSLog("🔍 formatWebpageContext result length: \(formattedResult.count) characters, text length: \(ctx.text.count)")
+        if AppLog.isVerboseEnabled { AppLog.debug("formatWebpageContext len=\(formattedResult.count) text=\(ctx.text.count)") }
         return formattedResult
     }
     
@@ -348,13 +348,13 @@ class ContextManager: ObservableObject {
     func configureHistoryContext(enabled: Bool, scope: HistoryContextScope) {
         isHistoryContextEnabled = enabled
         historyContextScope = scope
-        NSLog("🔮 History context configured: enabled=\(enabled), scope=\(scope)")
+        if AppLog.isVerboseEnabled { AppLog.debug("History context configured: enabled=\(enabled) scope=\(scope)") }
     }
     
     /// Clear history context cache (for privacy)
     func clearHistoryContextCache() {
         // Clear any cached history context data
-        NSLog("🗑️ History context cache cleared")
+        if AppLog.isVerboseEnabled { AppLog.debug("History context cache cleared") }
     }
     
     // MARK: - Content Caching Methods
@@ -386,7 +386,7 @@ class ContextManager: ObservableObject {
     private func cacheContext(_ context: WebpageContext, for url: String) {
         // Only cache high-quality content
         guard context.contentQuality > 15 else {
-            NSLog("🚫 Skipping cache for low-quality content (quality: \(context.contentQuality))")
+            if AppLog.isVerboseEnabled { AppLog.debug("Skipping cache for low-quality content (q=\(context.contentQuality))") }
             return
         }
         
@@ -405,7 +405,7 @@ class ContextManager: ObservableObject {
         cacheAccessOrder.removeAll { $0 == url }
         cacheAccessOrder.append(url)
         
-        NSLog("💾 Context cached for \(URL(string: url)?.host ?? "unknown"): \(context.text.count) characters, quality: \(context.contentQuality)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Context cached for \(URL(string: url)?.host ?? "unknown"): len=\(context.text.count) q=\(context.contentQuality)") }
     }
     
     /// Remove expired cache entries
@@ -420,9 +420,7 @@ class ContextManager: ObservableObject {
             cacheAccessOrder.removeAll { $0 == url }
         }
         
-        if !expiredUrls.isEmpty {
-            NSLog("🧹 Cleaned \(expiredUrls.count) expired cache entries")
-        }
+        if !expiredUrls.isEmpty { if AppLog.isVerboseEnabled { AppLog.debug("Cleaned \(expiredUrls.count) expired cache entries") } }
     }
     
     /// Evict least recently used cache entries
@@ -435,14 +433,14 @@ class ContextManager: ObservableObject {
             cacheAccessOrder.removeAll { $0 == url }
         }
         
-        NSLog("🗑️ Evicted \(urlsToRemove.count) LRU cache entries")
+        if AppLog.isVerboseEnabled { AppLog.debug("Evicted \(urlsToRemove.count) LRU cache entries") }
     }
     
     /// Clear all cached contexts
     func clearContextCache() {
         contextCache.removeAll()
         cacheAccessOrder.removeAll()
-        NSLog("🗑️ All context cache cleared")
+        if AppLog.isVerboseEnabled { AppLog.debug("All context cache cleared") }
     }
     
     /// Get cache statistics for debugging
@@ -479,7 +477,7 @@ class ContextManager: ObservableObject {
         extractionStrategies.append(.emergencyExtraction)
         
         for (index, strategy) in extractionStrategies.enumerated() {
-            NSLog("🔍 Attempting extraction strategy \(index + 1): \(strategy.description)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Extraction attempt #\(index + 1): \(strategy.description)") }
             
             do {
                 let context = try await executeExtractionStrategy(strategy, webView: webView, tab: tab)
@@ -490,18 +488,18 @@ class ContextManager: ObservableObject {
                 
                 // If we have high-quality content, we can stop
                 if context.isHighQuality {
-                    NSLog("✅ High-quality content found with \(strategy.description)")
+                    if AppLog.isVerboseEnabled { AppLog.debug("High-quality content via \(strategy.description)") }
                     break
                 }
                 
                 // If strategy recommends no retry, continue to next strategy
                 if !context.shouldRetry && context.contentQuality > 10 {
-                    NSLog("📈 Acceptable content found with \(strategy.description)")
+                    if AppLog.isVerboseEnabled { AppLog.debug("Acceptable content via \(strategy.description)") }
                     break
                 }
                 
             } catch {
-                NSLog("❌ Strategy \(strategy.description) failed: \(error.localizedDescription)")
+                if AppLog.isVerboseEnabled { AppLog.debug("Strategy \(strategy.description) failed: \(error.localizedDescription)") }
                 continue
             }
         }
@@ -684,18 +682,18 @@ class ContextManager: ObservableObject {
         
         // ENHANCED: Log comprehensive extraction results
         if isMultiPost {
-            NSLog("🔥 Multi-post extraction: \(postCount) posts from \(URL(string: url)?.host ?? "unknown site")")
+            if AppLog.isVerboseEnabled { AppLog.debug("Multi-post extraction: \(postCount) posts from \(URL(string: url)?.host ?? "unknown")") }
         }
         
         if !frameworksDetected.isEmpty {
-            NSLog("🎯 Frameworks detected: \(frameworksDetected.joined(separator: ", "))")
+            if AppLog.isVerboseEnabled { AppLog.debug("Frameworks detected: \(frameworksDetected.joined(separator: ", "))") }
         }
         
-        NSLog("📊 Extraction method: \(extractionMethod), Posts: \(postCount), Content length: \(truncatedText.count), Quality: \(contentQuality), Attempt: \(extractionAttempt), Stable: \(isContentStable), Changes: \(contentChanges)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Extract method=\(extractionMethod) posts=\(postCount) len=\(truncatedText.count) q=\(contentQuality) attempt=\(extractionAttempt) stable=\(isContentStable) changes=\(contentChanges)") }
         
         // Store enhanced metrics for potential retry logic
         if shouldRetry {
-            NSLog("🔄 Content quality insufficient (\(contentQuality)), retry recommended")
+            if AppLog.isVerboseEnabled { AppLog.debug("Content quality insufficient (\(contentQuality)) – retry recommended") }
         }
         
         return WebpageContext(
