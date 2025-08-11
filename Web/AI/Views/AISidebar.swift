@@ -89,7 +89,8 @@ struct AISidebar: View {
             return
         }
         Task {
-            await aiAssistant.planAndRunAgent(message)
+            // Prefer new iterative loop for page-agnostic multi-step behavior
+            await aiAssistant.runAgentLoop(message)
             await MainActor.run { aiAssistant.animationState = .idle }
         }
     }

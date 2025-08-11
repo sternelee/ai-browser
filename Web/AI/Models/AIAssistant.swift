@@ -543,6 +543,175 @@ class AIAssistant: ObservableObject {
         }
     }
 
+    // MARK: - Iterative Tool-Use Loop (page-agnostic)
+    /// Runs a multi-step, model-directed loop: model observes, decides a tool, we execute, feed results back, repeat.
+    /// This uses ToolRegistry semantics and avoids site-specific assumptions. Stops on explicit done, maxSteps, or no-op.
+    func runAgentLoop(_ instruction: String, maxSteps: Int = 12) async {
+        guard await isInitialized else { return }
+        let start = Date()
+        let (maybeWebView, host) = await MainActor.run { () -> (WKWebView?, String?) in
+            (self.tabManager?.activeTab?.webView, self.tabManager?.activeTab?.url?.host)
+        }
+        guard let webView = maybeWebView else { return }
+
+        // Initialize timeline
+        await MainActor.run {
+            let userStep = AgentStep(
+                id: UUID(),
+                action: PageAction(type: .askUser, text: instruction),
+                state: .success,
+                message: nil
+            )
+            self.currentAgentRun = AgentRun(
+                id: UUID(),
+                title: instruction,
+                steps: [userStep],
+                startedAt: start,
+                finishedAt: nil
+            )
+        }
+
+        // Conversation frame for the loop
+        var scratch: [String] = []
+
+        // Helper to append a step
+        func appendStep(_ action: PageAction, state: AgentStepState, msg: String?) async {
+            await MainActor.run {
+                self.currentAgentRun?.steps.append(
+                    AgentStep(id: action.id, action: action, state: state, message: msg))
+            }
+        }
+
+        // Tool schema for the model
+        let toolSchema = """
+            You can call one tool per turn by outputting ONLY a JSON object of the form:
+            {"tool":"<name>", "arguments":{...}}
+            Tools:
+            - navigate(url: string, newTab?: boolean)
+            - waitFor(readyState?: "complete" | "ready", selector?: string, delayMs?: number, timeoutMs?: number)
+            - findElements(locator: {role?: string, name?: string, text?: string, css?: string, xpath?: string, near?: string, nth?: number})
+            - click(locator: Locator)
+            - typeText(locator: Locator, text: string, submit?: boolean)
+            - select(locator: Locator, value: string)
+            - scroll(locator?: Locator, direction?: "down"|"up", amountPx?: number)
+            - extract(readMode?: "selection"|"article"|"all", selector?: string)
+            - askUser(prompt: string, choices?: string[], default?: number, timeoutMs?: number)
+            To finish, output {"tool":"done", "arguments":{"summary":"..."}}.
+            Return JSON only, no prose.
+            """
+
+        // Loop
+        for stepIndex in 0..<maxSteps {
+            do {
+                // Compose observation for the model from last scratch + optional page read
+                let contextSnippet: String = {
+                    // Lightweight context: active URL and title for awareness
+                    let urlStr = self.tabManager?.activeTab?.url?.absoluteString ?? ""
+                    let title = self.tabManager?.activeTab?.title ?? ""
+                    return "URL: \(urlStr)\nTitle: \(title)"
+                }()
+
+                let observation =
+                    (["Scratch:"] + scratch.suffix(6) + [
+                        "Context:", contextSnippet, "Instruction:", instruction,
+                    ]).joined(separator: "\n")
+
+                guard let provider = providerManager.currentProvider else { break }
+                let prompt = """
+                    You are a careful browser agent. Decide the next action to achieve the goal on an arbitrary webpage. Prefer safe and deterministic steps. If a selector is needed, use accessible roles/names when possible and add waits appropriately.
+
+                    \(toolSchema)
+
+                    Observation:
+                    \(observation)
+                    """
+                let raw = try await provider.generateRawResponse(
+                    prompt: prompt, model: provider.selectedModel)
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let jsonStart = trimmed.firstIndex(of: "{") else { break }
+                let jsonOnly = String(trimmed[jsonStart...])
+                guard
+                    let data = jsonOnly.data(using: .utf8),
+                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let tool = obj["tool"] as? String
+                else {
+                    scratch.append("Model returned non-JSON or invalid tool object")
+                    break
+                }
+                let args: [String: Any] = (obj["arguments"] as? [String: Any]) ?? [:]
+
+                if tool == "done" {
+                    let summary = (args["summary"] as? String) ?? ""
+                    scratch.append("Done: \(summary)")
+                    break
+                }
+
+                // Policy gate
+                let mappedIntent: PageActionType? = {
+                    switch tool {
+                    case "navigate": return .navigate
+                    case "findElements": return .findElements
+                    case "click": return .click
+                    case "typeText": return .typeText
+                    case "select": return .select
+                    case "scroll": return .scroll
+                    case "waitFor": return .waitFor
+                    case "extract": return .extract
+                    case "askUser": return .askUser
+                    default: return nil
+                    }
+                }()
+
+                if let intent = mappedIntent {
+                    let decision = AgentPermissionManager.shared.evaluate(
+                        intent: intent, urlHost: host)
+                    if !decision.allowed {
+                        // Try consent
+                        let consent = await self.callAgentTool(
+                            name: "askUser",
+                            arguments: [
+                                "prompt": "Allow action: \(intent.rawValue) on \(host ?? "site")?",
+                                "choices": ["Allow once", "Cancel"],
+                                "default": 1,
+                                "timeoutMs": 15000,
+                            ])
+                        let allowed =
+                            consent.ok && ((consent.data?["choiceIndex"]?.value as? Int) == 0)
+                        if !allowed {
+                            scratch.append("Blocked by policy: \(decision.reason ?? "")")
+                            break
+                        }
+                    }
+                }
+
+                // Execute tool
+                let result = await self.callAgentTool(name: tool, arguments: args)
+                scratch.append("\(tool): \(result.ok ? "ok" : "fail") \(result.message ?? "")")
+
+                // Record a timeline step for visibility
+                var timelineAction = PageAction(type: mappedIntent ?? .askUser)
+                if let loc = args["locator"] {  // pass-through for debug display only
+                    if let data = try? JSONSerialization.data(withJSONObject: loc),
+                        let decoded = try? JSONDecoder().decode(LocatorInput.self, from: data)
+                    {
+                        timelineAction.locator = decoded
+                    }
+                }
+                await appendStep(
+                    timelineAction, state: result.ok ? .success : .failure, msg: result.message)
+
+                // If we failed to execute or model chose a no-op repeatedly, stop
+                if !result.ok && stepIndex >= 2 { break }
+            } catch {
+                scratch.append("Loop error: \(error.localizedDescription)")
+                break
+            }
+        }
+
+        await MainActor.run { self.currentAgentRun?.finishedAt = Date() }
+        NSLog("🛰️ Agent: Finished agent loop")
+    }
+
     /// Lightweight intent detection: does the query imply choosing one item (e.g., funniest/best/top)?
     private static func queryImpliesChoice(_ query: String) -> Bool {
         let q = query.lowercased()
@@ -611,7 +780,7 @@ class AIAssistant: ObservableObject {
         return defaultValue
     }
 
-    /// Insert generic waits for dynamic content surfaces (agnostic)
+    /// Insert generic waits for dynamic content surfaces (agnostic; remove site-specific heuristics)
     private static func postProcessPlanForSites(_ plan: [PageAction]) -> [PageAction] {
         var out: [PageAction] = []
         func genericIdleWait(timeout: Int = 6000) -> PageAction {
@@ -632,9 +801,8 @@ class AIAssistant: ObservableObject {
                 case "link": sel = "a, [role=link]"
                 case "select": sel = "select"
                 case "article", "post":
-                    // Broaden for modern content sites (Reddit, news, etc.)
-                    sel =
-                        "article, [role=article], [data-testid=post-container], shreddit-post, .Post, .thing"
+                    // Generic article-like containers only (page-agnostic)
+                    sel = "article, [role=article]"
                 default: sel = "[role]"
                 }
                 return PageAction(type: .waitFor, text: sel, timeoutMs: 8000)
