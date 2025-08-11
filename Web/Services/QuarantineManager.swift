@@ -128,7 +128,7 @@ class QuarantineManager: ObservableObject {
     private init() {
         loadQuarantineSettings()
         loadQuarantineStatistics()
-        logger.info("QuarantineManager initialized with auto-quarantine: \(self.autoQuarantineDownloads)")
+        AppLog.debug("QuarantineManager init: auto=\(self.autoQuarantineDownloads)")
     }
     
     // MARK: - Public API

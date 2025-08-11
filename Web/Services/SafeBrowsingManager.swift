@@ -189,7 +189,7 @@ class SafeBrowsingManager: ObservableObject {
         // Setup network monitoring
         setupNetworkMonitoring()
         
-        logger.info("SafeBrowsingManager initialized with privacy-preserving URL scanning")
+        AppLog.debug("SafeBrowsing initialized (privacy-preserving)")
     }
     
     // MARK: - Network Monitoring
@@ -225,11 +225,11 @@ class SafeBrowsingManager: ObservableObject {
         }
         
         let urlString = normalizedURL.absoluteString
-        logger.debug("Checking URL safety: \(urlString)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Checking URL safety: \(urlString)") }
         
         // Check if Safe Browsing is disabled
         guard isEnabled else {
-            logger.debug("Safe Browsing disabled, allowing URL")
+            if AppLog.isVerboseEnabled { AppLog.debug("Safe Browsing disabled") }
             return .safe
         }
         

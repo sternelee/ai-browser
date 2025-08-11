@@ -125,7 +125,7 @@ class ModelDiscoveryService: ObservableObject {
         isScanning = true
         defer { isScanning = false }
         
-        NSLog("🔍 Starting model discovery scan...")
+        if AppLog.isVerboseEnabled { AppLog.debug("Starting model discovery scan…") }
         
         var foundModels: [DiscoveredModel] = []
         

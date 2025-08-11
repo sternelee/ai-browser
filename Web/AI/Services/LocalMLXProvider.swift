@@ -80,7 +80,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
             await loadAvailableModels()
         }
 
-        NSLog("🤖 Local MLX Provider initialized with \(aiConfiguration.framework) framework")
+        AppLog.debug("Local MLX Provider init: framework=\(aiConfiguration.framework)")
     }
 
     // MARK: - Lifecycle Methods
@@ -96,7 +96,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
             try await gemmaService.initialize()
 
             isInitialized = true
-            NSLog("✅ Local MLX Provider initialization completed")
+            AppLog.debug("Local MLX Provider initialized")
 
         } catch {
             isInitialized = false
@@ -113,7 +113,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
     func cleanup() async {
         isInitialized = false
         // MLX resources are managed by shared services, don't clean up here
-        NSLog("🧹 Local MLX Provider cleaned up")
+        AppLog.debug("Local MLX Provider cleaned up")
     }
 
     // MARK: - Core AI Methods
@@ -308,7 +308,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
 
     func resetConversation() async {
         await gemmaService.resetConversation()
-        NSLog("🔄 Local MLX conversation state reset")
+        AppLog.debug("Local MLX conversation state reset")
     }
 
     func getUsageStatistics() -> AIUsageStatistics {
@@ -377,7 +377,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
         // If no models discovered, use fallback models
         if models.isEmpty {
             models = fallbackModels
-            NSLog("⚠️ No local models discovered, using fallback models")
+            AppLog.debug("No local models discovered; using fallback models")
         }
 
         availableModels = models
@@ -391,7 +391,7 @@ class LocalMLXProvider: AIProvider, ObservableObject {
             selectedModel = availableModels.first
         }
 
-        NSLog("📚 Loaded \(availableModels.count) available models")
+        AppLog.debug("Loaded available local models: \(availableModels.count)")
     }
 
     /// Refresh model list by rescanning

@@ -49,7 +49,7 @@ class RuntimeSecurityMonitor: ObservableObject {
     func startMonitoring() {
         guard !isMonitoring else { return }
         
-        logger.info("🛡️ Starting runtime security monitoring for JIT entitlement risk mitigation")
+        AppLog.debug("Runtime security: start monitoring")
         
         isMonitoring = true
         
@@ -77,7 +77,7 @@ class RuntimeSecurityMonitor: ObservableObject {
     func stopMonitoring() {
         guard isMonitoring else { return }
         
-        logger.info("🛡️ Stopping runtime security monitoring")
+        AppLog.debug("Runtime security: stop monitoring")
         
         isMonitoring = false
         monitoringTimer?.invalidate()
@@ -106,7 +106,7 @@ class RuntimeSecurityMonitor: ObservableObject {
     
     private func setupSecurityMonitoring() {
         // Configure security logging
-        logger.info("🔒 Initializing runtime security monitor for hardened runtime risk mitigation")
+        AppLog.debug("Runtime security: init")
         
         // Verify entitlements
         verifySecurityEntitlements()
@@ -125,7 +125,7 @@ class RuntimeSecurityMonitor: ObservableObject {
     
     private func captureBaseline() {
         baselineMetrics = getCurrentProcessMetrics()
-        logger.info("📊 Captured baseline security metrics: \(String(describing: self.baselineMetrics))")
+        if AppLog.isVerboseEnabled { AppLog.debug("Baseline security metrics: \(String(describing: self.baselineMetrics))") }
     }
     
     private func performSecurityCheck() {
@@ -171,13 +171,13 @@ class RuntimeSecurityMonitor: ObservableObject {
     private func checkProcessIntegrity() {
         // Verify process hasn't been tampered with
         guard let processPath = Bundle.main.executablePath, !processPath.isEmpty else {
-            logger.debug("🔍 Process integrity check: No executable path available")
+            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity: no executable path") }
             return
         }
         
         // Only check if file exists to avoid excessive error logging
         guard FileManager.default.fileExists(atPath: processPath) else {
-            logger.debug("🔍 Process integrity check: Executable not found at expected path")
+            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity: exec not found") }
             return
         }
         
@@ -188,11 +188,11 @@ class RuntimeSecurityMonitor: ObservableObject {
             
             // Store and compare with baseline (simplified for demo)
             // In production, this would compare against known good hash
-            logger.debug("🔍 Process integrity check: \(hashString.prefix(16))...")
+            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity hash: \(hashString.prefix(16))…") }
             
         } catch {
             // Reduced severity to avoid false positives during development
-            logger.debug("⚠️ Process integrity check failed: \(error.localizedDescription)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Process integrity check failed: \(error.localizedDescription)") }
         }
     }
     
@@ -364,7 +364,7 @@ class RuntimeSecurityMonitor: ObservableObject {
             self?.handleMixedContentSecurityEvent(notification)
         }
         
-        logger.info("🔗 Mixed content security integration enabled")
+        if AppLog.isVerboseEnabled { AppLog.debug("Security integration: mixed content enabled") }
     }
     
     private func setupCSPSecurityIntegration() {
@@ -377,7 +377,7 @@ class RuntimeSecurityMonitor: ObservableObject {
             self?.handleCSPSecurityEvent(notification)
         }
         
-        logger.info("🔗 CSP security integration enabled")
+        if AppLog.isVerboseEnabled { AppLog.debug("Security integration: CSP enabled") }
     }
     
     private func handleMixedContentSecurityEvent(_ notification: Notification) {
@@ -415,7 +415,7 @@ class RuntimeSecurityMonitor: ObservableObject {
         
         handleSecurityThreat(threat)
         
-        logger.info("🔒 Mixed content security event processed: \(String(describing: mixedContentEvent.eventType))")
+        if AppLog.isVerboseEnabled { AppLog.debug("Mixed content event processed: \(String(describing: mixedContentEvent.eventType))") }
     }
     
     private func handleCSPSecurityEvent(_ notification: Notification) {
@@ -448,7 +448,7 @@ class RuntimeSecurityMonitor: ObservableObject {
         
         handleSecurityThreat(threat)
         
-        logger.warning("🔒 CSP security violation processed: \(String(describing: cspViolation.violationType))")
+        if AppLog.isVerboseEnabled { AppLog.debug("CSP violation processed: \(String(describing: cspViolation.violationType))") }
     }
     
     /// Enhanced security assessment that includes all security components

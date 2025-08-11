@@ -500,7 +500,7 @@ struct TLDRCard: View {
                     streamingText = ""
                     showError = false
                     
-                    NSLog("✅ TL;DR: Streaming completed with emoji \(emoji) (\(summary.count) chars)")
+                    if AppLog.isVerboseEnabled { AppLog.debug("TL;DR streaming done: emoji=\(emoji) len=\(summary.count)") }
                 }
                 
             } catch {
@@ -511,7 +511,7 @@ struct TLDRCard: View {
                     showError = true
                     errorMessage = error.localizedDescription
                     
-                    NSLog("❌ TL;DR: Streaming generation failed - \(error.localizedDescription)")
+                    AppLog.error("TL;DR streaming failed: \(error.localizedDescription)")
                 }
             }
         }

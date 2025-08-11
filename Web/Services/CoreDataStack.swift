@@ -34,7 +34,7 @@ class CoreDataStack: ObservableObject {
                 // In production, you might want to handle this more gracefully
                 fatalError("Core Data error: \(error)")
             } else {
-                self.logger.info("Core Data store loaded successfully: \(storeDescription.url?.lastPathComponent ?? "unknown")")
+                if AppLog.isVerboseEnabled { AppLog.debug("Core Data store loaded: \(storeDescription.url?.lastPathComponent ?? "unknown")") }
             }
         }
         

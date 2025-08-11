@@ -274,7 +274,7 @@ class AIProviderManager: ObservableObject {
         currentProvider = provider
         userDefaults.set(provider.providerId, forKey: "selectedAIProvider")
 
-        NSLog("🔄 Switched AI provider to \(provider.displayName)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Switched AI provider to \(provider.displayName)") }
     }
 
     /// Add a new external provider when API key is configured
@@ -335,7 +335,7 @@ class AIProviderManager: ObservableObject {
         self.currentProvider = updatedProvider
         // Notify observers that provider has changed (to refresh UI that reads nested properties)
         objectWillChange.send()
-        NSLog("🔄 Updated selected model to \(model.name) for \(updatedProvider.displayName)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Updated selected model to \(model.name) for \(updatedProvider.displayName)") }
     }
 }
 
@@ -397,7 +397,7 @@ class ExternalAPIProvider: AIProvider {
         await loadAvailableModels()
 
         isInitialized = true
-        NSLog("✅ \(displayName) provider initialized")
+        AppLog.debug("\(displayName) provider initialized")
     }
 
     func isReady() async -> Bool {

@@ -46,19 +46,64 @@
       if (locator.css) {
         nodes = Array.from(document.querySelectorAll(locator.css));
         hint = locator.css;
-      } else if (locator.text || locator.name) {
+      } else {
+        const role = (locator.role || '').toLowerCase();
+        const hasNeedle = Boolean(locator.text || locator.name);
         const needle = (locator.text || locator.name || '').toLowerCase();
-        const candidates = Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]'));
-        nodes = candidates.filter(el => (el.innerText || el.textContent || '').toLowerCase().includes(needle));
-        hint = locator.text || locator.name || '';
+
+        let selector = 'a,button,input,select,textarea,[role],[contenteditable="true"]';
+        if (role === 'textbox' || role === 'input' || role === 'searchbox') {
+          selector = 'input, textarea, [contenteditable="true"], [role="textbox"]';
+        } else if (role === 'button') {
+          selector = 'button, [role="button"]';
+        } else if (role === 'link') {
+          selector = 'a, [role="link"]';
+        } else if (role === 'select') {
+          selector = 'select';
+        }
+
+        const candidates = Array.from(document.querySelectorAll(selector));
+
+        function accessibleName(el) {
+          try {
+            const direct = (el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('title') || '').trim();
+            const placeholder = (el.getAttribute('placeholder') || '').trim();
+            const labelledById = el.getAttribute('aria-labelledby');
+            let labelledText = '';
+            if (labelledById) {
+              const labelEl = document.getElementById(labelledById);
+              if (labelEl) labelledText = (labelEl.innerText || labelEl.textContent || '').trim();
+            }
+            return [direct, placeholder, labelledText].filter(Boolean).join(' ').toLowerCase();
+          } catch { return ''; }
+        }
+
+        nodes = candidates.filter(el => {
+          if (!isVisible(el)) return false;
+          if (role) {
+            const r = roleFor(el).toLowerCase();
+            if (role === 'textbox' && !(r === 'textbox' || r === 'input')) return false;
+            if (role !== 'textbox' && r !== role) return false;
+          }
+          if (!hasNeedle) return true;
+          const inner = ((el.innerText || el.textContent || '')).toLowerCase();
+          const name = accessibleName(el);
+          return inner.includes(needle) || name.includes(needle);
+        });
+
+        if (nodes.length === 0 && (role === 'textbox' || role === 'searchbox' || (!role && !hasNeedle))) {
+          const prefer = Array.from(document.querySelectorAll('input[name="q"], input[type="search"], input[type="text"]')).filter(isVisible);
+          if (prefer.length) nodes = prefer;
+        }
+
+        hint = locator.css || locator.text || locator.name || role || '';
       }
+
       if (typeof locator.nth === 'number' && nodes[locator.nth]) {
         return [nodes[locator.nth]];
       }
       return nodes;
-    } catch (e) {
-      return [];
-    }
+    } catch (e) { return []; }
   }
 
   // Safety guards: never read password/PII by default

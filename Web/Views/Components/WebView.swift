@@ -167,9 +167,9 @@ struct WebView: NSViewRepresentable {
         if let tab = tab {
             // CRITICAL: Ensure exclusive WebView ownership per tab
             if let existingWebView = tab.webView, existingWebView !== webView {
-                print(
-                    "⚠️ WARNING: Tab \(tab.id) already has a different WebView instance. This could cause content bleeding."
-                )
+                if AppLog.isVerboseEnabled {
+                    print("⚠️ WARNING: Tab \(tab.id) already has a different WebView instance. This could cause content bleeding.")
+                }
             }
             tab.webView = webView
         }
@@ -195,8 +195,7 @@ struct WebView: NSViewRepresentable {
                         """
                     ) { _, error in
                         if let error = error {
-                            NSLog(
-                                "⚠️ Failed to dispatch resize event: \(error.localizedDescription)")
+                            if AppLog.isVerboseEnabled { AppLog.debug("Failed to dispatch resize: \(error.localizedDescription)") }
                         }
                     }
                 }
@@ -207,7 +206,7 @@ struct WebView: NSViewRepresentable {
         if let url = url {
             // Validate URL before proceeding
             guard !url.absoluteString.isEmpty else {
-                print("⚠️ Attempted to load empty URL")
+                if AppLog.isVerboseEnabled { print("⚠️ Attempted to load empty URL") }
                 return
             }
 
@@ -594,15 +593,68 @@ struct WebView: NSViewRepresentable {
             let nodes = [];
             let hint = '';
             try {
+              // 1) CSS wins for determinism
               if (locator.css) {
                 nodes = Array.from(document.querySelectorAll(locator.css));
                 hint = locator.css;
-              } else if (locator.text || locator.name) {
+              } else {
+                const role = (locator.role || '').toLowerCase();
+                const hasNeedle = Boolean(locator.text || locator.name);
                 const needle = (locator.text || locator.name || '').toLowerCase();
-                const candidates = Array.from(document.querySelectorAll('a,button,input,select,textarea,[role]'));
-                nodes = candidates.filter(el => (el.innerText || el.textContent || '').toLowerCase().includes(needle));
-                hint = locator.text || locator.name || '';
+
+                // Candidate set by role (accessible-friendly)
+                let selector = 'a,button,input,select,textarea,[role],[contenteditable="true"]';
+                if (role === 'textbox' || role === 'input' || role === 'searchbox') {
+                  selector = 'input, textarea, [contenteditable="true"], [role="textbox"]';
+                } else if (role === 'button') {
+                  selector = 'button, [role="button"]';
+                } else if (role === 'link') {
+                  selector = 'a, [role="link"]';
+                } else if (role === 'select') {
+                  selector = 'select';
+                }
+
+                const candidates = Array.from(document.querySelectorAll(selector));
+
+                function accessibleName(el) {
+                  try {
+                    const direct = (el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('title') || '').trim();
+                    const placeholder = (el.getAttribute('placeholder') || '').trim();
+                    // aria-labelledby support (best-effort)
+                    const labelledById = el.getAttribute('aria-labelledby');
+                    let labelledText = '';
+                    if (labelledById) {
+                      const labelEl = document.getElementById(labelledById);
+                      if (labelEl) labelledText = (labelEl.innerText || labelEl.textContent || '').trim();
+                    }
+                    return [direct, placeholder, labelledText].filter(Boolean).join(' ').toLowerCase();
+                  } catch { return ''; }
+                }
+
+                // Filter by role and needle
+                nodes = candidates.filter(el => {
+                  if (!isVisible(el)) return false;
+                  if (role) {
+                    const r = roleFor(el).toLowerCase();
+                    if (role === 'textbox' && !(r === 'textbox' || r === 'input')) return false;
+                    if (role !== 'textbox' && r !== role) return false;
+                  }
+                  if (!hasNeedle) return true;
+                  const inner = ((el.innerText || el.textContent || '')).toLowerCase();
+                  const name = accessibleName(el);
+                  return inner.includes(needle) || name.includes(needle);
+                });
+
+                // Heuristic: if role requests a textbox with no explicit needle, pick obvious search inputs first
+                if (nodes.length === 0 && (role === 'textbox' || role === 'searchbox' || (!role && !hasNeedle))) {
+                  const prefer = Array.from(document.querySelectorAll('input[name="q"], input[type="search"], input[type="text"]'))
+                    .filter(isVisible);
+                  if (prefer.length) nodes = prefer;
+                }
+
+                hint = locator.css || locator.text || locator.name || role || '';
               }
+
               if (typeof locator.nth === 'number' && nodes[locator.nth]) {
                 return [nodes[locator.nth]];
               }
@@ -769,7 +821,7 @@ struct WebView: NSViewRepresentable {
         // Check current URL first
         if let currentURL = url {
             if isOAuthURL(currentURL) {
-                NSLog("🔐 OAuth flow detected from current URL: \(currentURL.host ?? "unknown")")
+                if AppLog.isVerboseEnabled { AppLog.debug("OAuth flow (current URL): \(currentURL.host ?? "unknown")") }
                 return true
             }
         }
@@ -777,7 +829,7 @@ struct WebView: NSViewRepresentable {
         // Check tab's URL if available
         if let tabURL = tab?.url {
             if isOAuthURL(tabURL) {
-                NSLog("🔐 OAuth flow detected from tab URL: \(tabURL.host ?? "unknown")")
+                if AppLog.isVerboseEnabled { AppLog.debug("OAuth flow (tab URL): \(tabURL.host ?? "unknown")") }
                 return true
             }
         }
@@ -1080,7 +1132,7 @@ struct WebView: NSViewRepresentable {
                 }
             }
 
-            NSLog("🔒 Mixed content monitoring enabled for tab \(tabID)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Mixed content monitoring enabled for tab \(tabID)") }
         }
 
         private func handleMixedContentStatusChange(webView: WKWebView) {
@@ -1095,9 +1147,7 @@ struct WebView: NSViewRepresentable {
 
             // Log security event if mixed content detected
             if status.mixedContentDetected {
-                NSLog(
-                    "⚠️ Mixed content detected on \(status.url?.host ?? "unknown") - hasOnlySecureContent: \(status.hasOnlySecureContent)"
-                )
+                AppLog.warn("Mixed content detected on \(status.url?.host ?? "unknown") - secure=\(status.hasOnlySecureContent)")
             }
         }
 
@@ -2012,19 +2062,19 @@ struct WebView: NSViewRepresentable {
                         switch type {
                         case "runtime_ready":
                             agentRuntimeReady = true
-                            NSLog("🛰️ Agent runtime ready (M2)")
+                            if AppLog.isVerboseEnabled { AppLog.debug("Agent runtime ready (M2)") }
                         case "ping":
-                            NSLog("🛰️ Agent ping received")
+                            if AppLog.isVerboseEnabled { AppLog.debug("Agent ping") }
                         default:
                             break
                         }
                     }
                 case .invalid(let error):
-                    NSLog("🔒 CSP: Agent bridge validation failed: \(error.description)")
+                AppLog.warn("CSP: Agent bridge validation failed: \(error.description)")
                 }
 
             default:
-                NSLog("🔒 CSP: Unexpected message handler: \(message.name)")
+                AppLog.warn("CSP: Unexpected message handler: \(message.name)")
                 break
             }
         }
@@ -2041,9 +2091,9 @@ struct WebView: NSViewRepresentable {
                 "if (window.cleanupAllTimers) { window.cleanupAllTimers(); }"
             ) { result, error in
                 if let error = error {
-                    print("⚠️ Timer cleanup error: \(error.localizedDescription)")
+                    if AppLog.isVerboseEnabled { print("⚠️ Timer cleanup error: \(error.localizedDescription)") }
                 } else {
-                    print("🧹 WebView timer cleanup executed successfully")
+                    if AppLog.isVerboseEnabled { print("🧹 WebView timer cleanup executed successfully") }
                 }
             }
         }

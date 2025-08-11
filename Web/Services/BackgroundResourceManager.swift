@@ -104,14 +104,14 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func handleApplicationDidBecomeActive() {
-        NSLog("🟢 BackgroundResourceManager: App became active - resuming resources")
+        AppLog.debug("App active - resuming resources")
         isAppInBackground = false
         resumeAllResources()
     }
 
     @MainActor
     private func handleApplicationDidResignActive() {
-        NSLog("🔴 BackgroundResourceManager: App resigned active - suspending resources")
+        AppLog.debug("App resigned active - suspending resources")
         isAppInBackground = true
 
         // Delay suspension slightly to avoid flicker during app switching
@@ -122,14 +122,14 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func handleApplicationWentToBackground() {
-        NSLog("🔴 BackgroundResourceManager: App went to background - aggressive suspension")
+        AppLog.debug("App background - aggressive suspension")
         isAppInBackground = true
         suspendAllResources()
     }
 
     @MainActor
     private func handleApplicationCameToForeground() {
-        NSLog("🟢 BackgroundResourceManager: App came to foreground - resuming resources")
+        AppLog.debug("App foreground - resuming resources")
         isAppInBackground = false
         resumeAllResources()
     }
@@ -141,7 +141,7 @@ class BackgroundResourceManager: ObservableObject {
         guard !resourcesSuspended else { return }
         resourcesSuspended = true
 
-        NSLog("🔄 Suspending all background resources...")
+        AppLog.debug("Suspending all background resources…")
 
         // 1. Suspend all active WebViews
         suspendAllWebViews()
@@ -160,7 +160,7 @@ class BackgroundResourceManager: ObservableObject {
             reduceProcessPriority()
         }
 
-        NSLog("✅ Background resource suspension complete")
+        AppLog.debug("Background resource suspension complete")
     }
 
     @MainActor
@@ -168,7 +168,7 @@ class BackgroundResourceManager: ObservableObject {
         guard resourcesSuspended else { return }
         resourcesSuspended = false
 
-        NSLog("🔄 Resuming all resources...")
+        AppLog.debug("Resuming all resources…")
 
         // 1. Resume all suspended WebViews
         resumeAllWebViews()
@@ -182,7 +182,7 @@ class BackgroundResourceManager: ObservableObject {
         // 4. Restore balanced tab hibernation policy
         restoreBalancedHibernationPolicy()
 
-        NSLog("✅ Resource resumption complete")
+        AppLog.debug("Resource resumption complete")
     }
 
     // MARK: - WebView Suspension
@@ -203,7 +203,7 @@ class BackgroundResourceManager: ObservableObject {
         guard currentPolicy.suspendJavaScriptTimers else { return }
 
         let allWebViews = collectAllActiveWebViews()
-        NSLog("📱 Suspending \(allWebViews.count) active WebViews")
+        AppLog.debug("Suspending \(allWebViews.count) active WebViews")
 
         for webView in allWebViews {
             suspendWebView(webView)
@@ -212,7 +212,7 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func resumeAllWebViews() {
-        NSLog("📱 Resuming \(suspendedWebViews.count) suspended WebViews")
+        AppLog.debug("Resuming \(suspendedWebViews.count) suspended WebViews")
 
         let webViewsToResume = Array(suspendedWebViews)
         suspendedWebViews.removeAll()
@@ -254,9 +254,9 @@ class BackgroundResourceManager: ObservableObject {
 
             webView.evaluateJavaScript(suspensionScript) { result, error in
                 if let error = error {
-                    NSLog("⚠️ WebView suspension script error: \(error)")
+                    AppLog.warn("WebView suspension script error: \(error.localizedDescription)")
                 } else {
-                    NSLog("✅ WebView suspended successfully")
+                    AppLog.debug("WebView suspended successfully")
                 }
             }
         }
@@ -286,11 +286,8 @@ class BackgroundResourceManager: ObservableObject {
             """
 
         webView.evaluateJavaScript(resumptionScript) { result, error in
-            if let error = error {
-                NSLog("⚠️ WebView resumption script error: \(error)")
-            } else {
-                NSLog("✅ WebView resumed successfully")
-            }
+            if let error = error { AppLog.warn("WebView resumption script error: \(error.localizedDescription)") }
+            else { AppLog.debug("WebView resumed successfully") }
         }
     }
 
@@ -298,7 +295,7 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func suspendNativeTimers() {
-        NSLog("⏰ Suspending native app timers")
+        AppLog.debug("Suspending native app timers")
 
         // Suspend update checker timer (from WebApp.swift)
         suspendUpdateTimer()
@@ -315,7 +312,7 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func resumeNativeTimers() {
-        NSLog("⏰ Resuming native app timers")
+        AppLog.debug("Resuming native app timers")
 
         // Resume update checker
         resumeUpdateTimer()
@@ -367,17 +364,14 @@ class BackgroundResourceManager: ObservableObject {
         guard currentPolicy.cleanupTimers else { return }
 
         let allWebViews = collectAllActiveWebViews()
-        NSLog("🧹 Cleaning up JavaScript timers in \(allWebViews.count) WebViews")
+        AppLog.debug("Cleaning up JavaScript timers in \(allWebViews.count) WebViews")
 
         for webView in allWebViews {
             webView.evaluateJavaScript(
                 "if (window.cleanupAllTimers) { window.cleanupAllTimers(); }"
             ) { result, error in
-                if let error = error {
-                    NSLog("⚠️ Timer cleanup error: \(error)")
-                } else {
-                    NSLog("✅ Timers cleaned up successfully")
-                }
+                if let error = error { AppLog.warn("Timer cleanup error: \(error.localizedDescription)") }
+                else { AppLog.debug("Timers cleaned up successfully") }
             }
         }
     }
@@ -388,7 +382,7 @@ class BackgroundResourceManager: ObservableObject {
     private func triggerAggressiveTabHibernation() {
         guard currentPolicy.hibernateInactiveTabs else { return }
 
-        NSLog("💤 Triggering aggressive tab hibernation")
+        AppLog.debug("Triggering aggressive tab hibernation")
 
         // Switch to aggressive hibernation policy
         TabHibernationManager.shared.updatePolicy(.aggressive)
@@ -399,7 +393,7 @@ class BackgroundResourceManager: ObservableObject {
 
     @MainActor
     private func restoreBalancedHibernationPolicy() {
-        NSLog("💤 Restoring balanced hibernation policy")
+        AppLog.debug("Restoring balanced hibernation policy")
 
         // Restore balanced hibernation policy
         TabHibernationManager.shared.updatePolicy(.balanced)
@@ -411,12 +405,12 @@ class BackgroundResourceManager: ObservableObject {
         // Reduce the app's process priority to background
         // Note: performExpiringActivity is iOS-only, on macOS we use different approaches
         DispatchQueue.global(qos: .background).async {
-            NSLog("🔽 Reduced process priority for background operation")
+            AppLog.debug("Reduced process priority for background operation")
         }
     }
 
     private func restoreProcessPriority() {
-        NSLog("🔼 Restored normal process priority")
+        AppLog.debug("Restored normal process priority")
         // Process priority will automatically restore when becoming active
     }
 
@@ -459,7 +453,7 @@ class BackgroundResourceManager: ObservableObject {
     /// Update the background policy
     func updatePolicy(_ policy: BackgroundPolicy) {
         currentPolicy = policy
-        NSLog("📋 Updated background resource policy")
+        AppLog.debug("Updated background resource policy")
     }
 
     /// Get current resource usage statistics

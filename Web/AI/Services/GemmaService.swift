@@ -37,7 +37,7 @@ class GemmaService {
         
         // Memory monitoring removed - was causing unnecessary complexity
         
-        NSLog("🔮 Gemma Service initialized with MLX-Swift and \(configuration.modelVariant)")
+        AppLog.debug("GemmaService init: model=\(configuration.modelVariant)")
     }
     
     // MARK: - Public Interface
@@ -45,7 +45,7 @@ class GemmaService {
     /// Initialize the Gemma model and tokenizer
     func initialize() async throws {
         guard !isModelLoaded else {
-            NSLog("✅ Gemma model already loaded")
+            AppLog.debug("Gemma model already loaded")
             return
         }
         
@@ -58,10 +58,10 @@ class GemmaService {
             }
             
             isModelLoaded = true
-            NSLog("✅ MLX Gemma model loaded successfully")
+            AppLog.debug("MLX Gemma model loaded successfully")
             
         } catch {
-            NSLog("❌ Failed to initialize Gemma model: \(error)")
+            AppLog.error("Gemma init failed: \(error.localizedDescription)")
             throw GemmaError.initializationFailed(error.localizedDescription)
         }
     }
@@ -114,14 +114,14 @@ class GemmaService {
                 mlxWrapper.updateInferenceMetrics(tokensGenerated: estimatedTokens)
                 return responseBuilder.setText(cleaned).setMemoryUsage(Int(mlxWrapper.memoryUsage)).build()
             } catch {
-                NSLog("❌ MLX inference failed: \(error)")
+                AppLog.error("MLX inference failed: \(error.localizedDescription)")
                 throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
             }
 
             // All inference handled above by MLXRunner
             
         } catch {
-            NSLog("❌ Response generation failed: \(error)")
+            AppLog.error("Gemma response generation failed: \(error.localizedDescription)")
             throw error
         }
     }
@@ -178,9 +178,7 @@ class GemmaService {
                         
                         // If no content was streamed, provide a helpful fallback
                         if !hasYieldedContent {
-                            NSLog("⚠️ No content streamed, providing fallback response")
-                            NSLog("🔍 DEBUG: accumulatedResponse length: \(accumulatedResponse.count)")
-                            NSLog("🔍 DEBUG: accumulatedResponse preview: '\(accumulatedResponse.prefix(200))'")
+                            AppLog.debug("No content streamed; providing fallback (len=\(accumulatedResponse.count))")
                             let fallbackResponse = "I'm ready to help you with questions about the current webpage content."
                             continuation.yield(fallbackResponse)
                         }
@@ -189,7 +187,7 @@ class GemmaService {
                         NSLog("✅ Streaming completed successfully: \(accumulatedResponse.count) characters")
                         
                     } catch {
-                        NSLog("❌ Streaming error: \(error)")
+                        AppLog.error("Gemma streaming error: \(error.localizedDescription)")
                         
                         // Provide error recovery with helpful message
                         if !hasYieldedContent {
@@ -250,13 +248,13 @@ class GemmaService {
             let isValid = !content.isEmpty && content.count > 2
             
             if !isValid {
-                NSLog("⚠️ Filtered out invalid message: '\(message.content.prefix(50))...'")
+                if AppLog.isVerboseEnabled { AppLog.debug("Filtered invalid message: '\(message.content.prefix(50))…'") }
             }
             
             return isValid
         }
         
-        NSLog("📝 Conversation validation: \(conversationHistory.count) → \(validatedHistory.count) messages")
+        if AppLog.isVerboseEnabled { AppLog.debug("Conversation validation: \(conversationHistory.count) → \(validatedHistory.count)") }
         
         // ENHANCED: Build proper multi-turn conversation prompt with context placed strategically
         var promptParts: [String] = []
@@ -306,14 +304,12 @@ class GemmaService {
         
         let fullPrompt = promptParts.joined(separator: "\n")
         
-        NSLog("📝 Built MLX Gemma prompt (\(fullPrompt.count) chars) with context: \(context != nil ? "YES (\(context!.count) chars)" : "NO")")
+        if AppLog.isVerboseEnabled { AppLog.debug("Built Gemma prompt (len=\(fullPrompt.count)) context=\(context != nil)") }
         if context != nil {
-            NSLog("📝 Context preview: \(String(context!.prefix(200)))...")
+            if AppLog.isVerboseEnabled { AppLog.debug("Context preview: \(String(context!.prefix(200)))…") }
         }
-        NSLog("📝 Full prompt preview: \(String(fullPrompt.suffix(500)))")
-        
-        // Log full prompt for debugging
-        NSLog("📜 FULL PROMPT FOR DEBUGGING:\n\(fullPrompt)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Prompt tail: \(String(fullPrompt.suffix(500)))") }
+        if AppLog.isVerboseEnabled { AppLog.debug("FULL PROMPT (truncated): \(String(fullPrompt.prefix(2000)))") }
         
         return fullPrompt
     }
@@ -322,7 +318,7 @@ class GemmaService {
     func resetConversation() async {
         // Reset the MLX runner's conversation state
         await SimplifiedMLXRunner.shared.resetConversation()
-        NSLog("🔄 GemmaService conversation reset completed")
+        AppLog.debug("GemmaService conversation reset completed")
     }
     
     // Memory pressure handling removed - was overcomplicating the system
@@ -390,7 +386,7 @@ class GemmaService {
             let range = NSRange(location: 0, length: cleaned.utf16.count)
             cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "$1")
         } catch {
-            NSLog("⚠️ Regex error while collapsing repeated words: \(error)")
+            AppLog.warn("Regex error collapsing repeated words: \(error.localizedDescription)")
         }
 
         // NEW: Collapse repeated adjacent words that appear **without** intervening whitespace, often a byproduct
@@ -405,7 +401,7 @@ class GemmaService {
             // the next word when there originally should have been whitespace.
             cleaned = regexNoSpace.stringByReplacingMatches(in: cleaned, options: [], range: rangeNoSpace, withTemplate: "$1 ")
         } catch {
-            NSLog("⚠️ Regex error while collapsing repeated words without space: \(error)")
+            AppLog.warn("Regex error collapsing adjacent words: \(error.localizedDescription)")
         }
 
         // NEW: Ensure common Markdown block tokens start on their own line so that downstream renderers
@@ -445,7 +441,7 @@ class GemmaService {
             } else {
                 cleaned = String(cleaned.prefix(maxResponseLength)) + "..."
             }
-            NSLog("📏 Response truncated to \(cleaned.count) chars due to \(memoryPressure) memory pressure")
+            if AppLog.isVerboseEnabled { AppLog.debug("Response truncated to \(cleaned.count) (\(memoryPressure))") }
         }
         
         // Optionally trim whitespace (disabled for streaming so that spaces between tokens are preserved)
@@ -483,7 +479,7 @@ class GemmaService {
                 cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "$1")
             } while previous != cleaned // Iterate until no more replacements
         } catch {
-            NSLog("⚠️ Regex error while collapsing repeated phrases: \(error)")
+            AppLog.warn("Regex error collapsing repeated phrases: \(error.localizedDescription)")
         }
 
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -507,7 +503,7 @@ class GemmaService {
             // Finally, trim outer whitespace/newlines to keep the output tidy for display
             return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
-            NSLog("❌ GemmaService raw generation failed: \(error)")
+            AppLog.error("Gemma raw generation failed: \(error.localizedDescription)")
             throw GemmaError.inferenceError("MLX inference failed: \(error.localizedDescription)")
         }
     }

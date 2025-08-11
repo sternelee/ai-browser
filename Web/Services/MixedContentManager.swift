@@ -212,7 +212,7 @@ class MixedContentManager: NSObject, ObservableObject {
         super.init()
         loadConfiguration()
         setupSecurityEventMonitoring()
-        logger.info("🛡️ MixedContentManager initialized with policy: \(self.mixedContentPolicy.rawValue)")
+        AppLog.debug("MixedContentManager init: policy=\(self.mixedContentPolicy.rawValue)")
     }
     
     // MARK: - Core Mixed Content Detection
@@ -284,7 +284,7 @@ class MixedContentManager: NSObject, ObservableObject {
             context: contextPointer
         )
         
-        logger.info("🔄 Mixed content monitoring enabled for tab \(tabID)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Mixed content monitoring enabled for tab \(tabID)") }
     }
     
     /**
@@ -580,7 +580,7 @@ class MixedContentManager: NSObject, ObservableObject {
         
         // Clean up orphaned tab statuses
         // Note: In production, this would coordinate with TabManager to check active tabs
-        logger.debug("🧹 Mixed content security maintenance cleanup completed")
+        if AppLog.isVerboseEnabled { AppLog.debug("Mixed content security maintenance cleanup completed") }
     }
     
     deinit {

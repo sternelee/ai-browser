@@ -44,7 +44,7 @@ class ContextManager: ObservableObject {
     @Published var historyContextScope: HistoryContextScope = .recent
     
     private init() {
-        NSLog("🔮 ContextManager initialized")
+        AppLog.debug("ContextManager initialized")
     }
     
     // MARK: - Public Interface

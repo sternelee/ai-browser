@@ -340,7 +340,7 @@ struct TabDisplayView: View {
 
     private func handleHistoryRequest() {
         // TODO: Show history panel/view - placeholder for future UI implementation
-        print("History panel requested")
+        if AppLog.isVerboseEnabled { print("History panel requested") }
     }
 
     private func handleBookmarkRequest() {

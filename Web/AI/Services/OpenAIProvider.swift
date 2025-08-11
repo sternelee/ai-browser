@@ -128,7 +128,7 @@ class OpenAIProvider: ExternalAPIProvider {
                 ?? availableModels.first
         }
 
-        NSLog("📋 Loaded \(availableModels.count) OpenAI models")
+        AppLog.debug("OpenAI models loaded: \(availableModels.count)")
     }
 
     // MARK: - Configuration Validation
@@ -152,7 +152,7 @@ class OpenAIProvider: ExternalAPIProvider {
                 endpoint: "/chat/completions",
                 payload: testPayload
             )
-            NSLog("✅ OpenAI API key validated")
+            AppLog.debug("OpenAI API key validated")
         } catch {
             throw AIProviderError.authenticationFailed
         }
@@ -179,10 +179,13 @@ class OpenAIProvider: ExternalAPIProvider {
 
         do {
             var basePayload: [String: Any] = [
-                "messages": messages,
-                "temperature": 0.7,
-                "top_p": 0.9,
+                "messages": messages
             ]
+            // Some GPT-5 endpoints only accept default sampling; avoid explicit params to prevent 400s
+            if !initialModelId.hasPrefix("gpt-5") {
+                basePayload["temperature"] = 0.7
+                basePayload["top_p"] = 0.9
+            }
             let tokensKey = isNewModelAPI(initialModelId) ? "max_completion_tokens" : "max_tokens"
             basePayload[tokensKey] = 2048
 
@@ -279,10 +282,12 @@ class OpenAIProvider: ExternalAPIProvider {
             var payload: [String: Any] = [
                 "model": modelId,
                 "messages": messages,
-                "temperature": 0.7,
-                "top_p": 0.9,
                 "stream": true,
             ]
+            if !modelId.hasPrefix("gpt-5") {
+                payload["temperature"] = 0.7
+                payload["top_p"] = 0.9
+            }
             let tokensKey = isNewModelAPI(modelId) ? "max_completion_tokens" : "max_tokens"
             payload[tokensKey] = 2048
             return payload
@@ -317,7 +322,7 @@ class OpenAIProvider: ExternalAPIProvider {
                                             endpoint: "/chat/completions",
                                             payload: buildPayload(with: fid)
                                         )
-                                        NSLog("↘️ OpenAI streaming fell back to \(fid)")
+                                        AppLog.debug("OpenAI streaming fallback -> \(fid)")
                                         attempted = true
                                         break
                                     } catch {
@@ -369,9 +374,11 @@ class OpenAIProvider: ExternalAPIProvider {
         await applyRateLimit()
 
         var basePayload: [String: Any] = [
-            "messages": [["role": "user", "content": prompt]],
-            "temperature": 0.7,
+            "messages": [["role": "user", "content": prompt]]
         ]
+        if !initialModelId.hasPrefix("gpt-5") {
+            basePayload["temperature"] = 0.7
+        }
         let tokensKey = isNewModelAPI(initialModelId) ? "max_completion_tokens" : "max_tokens"
         basePayload[tokensKey] = 1024
         let (response, _) = try await requestWithModelFallback(
@@ -485,7 +492,7 @@ class OpenAIProvider: ExternalAPIProvider {
                     // Log body for diagnostics (truncate to keep logs small)
                     let snippet = String(data: data, encoding: .utf8) ?? "<non-utf8>"
                     let trimmed = snippet.prefix(500)
-                    NSLog("❗️OpenAI HTTP \(httpResponse.statusCode): \(trimmed)")
+                    AppLog.warn("OpenAI HTTP \(httpResponse.statusCode): \(trimmed)")
                     recordRequestFailure(httpStatus: httpResponse.statusCode)
 
                     // Smart fallback: some models only accept default sampling parameters.
@@ -495,9 +502,7 @@ class OpenAIProvider: ExternalAPIProvider {
                         var sanitized = payload
                         sanitized.removeValue(forKey: "temperature")
                         sanitized.removeValue(forKey: "top_p")
-                        NSLog(
-                            "↘️ Retrying OpenAI request without sampling params due to temperature unsupported error"
-                        )
+                        AppLog.debug("OpenAI retry without sampling params")
                         return try await makeAPIRequest(
                             endpoint: endpoint,
                             payload: sanitized,
@@ -513,7 +518,7 @@ class OpenAIProvider: ExternalAPIProvider {
                         if let max = fixed.removeValue(forKey: "max_tokens") {
                             fixed["max_completion_tokens"] = max
                         }
-                        NSLog("↘️ Retrying OpenAI request with max_completion_tokens for GPT-5")
+                        AppLog.debug("OpenAI retry with max_completion_tokens for GPT-5")
                         return try await makeAPIRequest(
                             endpoint: endpoint,
                             payload: fixed,
@@ -601,7 +606,7 @@ class OpenAIProvider: ExternalAPIProvider {
                             let hr = r as? HTTPURLResponse
                         {
                             let snippet = String(data: d, encoding: .utf8) ?? "<non-utf8>"
-                            NSLog("❗️OpenAI STREAM HTTP \(hr.statusCode): \(snippet.prefix(500)))")
+                            AppLog.warn("OpenAI STREAM HTTP \(hr.statusCode): \(snippet.prefix(500))")
 
                             // If the diagnostic retry actually succeeded, yield content once as a fallback
                             if 200...299 ~= hr.statusCode,
@@ -813,7 +818,7 @@ class OpenAIProvider: ExternalAPIProvider {
                     do {
                         let payload = mergedPayload(basePayload, modelId: fid)
                         let json = try await makeAPIRequest(endpoint: endpoint, payload: payload)
-                        NSLog("↘️ OpenAI fell back to \(fid) for endpoint \(endpoint)")
+                        AppLog.debug("OpenAI fallback -> \(fid) for endpoint \(endpoint)")
                         return (json, fid)
                     } catch {
                         continue

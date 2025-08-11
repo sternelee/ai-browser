@@ -37,14 +37,12 @@ struct WebApp: App {
 
     private func configureLogging() {
         // Set environment variables to reduce WebKit verbosity
-        // These help suppress the RBSService and ViewBridge logs
         setenv("WEBKIT_DISABLE_VERBOSE_LOGGING", "1", 1)
         setenv("WEBKIT_SUPPRESS_PROCESS_LOGS", "1", 1)
         setenv("OS_ACTIVITY_MODE", "disable", 1)
 
-        // Reduce logging for specific subsystems
-        let logger = Logger(subsystem: "com.example.Web", category: "App")
-        logger.info("Web browser started with reduced WebKit logging")
+        // Only log startup message in verbose mode
+        AppLog.debug("Web browser started with reduced WebKit logging")
     }
 
     private func setupUpdateChecker() {
@@ -62,7 +60,7 @@ struct WebApp: App {
             updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { _ in
                 // Check for updates only if app is not in background
                 if !BackgroundResourceManager.shared.isAppInBackground {
-                    NSLog("🔄 Checking for updates...")
+            if AppLog.isVerboseEnabled { AppLog.debug("Checking for updates…") }
                     // updateService.checkForUpdates(manual: false) - Commented until UpdateService is implemented
                 }
             }
@@ -77,7 +75,7 @@ struct WebApp: App {
         NotificationCenter.default.addObserver(
             forName: .suspendUpdateTimer, object: nil, queue: .main
         ) { _ in
-            NSLog("⏸️ Suspending update timer")
+            if AppLog.isVerboseEnabled { AppLog.debug("Suspending update timer") }
             updateTimer?.invalidate()
             updateTimer = nil
         }
@@ -86,7 +84,7 @@ struct WebApp: App {
         NotificationCenter.default.addObserver(
             forName: .resumeUpdateTimer, object: nil, queue: .main
         ) { _ in
-            NSLog("▶️ Resuming update timer")
+            if AppLog.isVerboseEnabled { AppLog.debug("Resuming update timer") }
             createUpdateTimer()
         }
     }

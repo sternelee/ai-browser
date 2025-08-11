@@ -67,7 +67,7 @@ class DownloadManager: NSObject, ObservableObject {
         loadDownloadHistory()
         loadSecuritySettings()
         
-        logger.info("DownloadManager initialized with enhanced security protection")
+        AppLog.debug("DownloadManager init (enhanced security)")
     }
     
     func startDownload(from url: URL, suggestedFilename: String? = nil) {
@@ -94,7 +94,7 @@ class DownloadManager: NSObject, ObservableObject {
                 
             case .unsafe(let threat):
                 // URL is malicious - block download and log security event
-                self.logger.warning("🛡️ Safe Browsing blocked malicious download: \(url.absoluteString) (Threat: \(threat.threatType.userFriendlyName))")
+            self.logger.warning("Safe Browsing blocked malicious download: \(url.absoluteString) (Threat: \(threat.threatType.userFriendlyName))")
                 
                 securityMonitor.logDownloadSecurityEvent(
                     filename: filename,
@@ -120,7 +120,7 @@ class DownloadManager: NSObject, ObservableObject {
                 
             case .unknown:
                 // Unable to determine safety - proceed with caution and enhanced security
-                self.logger.warning("⚠️ Safe Browsing check failed for download URL: \(url.absoluteString) - proceeding with enhanced security")
+                self.logger.warning("Safe Browsing check failed for download URL: \(url.absoluteString) - proceeding with enhanced security")
                 
                 securityMonitor.logDownloadSecurityEvent(
                     filename: filename,
@@ -223,7 +223,7 @@ class DownloadManager: NSObject, ObservableObject {
         
         updateActiveDownloadsCount()
         
-        logger.info("Started secure download with comprehensive protection: \(download.filename)")
+        AppLog.debug("Started secure download: \(download.filename)")
         
         securityMonitor.logDownloadSecurityEvent(
             filename: download.filename,
@@ -400,7 +400,7 @@ class DownloadManager: NSObject, ObservableObject {
         
         if FileManager.default.fileExists(atPath: download.destinationURL.path) {
             NSWorkspace.shared.open(download.destinationURL)
-            logger.info("Opened downloaded file: \(download.filename)")
+            AppLog.debug("Opened downloaded file: \(download.filename)")
         } else {
             logger.error("Downloaded file not found: \(download.destinationURL.path)")
         }
@@ -412,7 +412,7 @@ class DownloadManager: NSObject, ObservableObject {
         
         if FileManager.default.fileExists(atPath: download.destinationURL.path) {
             NSWorkspace.shared.selectFile(download.destinationURL.path, inFileViewerRootedAtPath: downloadDirectory.path)
-            logger.info("Showed file in Finder: \(download.filename)")
+            AppLog.debug("Showed file in Finder: \(download.filename)")
         }
     }
     
@@ -429,7 +429,7 @@ class DownloadManager: NSObject, ObservableObject {
     func clearCompletedDownloads() {
         downloads.removeAll { $0.status == .completed || $0.status == .failed || $0.status == .cancelled }
         updateActiveDownloadsCount()
-        logger.info("Cleared completed downloads")
+        AppLog.debug("Cleared completed downloads")
     }
     
     /// Get download by URL
@@ -539,7 +539,7 @@ class DownloadManager: NSObject, ObservableObject {
         UserDefaults.standard.set(showSecurityWarnings, forKey: "DownloadManager.ShowSecurityWarnings")
         UserDefaults.standard.set(autoQuarantineDownloads, forKey: "DownloadManager.AutoQuarantineDownloads")
         
-        logger.info("Download security settings updated - Scan: \(self.securityScanEnabled), Warnings: \(self.showSecurityWarnings), Quarantine: \(self.autoQuarantineDownloads)")
+        AppLog.debug("Download security settings updated - Scan: \(self.securityScanEnabled), Warnings: \(self.showSecurityWarnings), Quarantine: \(self.autoQuarantineDownloads)")
     }
     
     // MARK: - Security Settings Persistence

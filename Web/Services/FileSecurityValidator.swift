@@ -222,7 +222,7 @@ class FileSecurityValidator: ObservableObject {
     
     private init() {
         loadSecuritySettings()
-        logger.info("FileSecurityValidator initialized with policy: \(self.securityPolicy.displayName)")
+        AppLog.debug("FileSecurityValidator init: policy=\(self.securityPolicy.displayName)")
     }
     
     // MARK: - Public API

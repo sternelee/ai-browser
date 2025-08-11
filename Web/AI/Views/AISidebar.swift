@@ -71,6 +71,11 @@ struct AISidebar: View {
         let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
         chatInput = ""
+        // Support dev slash-commands in Agent mode as well
+        if message.hasPrefix("/tool ") || message.hasPrefix("/plan ") {
+            handleAgentCommand(message)
+            return
+        }
         Task { await aiAssistant.planAndRunAgent(message) }
     }
 
@@ -893,13 +898,13 @@ struct AISidebar: View {
                 var fullResponse = ""
                 for try await chunk in stream {
                     fullResponse += chunk
-                    NSLog("🌊 Streaming token: \(chunk) (total: \(fullResponse.count) chars)")
+                    if AppLog.isVerboseEnabled { AppLog.debug("Streaming token (total=\(fullResponse.count))") }
                 }
 
-                NSLog("✅ Streaming completed: \(fullResponse.count) characters")
+                if AppLog.isVerboseEnabled { AppLog.debug("Streaming completed: len=\(fullResponse.count)") }
 
             } catch {
-                NSLog("❌ Streaming failed: \(error)")
+                AppLog.error("Sidebar streaming failed: \(error.localizedDescription)")
 
                 // Clear animation state on error (AIAssistant handles this but ensure cleanup)
                 await MainActor.run {
@@ -908,7 +913,7 @@ struct AISidebar: View {
                     }
                 }
 
-                NSLog("ℹ️ Streaming error handled by AIAssistant - cleanup completed")
+                if AppLog.isVerboseEnabled { AppLog.debug("Streaming error handled - cleanup done") }
             }
         }
     }
@@ -955,7 +960,7 @@ struct AISidebar: View {
         withAnimation(.easeInOut(duration: 0.3)) {
             aiAssistant.clearConversation()
         }
-        NSLog("🗑️ Conversation cleared via UI")
+        AppLog.debug("Conversation cleared via UI")
     }
 
 }

@@ -43,7 +43,7 @@ class SystemMemoryMonitor {
     
     private init() {
         startMemoryPressureMonitoring()
-        logger.info("🧠 System Memory Monitor initialized")
+        AppLog.debug("System Memory Monitor initialized")
     }
     
     // MARK: - Public Interface
@@ -128,7 +128,7 @@ class SystemMemoryMonitor {
         let boundedAvailable = max(min(availableMemory, boundedTotal), 0.1)  // Between 0.1GB and total
         let boundedUsed = boundedTotal - boundedAvailable
         
-        logger.debug("🧠 Memory calculation: Total=\(String(format: "%.1f", boundedTotal))GB, Available=\(String(format: "%.1f", boundedAvailable))GB, Used=\(String(format: "%.1f", boundedUsed))GB")
+        if AppLog.isVerboseEnabled { AppLog.debug("Memory calc: total=\(String(format: "%.1f", boundedTotal)) avail=\(String(format: "%.1f", boundedAvailable)) used=\(String(format: "%.1f", boundedUsed)) GB") }
         
         return (total: boundedTotal, available: boundedAvailable, used: boundedUsed)
     }
@@ -165,7 +165,7 @@ class SystemMemoryMonitor {
             guard let self = self else { return }
             
             let status = self.getCurrentMemoryStatus()
-            self.logger.info("🧠 Memory pressure changed: \(status.pressureLevel.rawValue) (\(String(format: "%.1f", status.availableMemory))GB available)")
+            if AppLog.isVerboseEnabled { AppLog.debug("Memory pressure: \(status.pressureLevel.rawValue) (\(String(format: "%.1f", status.availableMemory))GB avail)") }
             
             // Post notification for AI system to adjust behavior
             NotificationCenter.default.post(
@@ -205,15 +205,9 @@ extension SystemMemoryMonitor {
     /// Log detailed memory status for debugging
     func logMemoryStatus() {
         let status = getCurrentMemoryStatus()
-        logger.info("""
-        🧠 Memory Status Report:
-           Total: \(String(format: "%.1f", status.totalMemory))GB
-           Available: \(String(format: "%.1f", status.availableMemory))GB
-           Used: \(String(format: "%.1f", status.usedMemory))GB
-           Pressure: \(status.pressureLevel.rawValue)
-           AI Recommendation: \(status.aiRecommendation.rawValue)
-           Recommended Quantization: \(self.getRecommendedQuantization().rawValue)
-        """)
+        if AppLog.isVerboseEnabled {
+            AppLog.debug("Memory Report: total=\(String(format: "%.1f", status.totalMemory)) avail=\(String(format: "%.1f", status.availableMemory)) used=\(String(format: "%.1f", status.usedMemory)) pressure=\(status.pressureLevel.rawValue) rec=\(status.aiRecommendation.rawValue) quant=\(self.getRecommendedQuantization().rawValue)")
+        }
     }
     
     /// Check if memory usage is within safe limits for AI operations

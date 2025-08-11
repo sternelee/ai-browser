@@ -25,7 +25,7 @@ class WebKitSecurityValidator {
     /// - Parameter configuration: WKWebViewConfiguration to validate
     /// - Returns: Security validation result with recommendations
     func validateWebKitConfiguration(_ configuration: WKWebViewConfiguration) -> WebKitSecurityValidation {
-        logger.info("🔍 Validating WebKit configuration for security compliance")
+        if AppLog.isVerboseEnabled { AppLog.debug("Validating WebKit configuration for security compliance") }
         
         var issues: [SecurityIssue] = []
         var recommendations: [String] = []
@@ -47,7 +47,7 @@ class WebKitSecurityValidator {
         
         let overallSecurity = determineSecurityLevel(issues: issues)
         
-        logger.info("🛡️ WebKit security validation complete: \(overallSecurity.rawValue) security level")
+        if AppLog.isVerboseEnabled { AppLog.debug("WebKit security validation complete: \(overallSecurity.rawValue)") }
         
         return WebKitSecurityValidation(
             securityLevel: overallSecurity,
@@ -68,10 +68,10 @@ class WebKitSecurityValidator {
         // On Apple Silicon, JavaScriptCore requires JIT for optimal performance
         // On Intel, JIT provides performance benefits but may not be absolutely required
         #if arch(arm64)
-        logger.info("🔍 Running on Apple Silicon - JIT entitlement REQUIRED for WebKit JavaScriptCore")
+        if AppLog.isVerboseEnabled { AppLog.debug("Running on Apple Silicon - JIT required") }
         return true
         #else
-        logger.info("🔍 Running on Intel - JIT entitlement provides performance benefits but may be optional")
+        if AppLog.isVerboseEnabled { AppLog.debug("Running on Intel - JIT may be optional") }
         return false // Could potentially be removed on Intel with performance trade-off
         #endif
     }
@@ -79,7 +79,7 @@ class WebKitSecurityValidator {
     /// Tests WebKit functionality without JIT to determine actual requirements
     /// - Parameter completion: Callback with test results
     func testWebKitWithoutJIT(completion: @escaping (JITTestResult) -> Void) {
-        logger.info("🧪 Testing WebKit functionality with restricted JavaScript execution")
+        if AppLog.isVerboseEnabled { AppLog.debug("Testing WebKit without JIT") }
         
         // Create a test configuration with restricted JavaScript
         let testConfig = WKWebViewConfiguration()
