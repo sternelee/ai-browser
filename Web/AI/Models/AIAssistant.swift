@@ -269,6 +269,7 @@ class AIAssistant: ObservableObject {
             }
 
             let agent = PageAgent(webView: webView)
+            let requiresChoice = Self.queryImpliesChoice(query)
             for (idx, step) in plan.enumerated() {
                 // Policy gate and consent
                 let decision = AgentPermissionManager.shared.evaluate(
@@ -295,16 +296,104 @@ class AIAssistant: ObservableObject {
 
                 await MainActor.run { self.updateTimelineStep(index: idx, state: .running) }
                 NSLog("🛰️ Agent: Running step \(idx + 1)/\(plan.count): \(step.type.rawValue)")
-                let resultArray = await agent.execute(plan: [step])
-                let r = resultArray.first
-                await MainActor.run {
-                    self.updateTimelineStep(
-                        index: idx, state: (r?.success == true) ? .success : .failure,
-                        message: r?.message)
+
+                // Observe–act selection when applicable, same as fallback path
+                if requiresChoice, step.type == .click, step.locator != nil,
+                    step.locator?.nth == nil
+                {
+                    let preferredRole = step.locator?.role?.lowercased()
+                    let primaryLocator = LocatorInput(role: preferredRole ?? "article")
+                    var candidates = await agent.requestElements(matching: primaryLocator)
+                    if candidates.isEmpty {
+                        candidates = await agent.requestElements(
+                            matching: LocatorInput(role: "link"))
+                    }
+                    if !candidates.isEmpty,
+                        let pick = await Self.chooseElementIndex(
+                            from: candidates, forQuery: query,
+                            provider: self.providerManager.currentProvider)
+                    {
+                        let role = preferredRole ?? (!candidates.isEmpty ? "article" : "link")
+                        var ok = await agent.click(locator: LocatorInput(role: role, nth: pick))
+                        if !ok {
+                            let linkCandidates = await agent.requestElements(
+                                matching: LocatorInput(role: "link"))
+                            if !linkCandidates.isEmpty,
+                                let linkPick = await Self.chooseElementIndex(
+                                    from: linkCandidates, forQuery: query,
+                                    provider: self.providerManager.currentProvider)
+                            {
+                                ok = await agent.click(
+                                    locator: LocatorInput(role: "link", nth: linkPick))
+                            }
+                        }
+                        if ok {
+                            _ = await agent.waitFor(
+                                predicate: PageAction(
+                                    type: .waitFor, direction: nil, timeoutMs: 3000),
+                                timeoutMs: 3000)
+                            let content = await agent.extract(readMode: "article", selector: nil)
+                            await MainActor.run {
+                                self.updateTimelineStep(
+                                    index: idx, state: .success,
+                                    message: content.isEmpty
+                                        ? "clicked choice (no article text)" : "clicked choice")
+                            }
+                        } else {
+                            await MainActor.run {
+                                self.updateTimelineStep(
+                                    index: idx, state: .failure, message: "click failed")
+                            }
+                        }
+                    } else {
+                        let r = (await agent.execute(plan: [step])).first
+                        await MainActor.run {
+                            self.updateTimelineStep(
+                                index: idx, state: (r?.success == true) ? .success : .failure,
+                                message: r?.message)
+                        }
+                    }
+                } else if step.type == .typeText {
+                    // Generic input selection: observe → choose → type
+                    let inputRole = step.locator?.role?.lowercased() ?? "textbox"
+                    var inputs = await agent.requestElements(
+                        matching: LocatorInput(role: inputRole))
+                    if inputs.isEmpty {
+                        inputs = await agent.requestElements(matching: LocatorInput(role: "input"))
+                    }
+                    let textToType =
+                        step.text ?? Self.inferTextToType(from: query, defaultValue: nil) ?? ""
+                    if !inputs.isEmpty,
+                        let pick = await Self.chooseElementIndex(
+                            from: inputs, forQuery: query,
+                            provider: self.providerManager.currentProvider)
+                    {
+                        let ok = await agent.typeText(
+                            locator: LocatorInput(role: inputRole, nth: pick),
+                            text: textToType,
+                            submit: step.submit ?? false)
+                        await MainActor.run {
+                            self.updateTimelineStep(
+                                index: idx, state: ok ? .success : .failure,
+                                message: ok ? "typed into choice #\(pick)" : "type failed")
+                        }
+                    } else {
+                        let r = (await agent.execute(plan: [step])).first
+                        await MainActor.run {
+                            self.updateTimelineStep(
+                                index: idx, state: (r?.success == true) ? .success : .failure,
+                                message: r?.message)
+                        }
+                    }
+                } else {
+                    let resultArray = await agent.execute(plan: [step])
+                    let r = resultArray.first
+                    await MainActor.run {
+                        self.updateTimelineStep(
+                            index: idx, state: (r?.success == true) ? .success : .failure,
+                            message: r?.message)
+                    }
                 }
-                NSLog(
-                    "🛰️ Agent: Step \(idx + 1) result => success=\(r?.success == true), message=\(r?.message ?? "nil")"
-                )
             }
             await MainActor.run { self.currentAgentRun?.finishedAt = Date() }
             NSLog("🛰️ Agent: Finished agent run")
@@ -338,7 +427,11 @@ class AIAssistant: ObservableObject {
                     return
                 }
                 let agent = PageAgent(webView: webView)
-                let adjusted = Self.postProcessPlanForSites(fallback)
+                var adjusted = Self.postProcessPlanForSites(fallback)
+
+                // Passive observe-act enhancement: if the query implies a choice (pick/best/funniest),
+                // replace a generic click with an interactive selection driven by element summaries.
+                let requiresChoice = Self.queryImpliesChoice(query)
                 for (idx, step) in adjusted.enumerated() {
                     let decision = AgentPermissionManager.shared.evaluate(
                         intent: step.type, urlHost: host)
@@ -350,15 +443,85 @@ class AIAssistant: ObservableObject {
                         }
                         return
                     }
+
                     await MainActor.run { self.updateTimelineStep(index: idx, state: .running) }
                     NSLog(
                         "🛰️ Agent: (fallback) Running step \(idx + 1)/\(fallback.count): \(step.type.rawValue)"
                     )
-                    let r = (await agent.execute(plan: [step])).first
-                    await MainActor.run {
-                        self.updateTimelineStep(
-                            index: idx, state: (r?.success == true) ? .success : .failure,
-                            message: r?.message)
+
+                    // Observe -> decide -> act only when applicable and safe.
+                    if requiresChoice, step.type == .click, step.locator != nil,
+                        step.locator?.nth == nil
+                    {
+                        // Build a broad candidate locator from the planned locator's role, defaulting to articles then links
+                        let preferredRole = step.locator?.role?.lowercased()
+                        let primaryLocator = LocatorInput(role: preferredRole ?? "article")
+                        var candidates = await agent.requestElements(matching: primaryLocator)
+                        if candidates.isEmpty {
+                            candidates = await agent.requestElements(
+                                matching: LocatorInput(role: "link"))
+                        }
+
+                        if !candidates.isEmpty,
+                            let pick = await Self.chooseElementIndex(
+                                from: candidates, forQuery: query,
+                                provider: self.providerManager.currentProvider)
+                        {
+                            // Execute the chosen click by index using the same role ordering
+                            let role = preferredRole ?? (!candidates.isEmpty ? "article" : "link")
+                            var ok = await agent.click(locator: LocatorInput(role: role, nth: pick))
+                            // If click did not succeed, try link-based candidates once
+                            if !ok {
+                                let linkCandidates = await agent.requestElements(
+                                    matching: LocatorInput(role: "link"))
+                                if !linkCandidates.isEmpty,
+                                    let linkPick = await Self.chooseElementIndex(
+                                        from: linkCandidates, forQuery: query,
+                                        provider: self.providerManager.currentProvider)
+                                {
+                                    ok = await agent.click(
+                                        locator: LocatorInput(role: "link", nth: linkPick))
+                                }
+                            }
+                            // After click, opportunistically verify content by extracting article text
+                            if ok {
+                                _ = await agent.waitFor(
+                                    predicate: PageAction(
+                                        type: .waitFor, direction: nil, timeoutMs: 3000),
+                                    timeoutMs: 3000)
+                                let content = await agent.extract(
+                                    readMode: "article", selector: nil)
+                                // If no content, still mark success but note that navigation may be client-side
+                                await MainActor.run {
+                                    self.updateTimelineStep(
+                                        index: idx, state: .success,
+                                        message: content.isEmpty
+                                            ? "clicked choice #\(pick) (no article text)"
+                                            : "clicked choice #\(pick)")
+                                }
+                            } else {
+                                await MainActor.run {
+                                    self.updateTimelineStep(
+                                        index: idx, state: .failure,
+                                        message: "click failed")
+                                }
+                            }
+                        } else {
+                            // Fallback to executing the original step if we cannot decide
+                            let r = (await agent.execute(plan: [step])).first
+                            await MainActor.run {
+                                self.updateTimelineStep(
+                                    index: idx, state: (r?.success == true) ? .success : .failure,
+                                    message: r?.message ?? "fallback click")
+                            }
+                        }
+                    } else {
+                        let r = (await agent.execute(plan: [step])).first
+                        await MainActor.run {
+                            self.updateTimelineStep(
+                                index: idx, state: (r?.success == true) ? .success : .failure,
+                                message: r?.message)
+                        }
                     }
                 }
                 await MainActor.run { self.currentAgentRun?.finishedAt = Date() }
@@ -378,6 +541,74 @@ class AIAssistant: ObservableObject {
                     finishedAt: Date())
             }
         }
+    }
+
+    /// Lightweight intent detection: does the query imply choosing one item (e.g., funniest/best/top)?
+    private static func queryImpliesChoice(_ query: String) -> Bool {
+        let q = query.lowercased()
+        let triggers = [
+            "pick", "choose", "funniest", "funny", "best", "top", "most upvoted", "most popular",
+        ]
+        return triggers.contains { q.contains($0) }
+    }
+
+    /// Ask the model to choose a single index from candidate element summaries. Returns 0-based index.
+    private static func chooseElementIndex(
+        from candidates: [ElementSummary], forQuery query: String, provider: AIProvider?
+    ) async -> Int? {
+        guard let provider = provider else { return nil }
+        // Prepare a compact list the model can reason over deterministically
+        let maxItems = min(15, candidates.count)
+        var lines: [String] = []
+        for i in 0..<maxItems {
+            let item = candidates[i]
+            let role = item.role ?? ""
+            let name = (item.name ?? "").replacingOccurrences(of: "\n", with: " ")
+            let text = (item.text ?? "").replacingOccurrences(of: "\n", with: " ")
+            let snippet = String((name + " " + text).prefix(220))
+            lines.append("\(i) | role=\(role) | \(snippet)")
+        }
+        let listBlock = lines.joined(separator: "\n")
+        let prompt = """
+            You are helping select the best candidate element for a user request. Choose exactly one index from the list.
+            - Return ONLY the index as an integer (0-based). No prose, no JSON.
+            - Consider the user intent: \(query)
+            Candidates (index | role | snippet):
+            \(listBlock)
+            Answer with a single integer index only.
+            """
+        do {
+            let out = try await provider.generateRawResponse(
+                prompt: prompt, model: provider.selectedModel
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Extract first integer in the response
+            if let match = out.range(of: "-?\\d{1,3}", options: .regularExpression) {
+                let token = String(out[match])
+                if let idx = Int(token), idx >= 0, idx < maxItems { return idx }
+            }
+        } catch {}
+        return nil
+    }
+
+    /// Infer text to type when user says "enter <text>" without a target
+    private static func inferTextToType(from query: String, defaultValue: String?) -> String? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = q.lowercased()
+        if lower.hasPrefix("enter ") {
+            let raw = String(q.dropFirst("enter ".count))
+            // Stop at common sequencing words
+            let stops = [",", ";", ".", " then", " and", " into", " in "]
+            var slice = raw
+            for s in stops {
+                if let r = slice.range(of: s, options: [.caseInsensitive]) {
+                    slice = String(slice[..<r.lowerBound])
+                    break
+                }
+            }
+            let term = slice.trimmingCharacters(in: .whitespacesAndNewlines)
+            return term.isEmpty ? defaultValue : term
+        }
+        return defaultValue
     }
 
     /// Insert generic waits for dynamic content surfaces (agnostic)
@@ -402,7 +633,8 @@ class AIAssistant: ObservableObject {
                 case "select": sel = "select"
                 case "article", "post":
                     // Broaden for modern content sites (Reddit, news, etc.)
-                    sel = "article, [role=article], [data-testid=post-container], shreddit-post, .Post, .thing"
+                    sel =
+                        "article, [role=article], [data-testid=post-container], shreddit-post, .Post, .thing"
                 default: sel = "[role]"
                 }
                 return PageAction(type: .waitFor, text: sel, timeoutMs: 8000)
@@ -511,6 +743,21 @@ class AIAssistant: ObservableObject {
             return candidate
         }
 
+        func looksLikeDomain(_ token: String) -> Bool {
+            if token.hasPrefix("http") || token.hasPrefix("www.") { return true }
+            if token.contains(".") {
+                let parts = token.split(separator: ".").filter { !$0.isEmpty }
+                if parts.count >= 2, parts.last!.count >= 2 { return true }
+            }
+            // Common site names to improve UX without hardcoding behavior per site
+            let knownSites: Set<String> = [
+                "reddit", "youtube", "google", "github", "twitter", "x", "facebook",
+                "instagram", "amazon", "apple", "medium", "wikipedia", "bing",
+                "netflix", "linkedin", "figma", "notion", "webflow", "vercel", "linear",
+            ]
+            return knownSites.contains(token)
+        }
+
         func normalizeUrl(from token: String) -> String {
             var t = token
             if !t.contains(".") { t += ".com" }
@@ -524,6 +771,8 @@ class AIAssistant: ObservableObject {
             ?? extractSiteToken(after: "go to ")
             ?? extractSiteToken(after: "navigate to ")
         {
+            // Only treat as navigation if it looks like a site/domain; otherwise fall through to search heuristic
+            guard looksLikeDomain(token) else { return nil }
             let url = normalizeUrl(from: token)
 
             // If the remainder suggests selecting an article/post, click the first article-like item generically
@@ -544,7 +793,8 @@ class AIAssistant: ObservableObject {
         if q.hasPrefix("search ") || q.hasPrefix("search for ") || q.hasPrefix("look up ")
             || q.hasPrefix("find ")
         {
-            var term = q
+            var term =
+                q
                 .replacingOccurrences(of: "search for ", with: "")
                 .replacingOccurrences(of: "search ", with: "")
                 .replacingOccurrences(of: "look up ", with: "")
@@ -557,6 +807,26 @@ class AIAssistant: ObservableObject {
                 PageAction(type: .typeText, locator: locator, text: term, submit: true),
                 PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
             ]
+        }
+
+        // Heuristic C: "enter <query>" when not a domain/site => treat as typing into a textbox
+        if q.hasPrefix("enter ") {
+            let remainder = raw.dropFirst("enter ".count)
+            var term = String(remainder)
+            // Stop at common sequencing words
+            if let r = term.range(of: ",") { term = String(term[..<r.lowerBound]) }
+            if let r = term.range(of: " then", options: [.caseInsensitive]) {
+                term = String(term[..<r.lowerBound])
+            }
+            term = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !term.isEmpty {
+                let locator = LocatorInput(role: "textbox")
+                return [
+                    PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
+                    PageAction(type: .typeText, locator: locator, text: term, submit: true),
+                    PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
+                ]
+            }
         }
 
         return nil
