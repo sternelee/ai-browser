@@ -208,7 +208,7 @@ class SecurityMonitor: ObservableObject {
         // Setup log rotation timer
         setupLogRotation()
         
-        logger.info("SecurityMonitor initialized - encryption key will be loaded when needed")
+        AppLog.debug("SecurityMonitor initialized (encryption key deferred)")
     }
     
     // MARK: - Public API
@@ -606,7 +606,7 @@ class SecurityMonitor: ObservableObject {
         
         // Create empty log file
         FileManager.default.createFile(atPath: currentLogFile!.path, contents: nil)
-        logger.info("Created new security log file: \(filename)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Created security log file: \(filename)") }
     }
     
     private func shouldRotateLog() -> Bool {
@@ -641,7 +641,7 @@ class SecurityMonitor: ObservableObject {
                 // Clean up old logs
                 self.cleanupOldLogs()
                 
-                self.logger.info("Performed log maintenance - rotation and cleanup")
+                if AppLog.isVerboseEnabled { self.logger.debug("Performed log maintenance - rotation and cleanup") }
             }
         }
     }
@@ -655,7 +655,7 @@ class SecurityMonitor: ObservableObject {
                 let attributes = try file.resourceValues(forKeys: [.creationDateKey])
                 if let creationDate = attributes.creationDate, creationDate < cutoffDate {
                     try FileManager.default.removeItem(at: file)
-                    logger.info("Deleted old log file: \(file.lastPathComponent)")
+                    if AppLog.isVerboseEnabled { logger.debug("Deleted old log file: \(file.lastPathComponent)") }
                 }
             }
         } catch {

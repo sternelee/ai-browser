@@ -89,7 +89,7 @@ class GeminiProvider: ExternalAPIProvider {
                 availableModels.first { $0.id == "gemini-1.5-pro-latest" } ?? availableModels.first
         }
 
-        NSLog("📋 Loaded \(availableModels.count) Gemini models")
+        AppLog.debug("Gemini models loaded: \(availableModels.count)")
     }
 
     // MARK: - Configuration Validation
@@ -119,7 +119,7 @@ class GeminiProvider: ExternalAPIProvider {
                 endpoint: "/models/\(modelName):generateContent",
                 payload: testPayload
             )
-            NSLog("✅ Gemini API key validated")
+            AppLog.debug("Gemini API key validated")
         } catch {
             throw AIProviderError.authenticationFailed
         }

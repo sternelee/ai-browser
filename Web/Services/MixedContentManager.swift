@@ -262,7 +262,9 @@ class MixedContentManager: NSObject, ObservableObject {
             )
         }
         
-        logger.debug("🔍 Mixed content check for \(url.host ?? "unknown"): secure=\(hasOnlySecureContent), mixed=\(mixedContentDetected)")
+        if logMixedContentEvents && AppLog.isVerboseEnabled {
+            logger.debug("🔍 Mixed content check for \(url.host ?? "unknown"): secure=\(hasOnlySecureContent), mixed=\(mixedContentDetected)")
+        }
         
         return currentStatus
     }

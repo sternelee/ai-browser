@@ -143,7 +143,7 @@ class ModelDiscoveryService: ObservableObject {
         
         saveDiscoveredModels()
         
-        NSLog("✅ Model discovery completed: found \(discoveredModels.count) models")
+        if AppLog.isVerboseEnabled { AppLog.debug("Model discovery completed: \(discoveredModels.count) models") }
     }
     
     /// Add a user-specified model directory
@@ -389,7 +389,7 @@ class ModelDiscoveryService: ObservableObject {
         
         do {
             discoveredModels = try JSONDecoder().decode([DiscoveredModel].self, from: data)
-            NSLog("📚 Loaded \(discoveredModels.count) previously discovered models")
+            if AppLog.isVerboseEnabled { AppLog.debug("Loaded previously discovered models: \(discoveredModels.count)") }
         } catch {
             NSLog("⚠️ Error loading discovered models: \(error)")
             discoveredModels = []

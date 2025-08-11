@@ -48,7 +48,7 @@ final class SimplifiedMLXRunner: ObservableObject {
             }
         }
         
-NSLog("🚀 Loading MLX model: \(modelId)")
+if AppLog.isVerboseEnabled { AppLog.debug("Loading MLX model: \(modelId)") }
         
         do {
             // Use MLX-Swift ModelRegistry for predefined models
@@ -60,7 +60,7 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                 modelConfig = LLMRegistry.llama3_2_3B_4bit
             case "gemma3_2B_4bit":
                 modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-2b-it-4bit")
-                NSLog("🔧 Using MLX model: mlx-community/gemma-2-2b-it-4bit")
+                if AppLog.isVerboseEnabled { AppLog.debug("Using MLX model: mlx-community/gemma-2-2b-it-4bit") }
             case "gemma3_9B_4bit":
                 modelConfig = ModelConfiguration(id: "mlx-community/gemma-2-9b-it-4bit")
             default:
@@ -76,7 +76,7 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                 Task { @MainActor in
                     self.loadProgress = Float(progress.fractionCompleted)
                     if Int(progress.fractionCompleted * 100) % 10 == 0 { // Only log every 10%
-                        NSLog("📈 MLX model download progress: \(Int(progress.fractionCompleted * 100))%")
+                        if AppLog.isVerboseEnabled { AppLog.debug("MLX model download: \(Int(progress.fractionCompleted * 100))%") }
                     }
                 }
             }
@@ -89,9 +89,9 @@ NSLog("🚀 Loading MLX model: \(modelId)")
                 self.loadProgress = 1.0
             }
             
-            NSLog("✅ MLX model loaded successfully: \(modelId)")
+            AppLog.debug("MLX model loaded successfully: \(modelId)")
         } catch {
-            NSLog("❌ Failed to load MLX model: \(error)")
+            AppLog.error("Failed to load MLX model: \(error.localizedDescription)")
             throw error
         }
     }

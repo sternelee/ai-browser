@@ -98,7 +98,7 @@ class MLXModelService: ObservableObject {
             await performIntelligentModelCheck()
         }
         
-        NSLog("🤖 MLXModelService initialized - checking for existing MLX AI model...")
+        AppLog.debug("MLXModelService init - checking for existing MLX AI model…")
     }
     
     deinit {
@@ -133,13 +133,13 @@ class MLXModelService: ObservableObject {
     func initializeAI() async throws {
         // If already ready, no action needed
         if await isAIReady() {
-            NSLog("✅ MLX AI model already ready - no download needed")
+            AppLog.debug("MLX AI model already ready - no download needed")
             return
         }
         
         // If currently downloading, just wait
         if downloadState == .downloading {
-            NSLog("⏳ MLX AI model download already in progress - waiting...")
+            if AppLog.isVerboseEnabled { AppLog.debug("MLX AI model download in progress - waiting…") }
             return
         }
         
@@ -213,7 +213,7 @@ class MLXModelService: ObservableObject {
             return
         }
         
-        NSLog("🔍 Checking MLX model availability: \(model.name)")
+        if AppLog.isVerboseEnabled { AppLog.debug("Checking MLX model availability: \(model.name)") }
         
         do {
             // Try to ensure the model is loaded - this will trigger MLX to download if needed
@@ -245,14 +245,14 @@ class MLXModelService: ObservableObject {
             downloadState = .ready
             downloadProgress = 1.0
             
-            NSLog("✅ MLX model validated and ready: \(model.name)")
+            AppLog.debug("MLX model validated and ready: \(model.name)")
             
         } catch {
             downloadState = .failed(error.localizedDescription)
             isModelReady = false
             downloadProgress = 0.0
             
-            NSLog("❌ MLX model check failed: \(error)")
+            AppLog.error("MLX model check failed: \(error.localizedDescription)")
         }
     }
     
@@ -265,8 +265,8 @@ class MLXModelService: ObservableObject {
         downloadState = .downloading
         downloadProgress = 0.0
         
-        NSLog("🔽 Starting MLX model download: \(model.name) (~\(String(format: "%.1f", model.estimatedSizeGB)) GB)")
-        NSLog("💡 This is a one-time download - future app launches will be instant")
+        if AppLog.isVerboseEnabled { AppLog.debug("Starting MLX model download: \(model.name) (~\(String(format: "%.1f", model.estimatedSizeGB)) GB)") }
+        if AppLog.isVerboseEnabled { AppLog.debug("One-time download; future launches will be instant") }
         
         do {
             // Connect to SimplifiedMLXRunner progress updates
@@ -298,8 +298,7 @@ class MLXModelService: ObservableObject {
             downloadState = .ready
             downloadProgress = 1.0
             
-            NSLog("✅ MLX AI model download completed successfully")
-            NSLog("🚀 AI is now ready for use!")
+            AppLog.debug("MLX AI model download completed successfully; AI ready")
             
         } catch {
             downloadTask?.cancel()
@@ -309,7 +308,7 @@ class MLXModelService: ObservableObject {
             isModelReady = false
             downloadProgress = 0.0
             
-            NSLog("❌ MLX AI model download failed: \(error)")
+            AppLog.error("MLX AI model download failed: \(error.localizedDescription)")
             throw error
         }
     }

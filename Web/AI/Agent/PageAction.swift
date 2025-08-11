@@ -53,6 +53,7 @@ public struct PageAction: Codable, Identifiable {
     public var newTab: Bool?
     public var direction: String?
     public var amountPx: Int?
+    public var delayMs: Int?
     public var submit: Bool?
     public var value: String?
     public var timeoutMs: Int?
@@ -66,6 +67,7 @@ public struct PageAction: Codable, Identifiable {
         newTab: Bool? = nil,
         direction: String? = nil,
         amountPx: Int? = nil,
+        delayMs: Int? = nil,
         submit: Bool? = nil,
         value: String? = nil,
         timeoutMs: Int? = nil
@@ -78,9 +80,41 @@ public struct PageAction: Codable, Identifiable {
         self.newTab = newTab
         self.direction = direction
         self.amountPx = amountPx
+        self.delayMs = delayMs
         self.submit = submit
         self.value = value
         self.timeoutMs = timeoutMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case locator
+        case text
+        case url
+        case newTab
+        case direction
+        case amountPx
+        case submit
+        case value
+        case timeoutMs
+        case delayMs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.type = try container.decode(PageActionType.self, forKey: .type)
+        self.locator = try container.decodeIfPresent(LocatorInput.self, forKey: .locator)
+        self.text = try container.decodeIfPresent(String.self, forKey: .text)
+        self.url = try container.decodeIfPresent(String.self, forKey: .url)
+        self.newTab = try container.decodeIfPresent(Bool.self, forKey: .newTab)
+        self.direction = try container.decodeIfPresent(String.self, forKey: .direction)
+        self.amountPx = try container.decodeIfPresent(Int.self, forKey: .amountPx)
+        self.delayMs = try container.decodeIfPresent(Int.self, forKey: .delayMs)
+        self.submit = try container.decodeIfPresent(Bool.self, forKey: .submit)
+        self.value = try container.decodeIfPresent(String.self, forKey: .value)
+        self.timeoutMs = try container.decodeIfPresent(Int.self, forKey: .timeoutMs)
     }
 }
 

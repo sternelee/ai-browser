@@ -668,21 +668,8 @@ struct AISidebar: View {
                     if agentMode { sendAgent() } else { sendMessage() }
                 }
                 .disabled(!aiAssistant.isInitialized)
-                .onChange(of: isChatInputFocused) { _, newValue in
-                    NSLog(
-                        "🎯 TEXTFIELD DEBUG: AI chat input focus changed to: \(newValue), aiInitialized: \(aiAssistant.isInitialized)"
-                    )
-                }
-                .onChange(of: aiAssistant.isInitialized) { _, newValue in
-                    NSLog(
-                        "🎯 TEXTFIELD DEBUG: AI initialized changed to: \(newValue), inputFocused: \(isChatInputFocused)"
-                    )
-                    if !newValue && isChatInputFocused {
-                        NSLog(
-                            "🎯 TEXTFIELD DEBUG: WARNING - AI became uninitialized while input was focused!"
-                        )
-                    }
-                }
+                .onChange(of: isChatInputFocused) { _, _ in }
+                .onChange(of: aiAssistant.isInitialized) { _, _ in }
 
                 // Send button
                 Button(action: {

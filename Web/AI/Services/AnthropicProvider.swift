@@ -89,7 +89,7 @@ class AnthropicProvider: ExternalAPIProvider {
                 ?? availableModels.first
         }
 
-        NSLog("📋 Loaded \(availableModels.count) Anthropic models")
+        AppLog.debug("Anthropic models loaded: \(availableModels.count)")
     }
 
     // MARK: - Configuration Validation
@@ -113,7 +113,7 @@ class AnthropicProvider: ExternalAPIProvider {
                 endpoint: "/messages",
                 payload: testPayload
             )
-            NSLog("✅ Anthropic API key validated")
+            AppLog.debug("Anthropic API key validated")
         } catch {
             throw AIProviderError.authenticationFailed
         }

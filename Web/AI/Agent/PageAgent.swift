@@ -48,6 +48,8 @@ public final class PageAgent: NSObject {
 
     public func execute(plan: [PageAction]) async -> [ActionResult] {
         var results: [ActionResult] = []
+        // Ensure the injected runtime is ready before executing actions
+        _ = await ensureRuntimeReady(timeoutMs: 2000)
         for step in plan {
             switch step.type {
             case .navigate:
@@ -253,7 +255,8 @@ public final class PageAgent: NSObject {
         if let direction = predicate.direction, direction == "ready" {
             pred["readyState"] = "complete"
         }
-        if let amount = predicate.amountPx, amount > 0 { pred["delayMs"] = amount }
+        let delay = predicate.delayMs ?? predicate.amountPx
+        if let amount = delay, amount > 0 { pred["delayMs"] = amount }
         let to = timeoutMs ?? 5000
         guard let data = try? JSONSerialization.data(withJSONObject: pred, options: []),
             let json = String(data: data, encoding: .utf8)
@@ -321,5 +324,25 @@ public final class PageAgent: NSObject {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
         }
         lastActionAt = Date()
+    }
+
+    // MARK: - Runtime readiness
+    private func ensureRuntimeReady(timeoutMs: Int) async -> Bool {
+        guard let webView else { return false }
+        let start = Date().timeIntervalSince1970
+        let deadline = start + Double(timeoutMs) / 1000.0
+        while Date().timeIntervalSince1970 < deadline {
+            let script =
+                "(() => { try { return !!(window.__agent && window.__agent.findElements && window.__agent.click && window.__agent.typeText); } catch(e) { return false; } })();"
+            let ready = await withCheckedContinuation {
+                (continuation: CheckedContinuation<Bool, Never>) in
+                webView.evaluateJavaScript(script) { result, _ in
+                    continuation.resume(returning: (result as? Bool) == true)
+                }
+            }
+            if ready { return true }
+            try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+        }
+        return false
     }
 }

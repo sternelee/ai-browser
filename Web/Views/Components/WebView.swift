@@ -1282,35 +1282,31 @@ struct WebView: NSViewRepresentable {
         // CRITICAL FIX: Enhanced WebContent process termination handler with network awareness
         // and circuit breaker pattern to prevent infinite reload loops when offline.
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            NSLog("⚠️ WebContent process terminated")
+            AppLog.warn("WebContent process terminated")
 
             // Check if we have a URL to reload
             guard webView.url != nil else {
-                NSLog("⚠️ WebContent process terminated but no URL to reload")
+                if AppLog.isVerboseEnabled { AppLog.debug("WebContent terminated but no URL to reload") }
                 return
             }
 
             // CRITICAL: Check network connectivity before attempting reload
             let networkMonitor = NetworkConnectivityMonitor.shared
             guard networkMonitor.hasInternetConnection else {
-                NSLog(
-                    "🔴 WebContent process terminated but no internet connection - showing no internet page instead of reloading"
-                )
+                AppLog.warn("WebContent terminated, offline – showing offline page")
                 showNoInternetConnectionPage()
                 return
             }
 
             // Check circuit breaker to prevent infinite reload loops
             guard circuitBreaker.canAttemptRequest() else {
-                NSLog("🚫 Circuit breaker open - not attempting reload after process termination")
+                AppLog.warn("Circuit breaker open - not reloading after termination")
                 showNoInternetConnectionPage()
                 return
             }
 
             // Only reload if we have connectivity and circuit breaker allows it
-            NSLog(
-                "🔄 WebContent process terminated – reloading tab (network available, circuit breaker closed)"
-            )
+            if AppLog.isVerboseEnabled { AppLog.debug("WebContent terminated – reloading (network ok, breaker closed)") }
 
             // Add slight delay to prevent immediate re-termination
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -2202,15 +2198,11 @@ struct WebView: NSViewRepresentable {
                     bestContext = context
 
                     // Log extraction attempt
-                    NSLog(
-                        "📖 Auto-read attempt \(attemptCount): \(context.text.count) characters, quality: \(context.contentQuality) (\(context.qualityDescription))"
-                    )
+                    if AppLog.isVerboseEnabled { AppLog.debug("Auto-read attempt #\(attemptCount): len=\(context.text.count) q=\(context.contentQuality) (\(context.qualityDescription))") }
 
                     // Check if we have good enough content or if JS recommends no retry
                     if context.isHighQuality || !context.shouldRetry {
-                        NSLog(
-                            "✅ Auto-read completed: \(context.text.count) characters from \(context.title)"
-                        )
+                        if AppLog.isVerboseEnabled { AppLog.debug("Auto-read complete: len=\(context.text.count) title=\(context.title)") }
                         break
                     }
 
