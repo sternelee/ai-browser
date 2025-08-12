@@ -12,6 +12,7 @@ final class ToolRegistry {
     enum ToolName: String, CaseIterable {
         case navigate
         case findElements
+        case observe
         case click
         case typeText
         case scroll
@@ -72,9 +73,75 @@ final class ToolRegistry {
                     if let hint = el.locatorHint { item["hint"] = AnyCodable(hint) }
                     return item
                 }
+                // Echo back the normalized locator so the model can repeat role/nth consistently
+                var echo: [String: AnyCodable] = [:]
+                if let r = locator.role { echo["role"] = AnyCodable(r) }
+                if let n = locator.name { echo["name"] = AnyCodable(n) }
+                if let t = locator.text { echo["text"] = AnyCodable(t) }
+                if let nth = locator.nth { echo["nth"] = AnyCodable(nth) }
                 let boxed: [String: AnyCodable] = [
                     "count": AnyCodable(elements.count),
                     "elements": AnyCodable(sample),
+                    "locator": AnyCodable(echo),
+                ]
+                return ToolObservation(name: name.rawValue, ok: true, data: boxed, message: nil)
+            case .observe:
+                // Page-agnostic observation helper that returns curated element lists
+                let kinds =
+                    (call.arguments["kinds"]?.value as? [String])?.map { $0.lowercased() } ?? [
+                        "interactive", "articles", "textboxes",
+                    ]
+                let limit = (call.arguments["limit"]?.value as? Int) ?? 12
+
+                func sample(_ elems: [ElementSummary]) -> [[String: AnyCodable]] {
+                    return elems.prefix(limit).enumerated().map { (idx, el) in
+                        var item: [String: AnyCodable] = [
+                            "i": AnyCodable(idx),
+                            "role": AnyCodable(el.role ?? ""),
+                            "name": AnyCodable(el.name ?? ""),
+                            "text": AnyCodable((el.text ?? "").prefix(120)),
+                        ]
+                        if let hint = el.locatorHint { item["hint"] = AnyCodable(hint) }
+                        return item
+                    }
+                }
+
+                var blocks: [[String: AnyCodable]] = []
+                if kinds.contains("articles") {
+                    let els = await pageAgent.requestElements(
+                        matching: LocatorInput(role: "article"))
+                    blocks.append([
+                        "kind": AnyCodable("articles"),
+                        "count": AnyCodable(els.count),
+                        "elements": AnyCodable(sample(els)),
+                    ])
+                }
+                if kinds.contains("textboxes") {
+                    let els = await pageAgent.requestElements(
+                        matching: LocatorInput(role: "textbox"))
+                    blocks.append([
+                        "kind": AnyCodable("textboxes"),
+                        "count": AnyCodable(els.count),
+                        "elements": AnyCodable(sample(els)),
+                    ])
+                }
+                if kinds.contains("interactive") {
+                    var all: [ElementSummary] = []
+                    let roles = ["button", "link", "textbox", "input", "select"]
+                    for r in roles {
+                        let els = await pageAgent.requestElements(matching: LocatorInput(role: r))
+                        all.append(contentsOf: els)
+                    }
+                    blocks.append([
+                        "kind": AnyCodable("interactive"),
+                        "count": AnyCodable(all.count),
+                        "elements": AnyCodable(sample(all)),
+                    ])
+                }
+
+                let boxed: [String: AnyCodable] = [
+                    "blocks": AnyCodable(blocks),
+                    "kinds": AnyCodable(kinds),
                 ]
                 return ToolObservation(name: name.rawValue, ok: true, data: boxed, message: nil)
             case .click:

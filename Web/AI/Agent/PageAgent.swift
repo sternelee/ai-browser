@@ -26,6 +26,8 @@ public final class PageAgent: NSObject {
 
     public func requestElements(matching locator: LocatorInput) async -> [ElementSummary] {
         guard let webView else { return [] }
+        // Ensure runtime is ready after navigations or WebContent restarts
+        _ = await ensureRuntimeReady(timeoutMs: 2500)
         let encoder = JSONEncoder()
         guard let locatorData = try? encoder.encode(locator),
             let locatorJson = String(data: locatorData, encoding: .utf8)
@@ -147,6 +149,39 @@ public final class PageAgent: NSObject {
         let script =
             "(() => JSON.stringify(window.__agent && window.__agent.typeText ? window.__agent.typeText(JSON.parse('\(escapedLoc)'), JSON.parse('\"\(escapedText)\"'), \(submit ? "true" : "false")) : { ok: false }))();"
         return await Self.parseOk(from: script, in: webView)
+    }
+
+    /// Returns a minimal summary of the currently focused element, if any
+    public func getFocusedElementSummary() async -> ElementSummary? {
+        guard let webView else { return nil }
+        let js = """
+            (function(){
+                try {
+                    var el = document.activeElement;
+                    if (!el) return null;
+                    var rect = el.getBoundingClientRect();
+                    function isVisible(node){ try { var r=node.getBoundingClientRect(); var s=getComputedStyle(node); return r.width>0 && r.height>0 && s.visibility!=='hidden' && s.display!=='none'; } catch(e) { return false; } }
+                    function roleFor(node){ try { var tag=(node.tagName||'').toLowerCase(); if (node.getAttribute && node.getAttribute('role')) return node.getAttribute('role'); if (tag==='a') return 'link'; if (tag==='button') return 'button'; if (tag==='input') return 'input'; if (tag==='select') return 'select'; if (tag==='textarea') return 'textbox'; return tag; } catch(e){ return ''; } }
+                    function nameFor(node){ try { return (node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('name'))) || (node.innerText || node.textContent || '').trim(); } catch(e){ return ''; } }
+                    var out = {
+                        id: 'focused',
+                        role: roleFor(el),
+                        name: nameFor(el),
+                        text: String((el.innerText || el.textContent || '')).slice(0,200),
+                        isVisible: isVisible(el),
+                        boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                        locatorHint: null
+                    };
+                    return JSON.stringify(out);
+                } catch(e) { return null; }
+            })();
+            """
+        if let json = await Self.evaluateJSString(js, in: webView),
+            let data = json.data(using: .utf8)
+        {
+            return try? JSONDecoder().decode(ElementSummary.self, from: data)
+        }
+        return nil
     }
 
     public func select(locator: LocatorInput, value: String) async -> Bool {

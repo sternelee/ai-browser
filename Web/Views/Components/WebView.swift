@@ -441,9 +441,11 @@ struct WebView: NSViewRepresentable {
             
             // Also clear status bar on navigation start
             document.addEventListener('beforeunload', function() {
-                window.webkit.messageHandlers.linkHover.postMessage({
-                    type: 'clear'
-                });
+                try {
+                  window.webkit.messageHandlers.linkHover.postMessage({ type: 'clear' });
+                } catch (e) {}
+                // Reset agent runtime markers to handle WebContent restarts
+                try { window.__agentNetInstalled = false; } catch (e) {}
             });
             
             // Expose function for native code to get current context link

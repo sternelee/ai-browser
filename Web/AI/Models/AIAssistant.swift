@@ -581,7 +581,7 @@ class AIAssistant: ObservableObject {
         let siteHost = await MainActor.run { self.tabManager?.activeTab?.url?.host?.lowercased() }
 
         // Optional intent hint derived from heuristic plan (navigation vs on-page typing)
-        let intentHint: String? = {
+        var intentHint: String? = {
             guard let hintPlan = Self.heuristicPlan(for: instruction) else { return nil }
             if let nav = hintPlan.first(where: { $0.type == .navigate }), let u = nav.url {
                 return "suggest:navigate url=\(u)"
@@ -614,10 +614,12 @@ class AIAssistant: ObservableObject {
         // Tool schema for the model
         let toolSchema = """
             Output ONLY JSON for one tool per turn: {"tool":"<name>", "arguments":{...}}
+            Return exactly one tool per turn. Do not bundle or chain multiple actions in a single response.
             Tools:
             - navigate(url: string, newTab?: boolean)
             - waitFor(readyState?: "complete" | "ready", selector?: string, delayMs?: number, timeoutMs?: number)
             - findElements(locator?: {role?: string, name?: string, text?: string, css?: string, xpath?: string, near?: string, nth?: number})
+            - observe(kinds?: ("interactive"|"articles"|"textboxes")[], limit?: number)  // curated lists for deterministic selection
             - click(locator: Locator)  // when selecting from a prior list, use locator.nth
             - typeText(locator: Locator, text: string, submit?: boolean)  // set submit:true for searches
             - select(locator: Locator, value: string)
@@ -628,17 +630,36 @@ class AIAssistant: ObservableObject {
             Constraints:
             - Strictly avoid crafting CSS/XPath selectors. Do NOT use locator.css/xpath unless you are echoing an existing successful hint from a prior observation.
             - Prefer role/name/text and indices (locator.nth) when selecting from a sample returned by findElements.
+            - Prefer observe() or findElements() to request the exact candidates you need (e.g., articles or textboxes) and then choose by nth.
             - When searching or typing into inputs, first call findElements with role="textbox" (or "input"), then typeText with locator.nth and submit:true if appropriate.
             - Insert waitFor after navigation or form submission before proceeding.
             - Avoid site-specific attributes (e.g., data-click-id, brand-specific classnames). Be page-agnostic.
+            - Observations include a State JSON (last_tool_key, same_tool_streak, host, focused element) and optionally LastFind with role, count, and candidate elements. Use these to choose locator.role and locator.nth deterministically.
+            - Exactly one tool per turn; if you need more steps, ask for them across subsequent turns.
             - If the instruction includes phrases like "enter", "open", or "go to" followed by a site-like token, prefer navigate over typing into a search box.
-            - On dynamic feeds (e.g., Reddit), prefer: navigate → waitFor(ready) → findElements(role="textbox") → typeText(submit:true) → waitFor(ready) → findElements(role="article") → click(by nth) → waitFor(ready). Then, to comment, findElements(role="textbox") again and typeText without submit.
+            - Avoid site-specific assumptions. Request candidates with observe() or findElements() and then act deterministically using indices.
             Finish with: {"tool":"done", "arguments":{"summary":"..."}}. No prose.
             """
 
         // Loop
         var consecutiveFailures = 0
+        var skippedDuplicateNavigations = 0
         let maxFailures = 3
+        var lastSignature: String? = nil
+        var stableNoopCount = 0
+        let maxNoop = 2
+        // Minimal goal tracking to avoid premature "done"
+        let needsComment = instruction.lowercased().contains("comment")
+        let needsOpenPost =
+            instruction.lowercased().contains("post")
+            || instruction.lowercased().contains("enter it")
+            || instruction.lowercased().contains("open")
+        var didAttemptComment = false
+        var didOpenPost = false
+        var lastToolKey: String? = nil
+        var sameToolStreak: Int = 0
+        // Persist compact info about the last findElements for the next turn
+        var lastFindState: [String: Any]? = nil
         for stepIndex in 0..<(maxSteps + 4) {
             do {
                 // On the very first iteration, proactively gather a small element sample to aid planning
@@ -719,66 +740,39 @@ class AIAssistant: ObservableObject {
                     // Attempt to auto-dismiss cookie/consent banners if present
                     await autoDismissConsentIfPresent()
 
-                    // Bootstrap with a short heuristic action sequence (navigate/search/click), page-agnostic
+                    // Bootstrap (minimal): at most navigate → waitFor(ready). No eager type/click.
                     if let bootstrap = Self.heuristicPlan(for: instruction), !bootstrap.isEmpty {
-                        let pre = Array(bootstrap.prefix(4))
-                        for action in pre {
-                            let toolName: String
-                            var args: [String: Any] = [:]
-                            switch action.type {
-                            case .navigate:
-                                toolName = "navigate"
-                                args["url"] = action.url ?? ""
-                                args["newTab"] = action.newTab ?? false
-                            case .waitFor:
-                                toolName = "waitFor"
-                                if let dir = action.direction { args["readyState"] = dir }
-                                if let sel = action.text, !sel.isEmpty { args["selector"] = sel }
-                                args["timeoutMs"] = action.timeoutMs ?? 8000
-                            case .typeText:
-                                toolName = "typeText"
-                                if let loc = action.locator,
-                                    let data = try? JSONEncoder().encode(loc),
-                                    let obj = try? JSONSerialization.jsonObject(with: data)
-                                        as? [String: Any]
-                                {
-                                    args["locator"] = obj
-                                }
-                                args["text"] = action.text ?? ""
-                                args["submit"] = action.submit ?? false
-                            case .click:
-                                toolName = "click"
-                                if let loc = action.locator,
-                                    let data = try? JSONEncoder().encode(loc),
-                                    let obj = try? JSONSerialization.jsonObject(with: data)
-                                        as? [String: Any]
-                                {
-                                    args["locator"] = obj
-                                }
-                            default:
-                                continue
-                            }
-                            let result = await self.callAgentTool(name: toolName, arguments: args)
-                            // Record scratch
-                            if result.ok {
-                                scratch.append("bootstrap \(toolName): ok")
-                            } else {
-                                scratch.append("bootstrap \(toolName): fail")
-                            }
-                            // Timeline mirror (debug only)
+                        if let nav = bootstrap.first(where: { $0.type == .navigate }),
+                            let u = nav.url
+                        {
+                            let navObs = await self.callAgentTool(
+                                name: "navigate",
+                                arguments: [
+                                    "url": u,
+                                    "newTab": nav.newTab ?? false,
+                                ])
                             await appendStep(
-                                PageAction(
-                                    type: action.type, locator: action.locator,
-                                    text: action.text, url: action.url, newTab: action.newTab,
-                                    direction: action.direction, amountPx: action.amountPx,
-                                    submit: action.submit, value: action.value,
-                                    timeoutMs: action.timeoutMs),
-                                state: result.ok ? .success : .failure, msg: "bootstrap")
-                            // Re-run consent dismissal after navigate or initial page load
-                            if action.type == .navigate || action.type == .waitFor {
-                                await autoDismissConsentIfPresent()
+                                PageAction(type: .navigate, url: u, newTab: nav.newTab ?? false),
+                                state: navObs.ok ? .success : .failure,
+                                msg: "bootstrap")
+                            if navObs.ok {
+                                let waitObs = await self.callAgentTool(
+                                    name: "waitFor",
+                                    arguments: [
+                                        "readyState": "ready",
+                                        "timeoutMs": (nav.timeoutMs ?? 10000),
+                                    ])
+                                var waitAction = PageAction(type: .waitFor)
+                                waitAction.direction = "ready"
+                                waitAction.timeoutMs = nav.timeoutMs ?? 10000
+                                await appendStep(
+                                    waitAction,
+                                    state: waitObs.ok ? .success : .failure,
+                                    msg: "bootstrap")
                             }
-                            if !result.ok { break }
+                            await autoDismissConsentIfPresent()
+                            // Consume navigation intent to prevent repeated navigate prompts
+                            intentHint = nil
                         }
                     }
                 }
@@ -799,12 +793,69 @@ class AIAssistant: ObservableObject {
                     return lines.joined(separator: "\n")
                 }()
 
-                let observation =
-                    (["Scratch:"] + scratch.suffix(10)
-                    + [
-                        "Context:", contextSnippet, "Instruction:", instruction,
-                        siteHost.map { "Host: \($0)" } ?? nil,
-                    ].compactMap { $0 }).joined(separator: "\n")
+                // Also record current page location in scratch so the model sees it
+                if let curUrl = await MainActor.run(body: {
+                    self.tabManager?.activeTab?.url?.absoluteString
+                }) {
+                    scratch.append("page: \(curUrl)")
+                }
+
+                // Build a compact, machine-parsable observation block to make reasoning deterministic
+                var observationBlocks: [String] = []
+                observationBlocks.append("Scratch:\n" + scratch.suffix(10).joined(separator: "\n"))
+                observationBlocks.append("Context:\n" + contextSnippet)
+                // Prepare host and focused element info (requires await)
+                let stateHost = await MainActor.run { self.tabManager?.activeTab?.url?.host }
+                var focusedDict: [String: Any]? = nil
+                if let webView = await MainActor.run(body: { self.tabManager?.activeTab?.webView })
+                {
+                    let agent = PageAgent(webView: webView)
+                    if let focused = await agent.getFocusedElementSummary() {
+                        var f: [String: Any] = [:]
+                        f["role"] = focused.role ?? ""
+                        f["name"] = focused.name ?? ""
+                        f["visible"] = focused.isVisible
+                        focusedDict = f
+                    }
+                }
+                // Include a compact state JSON: last tool, streak, host, and focus info
+                let stateJson: String = {
+                    var dict: [String: Any] = [:]
+                    if let last = lastToolKey { dict["last_tool_key"] = last }
+                    dict["same_tool_streak"] = sameToolStreak
+                    if let h = stateHost { dict["host"] = h }
+                    if let f = focusedDict { dict["focused"] = f }
+                    if JSONSerialization.isValidJSONObject(dict),
+                        let data = try? JSONSerialization.data(withJSONObject: dict, options: [])
+                    {
+                        return String(data: data, encoding: .utf8) ?? "{}"
+                    }
+                    return "{}"
+                }()
+                observationBlocks.append("State:\n" + stateJson)
+                if let last = lastFindState {
+                    if JSONSerialization.isValidJSONObject(last),
+                        let data = try? JSONSerialization.data(withJSONObject: last, options: []),
+                        let json = String(data: data, encoding: .utf8)
+                    {
+                        observationBlocks.append("LastFind:\n" + json)
+                    } else {
+                        let role = (last["role"] as? String) ?? ""
+                        let count = (last["count"] as? Int) ?? 0
+                        let elems = (last["elements"] as? [[String: Any]]) ?? []
+                        let list = elems.prefix(6).map {
+                            let i = ($0["i"] as? Int) ?? 0
+                            let r = ($0["role"] as? String) ?? ""
+                            let n = ($0["name"] as? String) ?? ""
+                            return "#\(i) role=\(r) name=\(n)"
+                        }.joined(separator: "; ")
+                        observationBlocks.append(
+                            "LastFind:\nrole=\(role) count=\(count) sample=\(list)")
+                    }
+                }
+                observationBlocks.append("Instruction:\n" + instruction)
+                if let siteHost { observationBlocks.append("Host:\n" + siteHost) }
+                let observation = observationBlocks.joined(separator: "\n")
 
                 guard let provider = providerManager.currentProvider else { break }
                 let prompt = """
@@ -815,18 +866,30 @@ class AIAssistant: ObservableObject {
                     Observation:
                     \(observation)
                     """
+                // Stronger planning nudge when duplicate navs were seen
+                let planningHint =
+                    skippedDuplicateNavigations > 0
+                    ? "\nHint: Do not navigate again; proceed with on-page actions (findElements/click/typeText)."
+                    : ""
                 let raw = try await provider.generateRawResponse(
-                    prompt: prompt, model: provider.selectedModel)
+                    prompt: prompt + planningHint, model: provider.selectedModel)
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let jsonStart = trimmed.firstIndex(of: "{") else { break }
+                guard let jsonStart = trimmed.firstIndex(of: "{") else {
+                    scratch.append("Model returned non-JSON; retrying")
+                    consecutiveFailures += 1
+                    if consecutiveFailures >= maxFailures { break }
+                    continue
+                }
                 let jsonOnly = String(trimmed[jsonStart...])
                 guard
                     let data = jsonOnly.data(using: .utf8),
                     let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                     let tool = obj["tool"] as? String
                 else {
-                    scratch.append("Model returned non-JSON or invalid tool object")
-                    break
+                    scratch.append("Model returned invalid tool object; retrying")
+                    consecutiveFailures += 1
+                    if consecutiveFailures >= maxFailures { break }
+                    continue
                 }
                 var args: [String: Any] = (obj["arguments"] as? [String: Any]) ?? [:]
                 // Guardrails: sanitize locator fields to avoid CSS/XPath from model
@@ -836,8 +899,88 @@ class AIAssistant: ObservableObject {
                     args["locator"] = loc
                 }
 
+                // Extract locator role once for this step (used in observations and loop tracking)
+                let locatorRole: String? = {
+                    if let loc = args["locator"] as? [String: Any] {
+                        return (loc["role"] as? String)?.lowercased()
+                    }
+                    return nil
+                }()
+
+                // Debounce duplicate navigations to the same host
+                if tool == "navigate" {
+                    let currentUrlStr =
+                        await MainActor.run { self.tabManager?.activeTab?.url?.absoluteString }
+                        ?? ""
+                    let currentHost =
+                        await MainActor.run { self.tabManager?.activeTab?.url?.host?.lowercased() }
+                        ?? ""
+                    let targetStr = (args["url"] as? String) ?? ""
+                    if let target = URL(string: targetStr) {
+                        let targetHost = (target.host ?? "").replacingOccurrences(
+                            of: "www.", with: ""
+                        ).lowercased()
+                        let curHost = currentHost.replacingOccurrences(of: "www.", with: "")
+                            .lowercased()
+                        if !targetStr.isEmpty
+                            && (targetStr == currentUrlStr
+                                || (!targetHost.isEmpty && targetHost == curHost))
+                        {
+                            skippedDuplicateNavigations += 1
+                            scratch.append("skip navigate: already on host=\(curHost)")
+                            // Convert to a brief ready wait instead
+                            let waitObs = await self.callAgentTool(
+                                name: "waitFor",
+                                arguments: [
+                                    "readyState": "ready",
+                                    "timeoutMs": 6000,
+                                ])
+                            var timelineAction = PageAction(type: .waitFor)
+                            timelineAction.direction = "ready"
+                            await appendStep(
+                                timelineAction, state: waitObs.ok ? .success : .failure,
+                                msg: "debounce navigate")
+                            // After first duplicate, drop any lingering navigate intent hint
+                            intentHint = nil
+                            // If the model keeps asking to navigate, do not terminate early;
+                            // instead strongly hint via scratch to proceed with on-page actions.
+                            if skippedDuplicateNavigations >= 2 {
+                                scratch.append(
+                                    "policy: navigation to current host disabled; choose findElements/click/typeText next"
+                                )
+                            }
+                            continue
+                        }
+                    }
+                }
+
                 if tool == "done" {
                     let summary = (args["summary"] as? String) ?? ""
+                    // Guard against finishing too early when explicit tasks remain
+                    if (needsComment && !didAttemptComment) || (needsOpenPost && !didOpenPost) {
+                        var missing: [String] = []
+                        if needsOpenPost && !didOpenPost { missing.append("open a post") }
+                        if needsComment && !didAttemptComment { missing.append("type a comment") }
+                        scratch.append(
+                            "cannot finish: outstanding tasks → \(missing.joined(separator: ", "))")
+                        // Provide an element sample to help planning next step
+                        let sample = await self.callAgentTool(name: "findElements", arguments: [:])
+                        if let data = sample.data {
+                            let count = (data["count"]?.value as? Int) ?? -1
+                            let arr = (data["elements"]?.value as? [[String: Any]]) ?? []
+                            let previews = arr.prefix(5).compactMap { item in
+                                let role = item["role"] as? String ?? ""
+                                let name = item["name"] as? String ?? ""
+                                let text = item["text"] as? String ?? ""
+                                let i = (item["i"] as? Int) ?? 0
+                                return "#\(i) role=\(role) name=\(name) text=\(text.prefix(60))"
+                            }
+                            scratch.append(
+                                "auto-sample: count=\(count) sample=\(previews.joined(separator: "; "))"
+                            )
+                        }
+                        continue
+                    }
                     scratch.append("Done: \(summary)")
                     break
                 }
@@ -847,6 +990,7 @@ class AIAssistant: ObservableObject {
                     switch tool {
                     case "navigate": return .navigate
                     case "findElements": return .findElements
+                    case "observe": return .findElements
                     case "click": return .click
                     case "typeText": return .typeText
                     case "select": return .select
@@ -884,7 +1028,7 @@ class AIAssistant: ObservableObject {
                 let result = await self.callAgentTool(name: tool, arguments: args)
                 if let data = result.data {
                     let keys = data.keys.sorted()
-                    if tool == "findElements" {
+                    if tool == "findElements" || tool == "observe" {
                         let count = (data["count"]?.value as? Int) ?? -1
                         let sample = (data["elements"]?.value as? [[String: Any]]) ?? []
                         let previews = sample.prefix(5).compactMap { item in
@@ -894,9 +1038,45 @@ class AIAssistant: ObservableObject {
                             let i = (item["i"] as? Int) ?? 0
                             return "#\(i) role=\(role) name=\(name) text=\(text.prefix(60))"
                         }
+                        let tag = (tool == "observe") ? "observe" : "findElements"
                         scratch.append(
-                            "findElements: \(result.ok ? "ok" : "fail") count=\(count) sample=\(previews.joined(separator: "; "))"
+                            "\(tag): \(result.ok ? "ok" : "fail") count=\(count) sample=\(previews.joined(separator: "; "))"
                         )
+                        // Persist a compact lastFind for the next turn in a machine-readable form
+                        let compactItems: [[String: Any]] = sample.prefix(8).map { item in
+                            var obj: [String: Any] = [:]
+                            obj["i"] = (item["i"] as? Int) ?? 0
+                            obj["role"] = (item["role"] as? String) ?? ""
+                            obj["name"] = (item["name"] as? String) ?? ""
+                            return obj
+                        }
+                        let initialRole = ((args["locator"] as? [String: Any])?["role"] as? String)?
+                            .lowercased()
+                        var roleEcho: String = initialRole ?? ""
+                        if let locEcho = data["locator"]?.value as? [String: Any],
+                            let r = locEcho["role"] as? String, !r.isEmpty
+                        {
+                            roleEcho = r
+                        }
+                        lastFindState = [
+                            "role": roleEcho,
+                            "count": count,
+                            "elements": compactItems,
+                        ]
+                        // Nudge model to act deterministically (reduce find loops)
+                        if count > 0 {
+                            let suggestedRole =
+                                roleEcho.isEmpty ? (initialRole ?? (locatorRole ?? "")) : roleEcho
+                            if !suggestedRole.isEmpty {
+                                scratch.append(
+                                    "hint: choose an index and call click with locator.role=\(suggestedRole) and locator.nth=<index> next"
+                                )
+                            } else {
+                                scratch.append(
+                                    "hint: choose an index and call click with locator.nth=<index> next"
+                                )
+                            }
+                        }
                     } else if tool == "extract" {
                         let t = (data["text"]?.value as? String) ?? ""
                         scratch.append("extract: \(result.ok ? "ok" : "fail") len=\(t.count)")
@@ -904,7 +1084,20 @@ class AIAssistant: ObservableObject {
                         scratch.append("\(tool): \(result.ok ? "ok" : "fail") dataKeys=\(keys)")
                     }
                 } else {
-                    scratch.append("\(tool): \(result.ok ? "ok" : "fail") \(result.message ?? "")")
+                    // Enrich observations for tools without data by echoing locator and args when present
+                    if let loc = args["locator"] as? [String: Any] {
+                        let r = (loc["role"] as? String) ?? ""
+                        let n = (loc["nth"] as? Int)
+                        let name = (loc["name"] as? String) ?? (loc["text"] as? String) ?? ""
+                        let sel = [r, name].filter { !$0.isEmpty }.joined(separator: ":")
+                        let nthStr = n != nil ? " nth=\(n!)" : ""
+                        scratch.append(
+                            "\(tool): \(result.ok ? "ok" : "fail") locator=\(sel)\(nthStr) \(result.message ?? "")"
+                        )
+                    } else {
+                        scratch.append(
+                            "\(tool): \(result.ok ? "ok" : "fail") \(result.message ?? "")")
+                    }
                 }
 
                 // Record a timeline step for visibility
@@ -922,6 +1115,86 @@ class AIAssistant: ObservableObject {
                 // If repeated failures, stop
                 if !result.ok { consecutiveFailures += 1 } else { consecutiveFailures = 0 }
                 if consecutiveFailures >= maxFailures { break }
+
+                // Track repeated tool pattern to detect findElements loops
+                let toolKey = tool + "|" + (locatorRole ?? "")
+                if let last = lastToolKey, last == toolKey {
+                    sameToolStreak += 1
+                } else {
+                    sameToolStreak = 1
+                    lastToolKey = toolKey
+                }
+
+                // If stuck repeating findElements/observe with the same role, add a strong hint to proceed
+                if tool == "findElements" || tool == "observe", sameToolStreak >= 2 {
+                    let r = locatorRole ?? (lastFindState?["role"] as? String) ?? ""
+                    if !r.isEmpty {
+                        scratch.append(
+                            "policy: repeated \(tool) detected; select one candidate and call click with locator.role=\(r) and locator.nth=<index>"
+                        )
+                    } else {
+                        scratch.append(
+                            "policy: repeated \(tool) detected; select one candidate and call click with locator.nth=<index>"
+                        )
+                    }
+                }
+
+                // Post-action verification: detect unchanged page signatures to avoid no-op loops
+                func computePageSignature() async -> String {
+                    let curUrl =
+                        await MainActor.run { self.tabManager?.activeTab?.url?.absoluteString }
+                        ?? ""
+                    let curTitle = await MainActor.run { self.tabManager?.activeTab?.title } ?? ""
+                    let ext = await self.callAgentTool(
+                        name: "extract", arguments: ["readMode": "article"])
+                    let text = (ext.data?["text"]?.value as? String) ?? ""
+                    let snippet = String(text.prefix(1200))
+                    return curUrl + "\n" + curTitle + "\n" + snippet
+                }
+
+                // Update basic goal tracking flags
+                if result.ok {
+                    if tool == "typeText" {
+                        let submitFlag = (args["submit"] as? Bool) ?? false
+                        if needsComment && !submitFlag { didAttemptComment = true }
+                    } else if tool == "click" {
+                        didOpenPost = true
+                    }
+                }
+                if ["navigate", "click", "typeText", "select"].contains(tool) {
+                    let sig = await computePageSignature()
+                    if let last = lastSignature, last == sig {
+                        stableNoopCount += 1
+                        scratch.append("no-op: page signature unchanged (\(stableNoopCount))")
+                        if stableNoopCount >= maxNoop {
+                            scratch.append(
+                                "hint: signature unchanged twice; prefer scroll or findElements(role=article) before repeating."
+                            )
+                            // Auto attach a fresh sample to guide the model
+                            let sample = await self.callAgentTool(
+                                name: "findElements", arguments: [:])
+                            if let data = sample.data {
+                                let count = (data["count"]?.value as? Int) ?? -1
+                                let arr = (data["elements"]?.value as? [[String: Any]]) ?? []
+                                let previews = arr.prefix(5).compactMap { item in
+                                    let role = item["role"] as? String ?? ""
+                                    let name = item["name"] as? String ?? ""
+                                    let text = item["text"] as? String ?? ""
+                                    let i = (item["i"] as? Int) ?? 0
+                                    return "#\(i) role=\(role) name=\(name) text=\(text.prefix(60))"
+                                }
+                                scratch.append(
+                                    "auto-sample: count=\(count) sample=\(previews.joined(separator: "; "))"
+                                )
+                            }
+                        }
+                    } else {
+                        stableNoopCount = 0
+                        lastSignature = sig
+                    }
+                }
+
+                // Remove site-specific autopilot behaviors to remain page-agnostic; rely on model to request observe/find/inspect
             } catch {
                 scratch.append("Loop error: \(error.localizedDescription)")
                 break
