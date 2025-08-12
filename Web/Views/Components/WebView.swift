@@ -657,8 +657,8 @@ struct WebView: NSViewRepresentable {
                 } else if (role === 'select') {
                   selector = 'select';
                 } else if (role === 'article' || role === 'post') {
-                  // Generic article-like containers only (page-agnostic)
-                  selector = 'article, [role="article"]';
+                  // Generic article-like containers with common readable contexts (still agnostic)
+                  selector = 'article, [role="article"], main';
                 }
 
                 const candidates = Array.from(document.querySelectorAll(selector));
@@ -730,6 +730,27 @@ struct WebView: NSViewRepresentable {
             } catch (e) {
               return [];
             }
+          };
+          // Best-effort cookie/consent dismiss helper (page-agnostic)
+          window.__agent.dismissConsent = function() {
+            try {
+              const selectors = [
+                'button[aria-label*="accept" i]', 'button:has([aria-label*="accept" i])',
+                'button:contains("accept")', 'button:contains("agree")',
+                '[role="button"][aria-label*="accept" i]'
+              ];
+              for (const sel of selectors) {
+                const btns = Array.from(document.querySelectorAll('button,[role="button"]'));
+                for (const b of btns) {
+                  const text = (b.innerText || b.textContent || '').toLowerCase();
+                  const name = (b.getAttribute('aria-label') || '').toLowerCase();
+                  if (/accept|agree|consent/.test(text) || /accept|agree|consent/.test(name)) {
+                    if (isVisible(b)) { b.click(); return { ok: true }; }
+                  }
+                }
+              }
+            } catch {}
+            return { ok: false };
           };
           // Click the first matching element
           window.__agent.click = function(locator) {
@@ -820,28 +841,42 @@ struct WebView: NSViewRepresentable {
             } catch (e) { return { ok: false }; }
           };
           // Wait for predicate: readyState complete, selector presence, or delay
+          // Then additionally wait for short network-idle window if tracker is installed
           window.__agent.waitFor = async function(predicate, timeoutMs) {
             const start = Date.now();
             const timeout = typeof timeoutMs === 'number' ? timeoutMs : 5000;
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+            const waitIdle = async () => {
+              try {
+                const idleBudget = Math.min(1500, Math.max(300, timeout));
+                const deadline = Date.now() + idleBudget;
+                while (Date.now() < deadline) {
+                  if (window.__agentNetIsIdle && window.__agentNetIsIdle(450)) return true;
+                  await sleep(50);
+                }
+              } catch {}
+              return true;
+            };
             try {
               if (predicate && predicate.readyState === 'complete') {
                 while (document.readyState !== 'complete') {
                   if (Date.now() - start > timeout) return { ok: false };
                   await sleep(100);
                 }
+                await waitIdle();
                 return { ok: true };
               }
               if (predicate && predicate.selector) {
                 while (true) {
                   const node = document.querySelector(predicate.selector);
-                  if (node && isVisible(node)) return { ok: true };
+                  if (node && isVisible(node)) { await waitIdle(); return { ok: true }; }
                   if (Date.now() - start > timeout) return { ok: false };
                   await sleep(100);
                 }
               }
               if (predicate && typeof predicate.delayMs === 'number') {
                 await sleep(Math.min(predicate.delayMs, timeout));
+                await waitIdle();
                 return { ok: true };
               }
             } catch (e) { /* fallthrough */ }

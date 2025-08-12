@@ -574,6 +574,25 @@ class AIAssistant: ObservableObject {
         // Conversation frame for the loop
         var scratch: [String] = []
 
+        // One-time lightweight page context for smarter, page-agnostic reasoning
+        // Keep this minimal to avoid token bloat
+        let pageContext: WebpageContext? = await extractCurrentContext()
+        // Detect high-level site hints for guidance (page-agnostic usage only)
+        let siteHost = await MainActor.run { self.tabManager?.activeTab?.url?.host?.lowercased() }
+
+        // Optional intent hint derived from heuristic plan (navigation vs on-page typing)
+        let intentHint: String? = {
+            guard let hintPlan = Self.heuristicPlan(for: instruction) else { return nil }
+            if let nav = hintPlan.first(where: { $0.type == .navigate }), let u = nav.url {
+                return "suggest:navigate url=\(u)"
+            }
+            if let type = hintPlan.first(where: { $0.type == .typeText }) {
+                let txt = (type.text ?? "").prefix(100)
+                return "suggest:typeText submit=\(type.submit == true) text=\(txt)"
+            }
+            return nil
+        }()
+
         // Helper to append a step
         func appendStep(_ action: PageAction, state: AgentStepState, msg: String?) async {
             await MainActor.run {
@@ -582,39 +601,210 @@ class AIAssistant: ObservableObject {
             }
         }
 
+        // Helper to auto-dismiss cookie/consent banners via PageAgent
+        func autoDismissConsentIfPresent() async {
+            let (maybeWebView, _) = await MainActor.run { () -> (WKWebView?, String?) in
+                (self.tabManager?.activeTab?.webView, self.tabManager?.activeTab?.url?.host)
+            }
+            guard let webView = maybeWebView else { return }
+            let agent = PageAgent(webView: webView)
+            _ = await agent.dismissConsent()
+        }
+
         // Tool schema for the model
         let toolSchema = """
-            You can call one tool per turn by outputting ONLY a JSON object of the form:
-            {"tool":"<name>", "arguments":{...}}
+            Output ONLY JSON for one tool per turn: {"tool":"<name>", "arguments":{...}}
             Tools:
             - navigate(url: string, newTab?: boolean)
             - waitFor(readyState?: "complete" | "ready", selector?: string, delayMs?: number, timeoutMs?: number)
-            - findElements(locator: {role?: string, name?: string, text?: string, css?: string, xpath?: string, near?: string, nth?: number})
-            - click(locator: Locator)
-            - typeText(locator: Locator, text: string, submit?: boolean)
+            - findElements(locator?: {role?: string, name?: string, text?: string, css?: string, xpath?: string, near?: string, nth?: number})
+            - click(locator: Locator)  // when selecting from a prior list, use locator.nth
+            - typeText(locator: Locator, text: string, submit?: boolean)  // set submit:true for searches
             - select(locator: Locator, value: string)
             - scroll(locator?: Locator, direction?: "down"|"up", amountPx?: number)
             - extract(readMode?: "selection"|"article"|"all", selector?: string)
             - askUser(prompt: string, choices?: string[], default?: number, timeoutMs?: number)
-            To finish, output {"tool":"done", "arguments":{"summary":"..."}}.
-            Return JSON only, no prose.
+            - snapshot(locator?: Locator, cropToElement?: boolean)  // optional visual aid when uncertain
+            Constraints:
+            - Strictly avoid crafting CSS/XPath selectors. Do NOT use locator.css/xpath unless you are echoing an existing successful hint from a prior observation.
+            - Prefer role/name/text and indices (locator.nth) when selecting from a sample returned by findElements.
+            - When searching or typing into inputs, first call findElements with role="textbox" (or "input"), then typeText with locator.nth and submit:true if appropriate.
+            - Insert waitFor after navigation or form submission before proceeding.
+            - Avoid site-specific attributes (e.g., data-click-id, brand-specific classnames). Be page-agnostic.
+            - If the instruction includes phrases like "enter", "open", or "go to" followed by a site-like token, prefer navigate over typing into a search box.
+            - On dynamic feeds (e.g., Reddit), prefer: navigate → waitFor(ready) → findElements(role="textbox") → typeText(submit:true) → waitFor(ready) → findElements(role="article") → click(by nth) → waitFor(ready). Then, to comment, findElements(role="textbox") again and typeText without submit.
+            Finish with: {"tool":"done", "arguments":{"summary":"..."}}. No prose.
             """
 
         // Loop
-        for stepIndex in 0..<maxSteps {
+        var consecutiveFailures = 0
+        let maxFailures = 3
+        for stepIndex in 0..<(maxSteps + 4) {
             do {
+                // On the very first iteration, proactively gather a small element sample to aid planning
+                if stepIndex == 0 && scratch.isEmpty {
+                    // Generic sample
+                    let sample = await self.callAgentTool(name: "findElements", arguments: [:])
+                    if let data = sample.data {
+                        let count = (data["count"]?.value as? Int) ?? -1
+                        let arr = (data["elements"]?.value as? [[String: Any]]) ?? []
+                        let previews = arr.prefix(5).compactMap { item in
+                            let role = item["role"] as? String ?? ""
+                            let name = item["name"] as? String ?? ""
+                            let text = item["text"] as? String ?? ""
+                            let i = (item["i"] as? Int) ?? 0
+                            return "#\(i) role=\(role) name=\(name) text=\(text.prefix(60))"
+                        }
+                        scratch.append(
+                            "auto-findElements: count=\(count) sample=\(previews.joined(separator: "; "))"
+                        )
+                    }
+                    await appendStep(
+                        PageAction(type: .findElements), state: sample.ok ? .success : .failure,
+                        msg: "auto-observe generic")
+                    // Article-specific sample
+                    let sampleArticles = await self.callAgentTool(
+                        name: "findElements",
+                        arguments: [
+                            "locator": [
+                                "role": "article"
+                            ]
+                        ])
+                    if let data = sampleArticles.data {
+                        let count = (data["count"]?.value as? Int) ?? -1
+                        let arr = (data["elements"]?.value as? [[String: Any]]) ?? []
+                        let previews = arr.prefix(5).compactMap { item in
+                            let name = item["name"] as? String ?? ""
+                            let text = item["text"] as? String ?? ""
+                            let i = (item["i"] as? Int) ?? 0
+                            return "#\(i) article name=\(name) text=\(text.prefix(60))"
+                        }
+                        scratch.append(
+                            "auto-findElements(role=article): count=\(count) sample=\(previews.joined(separator: "; "))"
+                        )
+                    }
+                    var step = PageAction(type: .findElements)
+                    step.locator = LocatorInput(role: "article")
+                    await appendStep(
+                        step, state: sampleArticles.ok ? .success : .failure,
+                        msg: "auto-observe articles")
+
+                    // Textbox-specific sample (search/login fields, page-agnostic)
+                    let sampleTextboxes = await self.callAgentTool(
+                        name: "findElements",
+                        arguments: [
+                            "locator": [
+                                "role": "textbox"
+                            ]
+                        ])
+                    if let data = sampleTextboxes.data {
+                        let count = (data["count"]?.value as? Int) ?? -1
+                        let arr = (data["elements"]?.value as? [[String: Any]]) ?? []
+                        let previews = arr.prefix(5).compactMap { item in
+                            let name = item["name"] as? String ?? ""
+                            let text = item["text"] as? String ?? ""
+                            let i = (item["i"] as? Int) ?? 0
+                            return "#\(i) textbox name=\(name) text=\(text.prefix(60))"
+                        }
+                        scratch.append(
+                            "auto-findElements(role=textbox): count=\(count) sample=\(previews.joined(separator: "; "))"
+                        )
+                    }
+                    var stepTb = PageAction(type: .findElements)
+                    stepTb.locator = LocatorInput(role: "textbox")
+                    await appendStep(
+                        stepTb, state: sampleTextboxes.ok ? .success : .failure,
+                        msg: "auto-observe textboxes")
+
+                    // Attempt to auto-dismiss cookie/consent banners if present
+                    await autoDismissConsentIfPresent()
+
+                    // Bootstrap with a short heuristic action sequence (navigate/search/click), page-agnostic
+                    if let bootstrap = Self.heuristicPlan(for: instruction), !bootstrap.isEmpty {
+                        let pre = Array(bootstrap.prefix(4))
+                        for action in pre {
+                            let toolName: String
+                            var args: [String: Any] = [:]
+                            switch action.type {
+                            case .navigate:
+                                toolName = "navigate"
+                                args["url"] = action.url ?? ""
+                                args["newTab"] = action.newTab ?? false
+                            case .waitFor:
+                                toolName = "waitFor"
+                                if let dir = action.direction { args["readyState"] = dir }
+                                if let sel = action.text, !sel.isEmpty { args["selector"] = sel }
+                                args["timeoutMs"] = action.timeoutMs ?? 8000
+                            case .typeText:
+                                toolName = "typeText"
+                                if let loc = action.locator,
+                                    let data = try? JSONEncoder().encode(loc),
+                                    let obj = try? JSONSerialization.jsonObject(with: data)
+                                        as? [String: Any]
+                                {
+                                    args["locator"] = obj
+                                }
+                                args["text"] = action.text ?? ""
+                                args["submit"] = action.submit ?? false
+                            case .click:
+                                toolName = "click"
+                                if let loc = action.locator,
+                                    let data = try? JSONEncoder().encode(loc),
+                                    let obj = try? JSONSerialization.jsonObject(with: data)
+                                        as? [String: Any]
+                                {
+                                    args["locator"] = obj
+                                }
+                            default:
+                                continue
+                            }
+                            let result = await self.callAgentTool(name: toolName, arguments: args)
+                            // Record scratch
+                            if result.ok {
+                                scratch.append("bootstrap \(toolName): ok")
+                            } else {
+                                scratch.append("bootstrap \(toolName): fail")
+                            }
+                            // Timeline mirror (debug only)
+                            await appendStep(
+                                PageAction(
+                                    type: action.type, locator: action.locator,
+                                    text: action.text, url: action.url, newTab: action.newTab,
+                                    direction: action.direction, amountPx: action.amountPx,
+                                    submit: action.submit, value: action.value,
+                                    timeoutMs: action.timeoutMs),
+                                state: result.ok ? .success : .failure, msg: "bootstrap")
+                            // Re-run consent dismissal after navigate or initial page load
+                            if action.type == .navigate || action.type == .waitFor {
+                                await autoDismissConsentIfPresent()
+                            }
+                            if !result.ok { break }
+                        }
+                    }
+                }
                 // Compose observation for the model from last scratch + optional page read
                 let contextSnippet: String = {
-                    // Lightweight context: active URL and title for awareness
                     let urlStr = self.tabManager?.activeTab?.url?.absoluteString ?? ""
                     let title = self.tabManager?.activeTab?.title ?? ""
-                    return "URL: \(urlStr)\nTitle: \(title)"
+                    var lines: [String] = [
+                        "URL: \(urlStr)",
+                        "Title: \(title)",
+                    ]
+                    if let pageContext {
+                        let snippet = String(pageContext.text.prefix(400)).replacingOccurrences(
+                            of: "\n", with: " ")
+                        lines.append("Snippet: \(snippet)")
+                    }
+                    if let intentHint { lines.append("Intent-hint: \(intentHint)") }
+                    return lines.joined(separator: "\n")
                 }()
 
                 let observation =
-                    (["Scratch:"] + scratch.suffix(6) + [
+                    (["Scratch:"] + scratch.suffix(10)
+                    + [
                         "Context:", contextSnippet, "Instruction:", instruction,
-                    ]).joined(separator: "\n")
+                        siteHost.map { "Host: \($0)" } ?? nil,
+                    ].compactMap { $0 }).joined(separator: "\n")
 
                 guard let provider = providerManager.currentProvider else { break }
                 let prompt = """
@@ -638,7 +828,13 @@ class AIAssistant: ObservableObject {
                     scratch.append("Model returned non-JSON or invalid tool object")
                     break
                 }
-                let args: [String: Any] = (obj["arguments"] as? [String: Any]) ?? [:]
+                var args: [String: Any] = (obj["arguments"] as? [String: Any]) ?? [:]
+                // Guardrails: sanitize locator fields to avoid CSS/XPath from model
+                if var loc = args["locator"] as? [String: Any] {
+                    loc.removeValue(forKey: "css")
+                    loc.removeValue(forKey: "xpath")
+                    args["locator"] = loc
+                }
 
                 if tool == "done" {
                     let summary = (args["summary"] as? String) ?? ""
@@ -686,7 +882,30 @@ class AIAssistant: ObservableObject {
 
                 // Execute tool
                 let result = await self.callAgentTool(name: tool, arguments: args)
-                scratch.append("\(tool): \(result.ok ? "ok" : "fail") \(result.message ?? "")")
+                if let data = result.data {
+                    let keys = data.keys.sorted()
+                    if tool == "findElements" {
+                        let count = (data["count"]?.value as? Int) ?? -1
+                        let sample = (data["elements"]?.value as? [[String: Any]]) ?? []
+                        let previews = sample.prefix(5).compactMap { item in
+                            let role = item["role"] as? String ?? ""
+                            let name = item["name"] as? String ?? ""
+                            let text = item["text"] as? String ?? ""
+                            let i = (item["i"] as? Int) ?? 0
+                            return "#\(i) role=\(role) name=\(name) text=\(text.prefix(60))"
+                        }
+                        scratch.append(
+                            "findElements: \(result.ok ? "ok" : "fail") count=\(count) sample=\(previews.joined(separator: "; "))"
+                        )
+                    } else if tool == "extract" {
+                        let t = (data["text"]?.value as? String) ?? ""
+                        scratch.append("extract: \(result.ok ? "ok" : "fail") len=\(t.count)")
+                    } else {
+                        scratch.append("\(tool): \(result.ok ? "ok" : "fail") dataKeys=\(keys)")
+                    }
+                } else {
+                    scratch.append("\(tool): \(result.ok ? "ok" : "fail") \(result.message ?? "")")
+                }
 
                 // Record a timeline step for visibility
                 var timelineAction = PageAction(type: mappedIntent ?? .askUser)
@@ -700,8 +919,9 @@ class AIAssistant: ObservableObject {
                 await appendStep(
                     timelineAction, state: result.ok ? .success : .failure, msg: result.message)
 
-                // If we failed to execute or model chose a no-op repeatedly, stop
-                if !result.ok && stepIndex >= 2 { break }
+                // If repeated failures, stop
+                if !result.ok { consecutiveFailures += 1 } else { consecutiveFailures = 0 }
+                if consecutiveFailures >= maxFailures { break }
             } catch {
                 scratch.append("Loop error: \(error.localizedDescription)")
                 break
@@ -933,6 +1153,38 @@ class AIAssistant: ObservableObject {
             return t
         }
 
+        // Extract a search term if present
+        func extractSearchTerm(_ q: String, original: String) -> String? {
+            let patterns = [
+                "search for ",
+                "search ",
+                "look up ",
+                "find ",
+            ]
+            var term: String?
+            for p in patterns {
+                if q.contains(p) {
+                    if let r = q.range(of: p) {
+                        let startIdx = original.index(
+                            original.startIndex,
+                            offsetBy: q.distance(from: q.startIndex, to: r.upperBound))
+                        var slice = String(original[startIdx...])
+                        // stop tokens
+                        let stops: [String] = [",", ";", ".", " then", " and", " on ", " in "]
+                        for s in stops {
+                            if let r2 = slice.range(of: s, options: [.caseInsensitive]) {
+                                slice = String(slice[..<r2.lowerBound])
+                                break
+                            }
+                        }
+                        term = slice.trimmingCharacters(in: .whitespacesAndNewlines)
+                        break
+                    }
+                }
+            }
+            return term?.isEmpty == true ? nil : term
+        }
+
         // Heuristic A: Navigation intents including "enter <site>"
         if let token = extractSiteToken(after: "enter ")
             ?? extractSiteToken(after: "open ")
@@ -943,17 +1195,35 @@ class AIAssistant: ObservableObject {
             guard looksLikeDomain(token) else { return nil }
             let url = normalizeUrl(from: token)
 
+            // Optional follow-on search term
+            let searchTerm = extractSearchTerm(q, original: raw)
             // If the remainder suggests selecting an article/post, click the first article-like item generically
             let mentionsFunny = q.contains("funniest") || q.contains("funny")
+            let wantsComment = q.contains("comment") || q.contains("write a comment")
             var actions: [PageAction] = [
                 PageAction(type: .navigate, url: url, newTab: false),
                 PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000),
             ]
+            if let term = searchTerm, !term.isEmpty {
+                actions.append(
+                    PageAction(
+                        type: .typeText, locator: LocatorInput(role: "textbox"), text: term,
+                        submit: true))
+                actions.append(PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000))
+            }
             // Generic content selection (site-agnostic): click an article/post
             var articleLocator = LocatorInput(role: "article")
             if mentionsFunny { articleLocator.text = "funny" }
             actions.append(PageAction(type: .click, locator: articleLocator))
             actions.append(PageAction(type: .waitFor, direction: "ready", timeoutMs: 10000))
+            if wantsComment {
+                let commentText =
+                    inferCommentText(from: raw) ?? "😂 This cracked me up — thanks for sharing!"
+                actions.append(
+                    PageAction(
+                        type: .typeText, locator: LocatorInput(role: "textbox"), text: commentText,
+                        submit: false))
+            }
             return actions
         }
 
@@ -970,11 +1240,20 @@ class AIAssistant: ObservableObject {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if term.isEmpty { return nil }
             let locator = LocatorInput(role: "textbox")
-            return [
+            var actions: [PageAction] = [
                 PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
                 PageAction(type: .typeText, locator: locator, text: term, submit: true),
                 PageAction(type: .waitFor, direction: "ready", timeoutMs: 8000),
             ]
+            if q.contains("comment") {
+                let commentText =
+                    inferCommentText(from: raw) ?? "😂 This cracked me up — thanks for sharing!"
+                actions.append(
+                    PageAction(
+                        type: .typeText, locator: LocatorInput(role: "textbox"), text: commentText,
+                        submit: false))
+            }
+            return actions
         }
 
         // Heuristic C: "enter <query>" when not a domain/site => treat as typing into a textbox
@@ -998,6 +1277,20 @@ class AIAssistant: ObservableObject {
         }
 
         return nil
+    }
+
+    /// Generate a lighthearted comment if the instruction requests one
+    private static func inferCommentText(from query: String) -> String? {
+        let q = query.lowercased()
+        guard q.contains("comment") else { return nil }
+        // Keep this short and friendly to avoid spammy behavior
+        let options = [
+            "😂 This cracked me up — thanks for sharing!",
+            "🤣 Can't stop laughing — this is gold.",
+            "😄 This made my day!",
+            "😂 Peak comedy right here.",
+        ]
+        return options.randomElement()
     }
 
     /// Process a user query with current context and optional history

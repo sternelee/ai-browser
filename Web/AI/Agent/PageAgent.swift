@@ -163,6 +163,15 @@ public final class PageAgent: NSObject {
         return await Self.parseOk(from: script, in: webView)
     }
 
+    /// Best-effort consent/banner dismiss
+    public func dismissConsent() async -> Bool {
+        guard let webView else { return false }
+        await throttleIfNeeded()
+        let script =
+            "(() => JSON.stringify(window.__agent && window.__agent.dismissConsent ? window.__agent.dismissConsent() : { ok: false }))();"
+        return await Self.parseOk(from: script, in: webView)
+    }
+
     public func scroll(target: LocatorInput?, direction: String?, amountPx: Int?) async -> Bool {
         guard let webView else { return false }
         await throttleIfNeeded()
@@ -285,11 +294,17 @@ public final class PageAgent: NSObject {
             }
         }
 
-        // Case 2: wait for readyState === 'complete'
+        // Case 2: wait for readyState === 'complete' and brief network idle
         if predicate.direction == "ready" {
             while Date().timeIntervalSince1970 < deadline {
                 let ready = await evalBool("document.readyState === 'complete'")
-                if ready { return true }
+                if ready {
+                    // opportunistic idle
+                    _ = await evalBool(
+                        "(function(){ try { return window.__agentNetIsIdle && window.__agentNetIsIdle(450); } catch(e){ return true; } })();"
+                    )
+                    return true
+                }
                 try? await Task.sleep(nanoseconds: 120_000_000)
             }
             return false
@@ -306,7 +321,12 @@ public final class PageAgent: NSObject {
             let js =
                 "(() => { try { const el = document.querySelector('\(safeSelector)'); if (!el) return false; const r = el.getBoundingClientRect(); const s = window.getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; } catch (e) { return false; } })();"
             while Date().timeIntervalSince1970 < deadline {
-                if await evalBool(js) { return true }
+                if await evalBool(js) {
+                    _ = await evalBool(
+                        "(function(){ try { return window.__agentNetIsIdle && window.__agentNetIsIdle(450); } catch(e){ return true; } })();"
+                    )
+                    return true
+                }
                 try? await Task.sleep(nanoseconds: 120_000_000)
             }
             return false

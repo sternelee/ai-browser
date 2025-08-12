@@ -54,13 +54,29 @@ final class ToolRegistry {
                 return ToolObservation(
                     name: name.rawValue, ok: false, data: nil, message: "invalid url")
             case .findElements:
-                if let locator = try locatorFromArgs(call.arguments) {
-                    let elements = await pageAgent.requestElements(matching: locator)
-                    let boxed: [String: AnyCodable] = ["count": AnyCodable(elements.count)]
-                    return ToolObservation(name: name.rawValue, ok: true, data: boxed, message: nil)
+                // Allow missing locator to enumerate interactive elements generically
+                let providedLocator = try locatorFromArgs(call.arguments)
+                let locator = providedLocator ?? LocatorInput()
+                let elements = await pageAgent.requestElements(matching: locator)
+                // Provide a slightly larger sample to help the model choose deterministically by nth
+                let sampleLimit = 12
+                let sample = elements.prefix(sampleLimit).enumerated().map {
+                    (idx, el) -> [String: AnyCodable] in
+                    var item: [String: AnyCodable] = [
+                        "i": AnyCodable(idx),
+                        "id": AnyCodable(el.id),
+                        "role": AnyCodable(el.role ?? ""),
+                        "name": AnyCodable(el.name ?? ""),
+                        "text": AnyCodable((el.text ?? "").prefix(120)),
+                    ]
+                    if let hint = el.locatorHint { item["hint"] = AnyCodable(hint) }
+                    return item
                 }
-                return ToolObservation(
-                    name: name.rawValue, ok: false, data: nil, message: "missing locator")
+                let boxed: [String: AnyCodable] = [
+                    "count": AnyCodable(elements.count),
+                    "elements": AnyCodable(sample),
+                ]
+                return ToolObservation(name: name.rawValue, ok: true, data: boxed, message: nil)
             case .click:
                 if let locator = try locatorFromArgs(call.arguments) {
                     let ok = await pageAgent.click(locator: locator)
@@ -69,15 +85,37 @@ final class ToolRegistry {
                 return ToolObservation(
                     name: name.rawValue, ok: false, data: nil, message: "missing locator")
             case .typeText:
-                if let locator = try locatorFromArgs(call.arguments),
-                    let text = call.arguments["text"]?.value as? String
-                {
-                    let submit = (call.arguments["submit"]?.value as? Bool) ?? false
-                    let ok = await pageAgent.typeText(locator: locator, text: text, submit: submit)
-                    return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+                let text = call.arguments["text"]?.value as? String
+                guard let text else {
+                    return ToolObservation(
+                        name: name.rawValue, ok: false, data: nil, message: "missing text")
                 }
-                return ToolObservation(
-                    name: name.rawValue, ok: false, data: nil, message: "missing locator or text")
+                var locator = try locatorFromArgs(call.arguments)
+                // Page-agnostic fallback: if no semantic locator provided, choose a textbox automatically
+                func isSemantic(_ loc: LocatorInput) -> Bool {
+                    return (loc.role != nil) || (loc.name != nil) || (loc.text != nil)
+                        || (loc.nth != nil)
+                }
+                if locator == nil || !(isSemantic(locator!)) {
+                    let inputs = await pageAgent.requestElements(
+                        matching: LocatorInput(role: "textbox"))
+                    if !inputs.isEmpty {
+                        locator = LocatorInput(role: "textbox", nth: 0)
+                    } else {
+                        // Try generic input role
+                        let fallbacks = await pageAgent.requestElements(
+                            matching: LocatorInput(role: "input"))
+                        if !fallbacks.isEmpty { locator = LocatorInput(role: "input", nth: 0) }
+                    }
+                }
+                if let resolved = locator {
+                    let submit = (call.arguments["submit"]?.value as? Bool) ?? false
+                    let ok = await pageAgent.typeText(locator: resolved, text: text, submit: submit)
+                    return ToolObservation(name: name.rawValue, ok: ok, data: nil, message: nil)
+                } else {
+                    return ToolObservation(
+                        name: name.rawValue, ok: false, data: nil, message: "no input found")
+                }
             case .select:
                 if let locator = try locatorFromArgs(call.arguments),
                     let value = call.arguments["value"]?.value as? String
@@ -149,16 +187,23 @@ final class ToolRegistry {
     // MARK: - Helpers
     private func locatorFromArgs(_ args: [String: AnyCodable]) throws -> LocatorInput? {
         guard let value = args["locator"] else { return nil }
+        let decode: (Data) throws -> LocatorInput = { data in
+            var loc = try JSONDecoder().decode(LocatorInput.self, from: data)
+            // Page-agnostic safety: avoid raw selector crafting from model
+            loc.css = nil
+            loc.xpath = nil
+            return loc
+        }
         // Accept either dictionary or JSON string
         if let dict = value.value as? [String: Any] {
             let data = try JSONSerialization.data(withJSONObject: dict)
-            return try JSONDecoder().decode(LocatorInput.self, from: data)
+            return try decode(data)
         }
         if let json = value.value as? String, let data = json.data(using: .utf8) {
-            return try JSONDecoder().decode(LocatorInput.self, from: data)
+            return try decode(data)
         }
         let data = try JSONEncoder().encode(value)
-        return try JSONDecoder().decode(LocatorInput.self, from: data)
+        return try decode(data)
     }
 
     // MARK: - Consent Prompt

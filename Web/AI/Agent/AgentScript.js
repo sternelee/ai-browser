@@ -100,8 +100,8 @@
         } else if (role === 'select') {
           selector = 'select';
         } else if (role === 'article' || role === 'post') {
-          // Generic article-like containers only (page-agnostic)
-          selector = 'article, [role="article"]';
+          // Generic article-like containers with common readable contexts (still agnostic)
+          selector = 'article, [role="article"], main';
         }
 
         const candidates = Array.from(document.querySelectorAll(selector));
@@ -178,8 +178,19 @@
   };
   window.__agent.click = function(locator) {
     try {
-      const el = (findByLocator(locator) || []).find(isVisible) || null;
-      if (el && isVisible(el)) { el.click(); return { ok: true }; }
+      let el = (findByLocator(locator) || []).find(isVisible) || null;
+      if (el && isVisible(el)) {
+        // If element appears non-interactive, try a visible clickable descendant
+        const tag = (el.tagName || '').toLowerCase();
+        const role = roleFor(el);
+        const isInteractive = tag === 'a' || tag === 'button' || role === 'link' || role === 'button' || typeof el.onclick === 'function';
+        if (!isInteractive) {
+          const clickable = el.querySelector && Array.from(el.querySelectorAll('a, [role="link"], button, [role="button"]')).find(isVisible);
+          if (clickable) { clickable.click(); return { ok: true }; }
+        }
+        el.click();
+        return { ok: true };
+      }
       return { ok: false };
     } catch (e) { return { ok: false }; }
   };
